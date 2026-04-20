@@ -2,6 +2,40 @@
 
 ---
 
+## 2026-04-21 (Mon) — Day 2: 文件對齊 + Mobile 邀請流程
+
+### 完成
+- Baseline commit (`b80d59a`) — 整個 Day 1 骨架
+- **01-dev/1-PRD.md 改寫完**: 家人守護版, 3 新情境, 3 類事件, 邀請流程, 紅線
+- **01-dev/3-TechStack.md 改寫完**: React Native, 砍 PWA, 補 Line Notify, FCM 推播
+- **Mobile 邀請流程完整**:
+  - `lib/device.ts`: SecureStore 存 device_id (UUID)
+  - `lib/api.ts`: fetch wrapper 自動帶 X-Device-Id + ApiError 統一錯誤
+  - `app/invite/create.tsx`: 產生邀請碼 + QR + 分享
+  - `app/invite/scan.tsx`: QR 掃碼 + 手動輸碼
+  - `app/invite/[code].tsx`: 預覽 + 接受/拒絕
+  - `app/locations.tsx`: 接上「邀請家人」+「我收到邀請」入口
+  - `app.json`: 相機權限 + expo-camera 插件
+- Mobile typecheck 通過
+
+### 新增依賴 (mobile)
+expo-secure-store, expo-camera, expo-linking, react-native-qrcode-svg, react-native-svg
+
+### 未完成 (下次優先)
+- Docker 仍未裝 → migration 未套
+- Mobile 尚未實機/模擬器跑過 (只 typecheck)
+- 無 `POST /watched-locations` endpoint
+- 無資料 pipeline
+- 無推播系統實作 (FCM 設定)
+- 無測試
+
+### 下次起點
+1. 裝 Docker Desktop → `npm run db:up` → migrate
+2. 實機 Expo Go 測邀請流程 (需手機同 LAN)
+3. 擇一推進: watched-locations endpoint / 資料 pipeline / FCM 推播
+
+---
+
 ## 2026-04-20 (Sun) — Day 1: pivot + 骨架
 
 ### 完成

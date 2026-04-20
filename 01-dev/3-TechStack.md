@@ -1,261 +1,257 @@
-# NearSafe Tech Stack
+# NearSafe Tech Stack v1-B · 家人守護版
 
-## 0. 核心技術決策（結論先行）
+> 對應 PRD v1-B。已根據 CEO review 從 PWA 改為 React Native 原生。
 
-| 層 | V1 選擇 | 原因 |
-|----|---------|------|
-| 前端 | **PWA（Next.js）** | 單一 codebase、無 App Store 審核、能用 Web Push |
-| 後端 | **Node.js + Fastify** | 你熟、生態成熟、Docker 部署簡單 |
-| DB | **PostgreSQL + PostGIS** | 地理運算必備，半徑查詢一行 SQL |
-| 快取/佇列 | **Redis** | 事件去重、rate limit、BullMQ 背景工作 |
-| AI | **Claude Haiku 4.5** | 分類/摘要便宜快速，成本可控 |
-| 推播 | **Web Push (VAPID)** | PWA 原生支援，免費 |
-| 部署 | **Oracle 鳳凰城 + Docker Compose** | 你現有環境 |
-| CDN | **Cloudflare** | 亞洲節點補鳳凰城延遲 |
+## 0. 結論 (TL;DR)
+
+| 層 | 選擇 | 為什麼 |
+|----|------|------|
+| Mobile | **Expo (React Native)** + TypeScript | 推播可靠性是家人版命門, PWA iOS 限制致命 |
+| Backend | **Node.js + Fastify 5** + TypeScript | 輕、快、生態成熟、使用者熟 |
+| DB | **PostgreSQL 16 + PostGIS 3.4** | ST_DWithin 半徑查詢一行 SQL |
+| ORM | **Drizzle** + postgres.js | TS first, PostGIS raw SQL 友善 (Prisma 對 geography 支援差) |
+| Queue/Cache | **Redis 7 + BullMQ** | AI pipeline + 去重 + rate limit |
+| AI | **Claude Haiku 4.5** (主), Sonnet 4.6 (escalate) | 分類/摘要便宜快; <5% 爭議才升級 |
+| 推播 | **FCM (Android + iOS via Firebase)** | 跨平台統一, Line Notify API for 行動按鈕 |
+| 外部 | **Line Notify API** | 通知行動按鈕「傳 Line」「安全詢問」依賴 |
+| 地理編碼 | **Google Geocoding** (有快取) | 台灣地址 → 經緯度, 積極快取控成本 |
+| CI | GitHub Actions (之後再上) | V1 還不需要 |
+| 部署 | Oracle 鳳凰城 + Docker Compose + Cloudflare | 使用者現有環境 |
 
 ---
 
 ## 1. 架構總覽
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  資料來源層（外部）                                      │
-│  新聞 RSS · 政府 API · 社群關鍵字 · PTT 爬蟲            │
-└──────────────────┬──────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  資料來源層                                               │
+│  中央社 RSS · 消防署 API · 警政 · (V2: Threads/PTT)      │
+└──────────────────┬───────────────────────────────────────┘
                    ↓
-┌─────────────────────────────────────────────────────────┐
-│  Ingestion Pipeline（BullMQ worker）                     │
-│  1. 抓取（cron 每 2 分鐘）                               │
-│  2. AI 分類 + 地點解析（Claude Haiku）                   │
-│  3. 去重（Redis 時間+位置+相似度）                       │
-│  4. 寫入 events 表（PostGIS point）                      │
-└──────────────────┬──────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Ingestion Pipeline (BullMQ worker)                      │
+│  抓取 (cron 2min) → AI 分類 → 地點解析 → 去重 → events   │
+└──────────────────┬───────────────────────────────────────┘
                    ↓
-┌─────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────┐
 │  Matching Engine                                         │
-│  - 新事件 → 查 PostGIS 半徑內的關注地點                  │
-│  - 套用使用者敏感度 / 勿擾時段 / 事件類型 filter         │
-│  - 產生推播任務                                          │
-└──────────────────┬──────────────────────────────────────┘
+│  ST_DWithin(event, watched_location) → push tasks       │
+│  套用: 使用者敏感度 / 勿擾時段 / 事件類型 filter         │
+└──────────────────┬───────────────────────────────────────┘
                    ↓
-┌─────────────────────────────────────────────────────────┐
-│  Push Service（Web Push / FCM）                          │
-└──────────────────┬──────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Push Service (FCM)                                      │
+│  含 action buttons: tel:/, line://, safety_check, map    │
+└──────────────────┬───────────────────────────────────────┘
                    ↓
-┌─────────────────────────────────────────────────────────┐
-│  PWA 前端（Next.js + Leaflet）                           │
-│  Service Worker 接推播 · 地圖顯示 · 設定 API             │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Mobile (Expo RN)                                        │
+│  首頁 (地圖 + care feed) · 關心的人 · 設定              │
+│  + QR 邀請流程 · device_id 管理 · 通知行動 deep link     │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. 資料來源（最大風險點）
+## 2. Monorepo 結構 (已建)
 
-### V1 優先順序
-| 優先 | 來源 | 取得方式 | 延遲 | 法務 | 備註 |
-|------|------|----------|------|------|------|
-| 🟢 1 | 中央社 RSS | RSS feed | 10-30 min | 清楚 | 最穩定 |
-| 🟢 2 | 消防署開放資料 | 政府 Open API | 近即時 | 清楚 | 火災/救護統計 |
-| 🟢 3 | 警政署公開資訊 | 政府 Open API | 小時級 | 清楚 | 部分有即時 |
-| 🟡 4 | ETtoday / UDN | RSS | 10-30 min | RSS 合理使用 | 量大需去重 |
-| 🟡 5 | 公路總局即時路況 | API | 近即時 | 清楚 | 大型事故 |
-| 🟡 6 | Threads / X 關鍵字 | 官方 API | 即時 | 需合規 | 噪訊多 |
-| 🔴 7 | PTT 爬蟲 | 爬蟲 | 即時 | 灰色 | V2 再考慮 |
-
-**V1 先用 🟢 三個來源 + 鎖定台北市**，證明 pipeline 能跑再擴。
-
-### 抓取頻率
-- 新聞 RSS：每 2 分鐘
-- 政府 API：每 5 分鐘
-- 社群（V2）：websocket 即時
+```
+02-web/
+├── apps/
+│   ├── api/                    # Fastify backend
+│   │   ├── src/
+│   │   │   ├── index.ts
+│   │   │   ├── env.ts          # zod 驗證
+│   │   │   ├── db/             # Drizzle client + schema
+│   │   │   ├── plugins/        # device middleware
+│   │   │   ├── routes/         # health, invites, ...
+│   │   │   └── lib/            # 共用工具
+│   │   └── drizzle/            # Migration SQL
+│   └── mobile/                 # Expo
+│       ├── app/                # Expo Router
+│       └── app.json
+├── packages/
+│   └── shared/                 # 共用 TS 型別
+└── infra/
+    └── docker-compose.yml      # Postgres + PostGIS + Redis
+```
 
 ---
 
-## 3. AI Pipeline 細節
+## 3. 資料來源 (最大風險點)
 
-### 3.1 模型選擇
-- **Claude Haiku 4.5**：分類、去重、摘要（主力，便宜快）
-- **Claude Sonnet 4.6**：僅嚴重度判斷有爭議時 escalate（<5% 流量）
-- 不自訓模型（V1 無此必要）
+### V1 優先 (實際會用)
+| 優先 | 來源 | 延遲 | 法務 | 備註 |
+|------|------|------|------|------|
+| 🟢 1 | 中央社 RSS | 10-30 min | 清楚 | 最穩定 |
+| 🟢 2 | 消防署開放資料 | 近即時 | 清楚 | 火災為主 |
+| 🟡 3 | 警政署公開資訊 | 小時級 | 清楚 | 暴力事件較慢 |
+| 🟡 4 | 公路總局即時路況 | 近即時 | 清楚 | 大型交通 |
 
-### 3.2 Prompt 設計（三階段）
+**V1 先只用 🟢 2 個來源 + 限定雙北 + 桃竹苗 + 中彰投 + 雲嘉南 + 高屏**。
 
-**Stage 1 - 分類**（單則新聞 → JSON）
-```json
-{
-  "is_safety_event": true,
-  "category": "fire" | "traffic" | "violence" | "hazmat" | "disorder" | "disaster" | null,
-  "severity": 1-5,
-  "confidence": 0.0-1.0
-}
-```
-
-**Stage 2 - 地點解析**
-- 先用 regex 抓「XX 區 XX 路」
-- 抓不到才問 AI，再丟給 Google Geocoding API 轉經緯度
-
-**Stage 3 - 摘要**（通過嚴重度門檻才執行）
-```
-輸入：原始新聞全文 + 使用者關注地點距離
-輸出：≤40 字的推播短句 + 建議行動
-```
-
-### 3.3 成本估算（1000 活躍使用者/天）
-- 原始事件：約 500 則/天
-- Stage 1 全跑：500 × 500 token ≈ 250K token → $0.25/天
-- Stage 3 通過率 ~10%：50 × 1000 token ≈ 50K token → $0.05/天
-- **AI 月成本 ≈ $10**
-
-→ 真正貴的是 **Geocoding**（$5/1000 calls），需積極快取。
+### V2 以後
+- Threads/X 關鍵字 (合規性需先確認)
+- 使用者回報 (需 AI + 人工複核, 冷啟動後才有意義)
 
 ---
 
-## 4. 資料庫 Schema（簡化版）
+## 4. AI Pipeline
 
+### 三階段 prompt
+1. **分類** (全跑): 原文 → `{is_safety_event, category, severity, confidence}`
+2. **地點解析**: regex 先試, 抓不到才問 AI, 結果丟 Google Geocoding
+3. **摘要生成** (通過嚴重度門檻才跑): 原文 → ≤40 字推播短句 + 建議行動
+
+### 成本估算 (1000 活躍 / 天)
+- 每日原始事件 ~500 則
+- Stage 1: 500 × 500 token ≈ 250K token → ~$0.25/天
+- Stage 3 (通過率 ~10%): 50 × 1000 token ≈ 50K token → ~$0.05/天
+- **AI 月成本 ~$10**
+
+貴的其實是 **Geocoding** ($5/1000 calls)。必積極快取「常出現地標 / 路口」。
+
+---
+
+## 5. 資料庫 Schema (已建)
+
+6 張表, 5 個 index:
+
+- `users` — device_id 匿名使用者 + push_token
+- `watched_locations` — 關注地點 + geography(Point, 4326) + GIST index
+- `relationships` — 家人雙向同意 + unique pair
+- `invite_codes` — 8 字元短碼 + 24h 過期 + 單次
+- `events` — 事件 + geography + GIST + fingerprint unique
+- `notifications` — 推播紀錄 + feedback + action_taken
+
+詳見 `02-web/apps/api/src/db/schema.ts`。
+
+### 核心匹配查詢
 ```sql
--- 使用者（匿名，device_id 為主）
-CREATE TABLE users (
-  id UUID PRIMARY KEY,
-  device_id TEXT UNIQUE,
-  push_subscription JSONB,
-  settings JSONB,      -- 頻率、勿擾時段、事件類型開關
-  created_at TIMESTAMPTZ
-);
-
--- 關注地點
-CREATE TABLE watched_locations (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  name TEXT,
-  location GEOGRAPHY(POINT),     -- PostGIS
-  radius_m INTEGER,              -- 1000/3000/5000
-  is_paused BOOLEAN,
-  created_at TIMESTAMPTZ
-);
-CREATE INDEX ON watched_locations USING GIST(location);
-
--- 事件
-CREATE TABLE events (
-  id UUID PRIMARY KEY,
-  category TEXT,
-  severity INTEGER,
-  location GEOGRAPHY(POINT),
-  title TEXT,
-  summary TEXT,                  -- AI 生成短句
-  sources JSONB,                 -- 多來源合併後的原文連結
-  fingerprint TEXT UNIQUE,       -- 去重用（時間+位置+文字 hash）
-  occurred_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ
-);
-CREATE INDEX ON events USING GIST(location);
-CREATE INDEX ON events(occurred_at DESC);
-
--- 推播記錄（用於回饋訊號與去重）
-CREATE TABLE notifications (
-  id UUID PRIMARY KEY,
-  user_id UUID,
-  event_id UUID,
-  watched_location_id UUID,
-  feedback TEXT,                 -- 'helpful' | 'too_noisy' | null
-  sent_at TIMESTAMPTZ
-);
-```
-
-### 核心匹配查詢（新事件進來時）
-```sql
-SELECT wl.user_id, wl.id, ST_Distance(wl.location, $1) AS dist_m
+SELECT wl.watcher_user_id, wl.id, ST_Distance(wl.point, $1) AS dist_m
 FROM watched_locations wl
-WHERE ST_DWithin(wl.location, $1, wl.radius_m)
+WHERE ST_DWithin(wl.point, $1, wl.radius_m)
   AND wl.is_paused = false;
 ```
-PostGIS 一行搞定，10 萬使用者 × 10 萬事件仍毫秒級。
+GIST index 下萬筆規模毫秒級。
 
 ---
 
-## 5. 前端技術細節
+## 6. Mobile (Expo RN)
 
-- **Next.js 15 App Router** + TypeScript
-- **Leaflet + OpenStreetMap tiles**（免費，Google Maps 收費太兇）
-- **Tailwind CSS + shadcn/ui**
-- **Service Worker**：
-  - Web Push 接收
-  - 離線快取最近 24h 事件
-  - 通知點擊深層連結到地圖
-- **geolocation API**：只在 App 開啟時用，**不做背景定位**（省電 + 隱私）
+### 已安裝
+- `expo` 52, `expo-router`, `expo-status-bar`
+- `react-native-safe-area-context`, `react-native-screens`
+
+### 將要安裝 (邀請流程 + 推播)
+- `expo-secure-store` — 存 device_id
+- `expo-camera` — QR 掃碼
+- `expo-linking` — deep link `nearsafe://invite/XXX`
+- `expo-notifications` — 推播接收 + action buttons
+- `expo-device` — 取裝置資訊 (for push registration)
+- QR 產生: `react-native-qrcode-svg` + `react-native-svg`
+- 地圖: `react-native-maps` (V1 後期才需)
+
+### 不用 / 避免
+- ❌ Web Push / PWA API (已淘汰)
+- ❌ background location (違背紅線, 且 Apple 審核風險)
 
 ---
 
-## 6. 部署架構（Oracle 鳳凰城）
+## 7. 推播系統
+
+### 採 FCM 統一 (不直連 APNs)
+- Android: FCM 原生
+- iOS: FCM → APNs 代發 (Firebase 負責 token 交換)
+- 好處: 後端只管 FCM HTTP v1 API, 不管 Apple key 輪替
+- 缺點: 依賴 Firebase (免費但得有 Google 帳號)
+
+### Action buttons (iOS + Android)
+- iOS: `UNNotificationCategory` + `UNNotificationAction`
+- Android: `Notification.Action` + `PendingIntent`
+- Expo 抽象: `Notifications.setNotificationCategoryAsync()`
+
+### 行動按鈕對應
+| 按鈕 | 動作 |
+|------|------|
+| 致電 | `tel:${phone}` (需先存家人電話, V2 才加) |
+| 傳 Line | Line URL scheme (`line://msg/text/...`) |
+| 安全詢問 | 呼叫 Backend → Line Notify 代發 |
+| 查看地圖 | deep link 回 app |
+
+---
+
+## 8. 部署 (Oracle 鳳凰城)
 
 ```
 Cloudflare (台灣 edge)
   ↓
 Nginx (reverse proxy + TLS)
   ↓
-Docker Compose
-  ├─ nextjs-app        (PWA)
+Docker Compose:
   ├─ api-server        (Fastify)
-  ├─ worker            (BullMQ, AI pipeline)
-  ├─ postgres + postgis
+  ├─ worker            (BullMQ AI pipeline)
+  ├─ postgres+postgis
   ├─ redis
   └─ watchtower        (自動更新)
 ```
 
-**鳳凰城延遲問題**
-- 台灣 → 鳳凰城 RTT 約 150-180ms
-- Cloudflare 快取靜態資源 → 首屏無感
-- 推播走 Web Push（Google/Apple 伺服器轉送），延遲由雲端服務決定，跟你的伺服器位置無關 ✅
-- API 請求（新增地點、調設定）才會受影響，但這些不是高頻操作
-
-→ **鳳凰城對這個 app 完全 OK**
+### 延遲考量
+- 台灣 → 鳳凰城 RTT ~150-180ms
+- 靜態資源: Cloudflare 台灣 edge
+- 推播: FCM 伺服器轉送, 機房位置影響極小
+- API 請求 (邀請、設定): 150ms 可接受 (非高頻)
 
 ---
 
-## 7. 成本估算（1000 活躍使用者）
+## 9. 成本估算 (1000 活躍)
 
-| 項目 | 月成本 | 備註 |
-|------|--------|------|
+| 項目 | 月 | 備註 |
+|------|----|------|
 | Oracle VM (現有) | $0 | 已有 |
-| Cloudflare | $0 | Free tier |
-| Claude Haiku API | ~$10 | 見 3.3 |
-| Google Geocoding | ~$15 | 積極快取後 |
-| 網域 | ~$1 | 攤提 |
-| **合計** | **~$26/月** | 每使用者 $0.026 |
+| Cloudflare Free | $0 | |
+| Firebase (FCM) | $0 | 免費額度夠 |
+| Claude Haiku | ~$10 | 見 §4 |
+| Google Geocoding | ~$15 | 積極快取 |
+| Line Notify | $0 | 免費 |
+| **合計** | **~$25/月** | 每用戶 $0.025 |
 
-擴張到 10K 使用者 → 約 $80-120/月，仍可控。
+10K 用戶 → ~$80-120/月。
 
 ---
 
-## 8. 開發里程碑（建議）
+## 10. 技術風險與 Plan B
+
+| 風險 | 可能 | 影響 | Plan B |
+|------|------|------|--------|
+| 新聞 RSS 延遲太久 | 高 | 高 | V2 接 Threads / X |
+| AI 分類誤報 >20% | 中 | 致命 | Kill-switch + 人工複核佇列 |
+| Geocoding 爆炸 | 中 | 中 | 自建 nominatim (OSM) |
+| FCM iOS 被限制 (推播靜音) | 低 | 高 | 直連 APNs + 轉送 |
+| Line Notify 關閉 | 低 | 中 | 改 Line Messaging API (需公司帳號) |
+| 法務 (爬蟲版權) | 中 | 高 | V1 只 RSS + 政府 Open API |
+
+---
+
+## 11. 開發里程碑
 
 | 階段 | 週數 | 產出 |
 |------|------|------|
-| **M1 資料 pipeline** | 2 週 | 爬中央社 + 消防開放資料 → AI 分類 → 寫入 DB，可用 SQL 查 |
-| **M2 匹配引擎 + 推播** | 1 週 | 新增測試使用者 → 手動塞事件 → 收到推播 |
-| **M3 PWA MVP** | 2 週 | 地圖 + 新增地點 + 設定頁 |
-| **M4 內測** | 1 週 | 找 10 個朋友裝，收集回饋 |
-| **M5 調校 + 公開** | 2 週 | 調整敏感度、修 bug、上線 |
+| **M1 資料 pipeline** | 2 週 | 爬 RSS + 消防 → AI 分類 → 寫 DB, SQL 可查 |
+| **M2 匹配 + 推播** | 1 週 | 手動塞事件 → 測試裝置收到有行動按鈕的推播 |
+| **M3 Mobile MVP** | 2 週 | 3 頁完整 + 邀請流程 QR 完成 |
+| **M4 內測** | 1 週 | 5 家庭、30 人, 實際使用收 retention 指標 |
+| **M5 調校 + 上線** | 2 週 | PH / Threads 北漂圈公開 |
 
-→ **8 週到公開 MVP**，前提是專職 1 人全職。
-
----
-
-## 9. 技術風險與 Plan B
-
-| 風險 | 機率 | 影響 | Plan B |
-|------|------|------|--------|
-| 新聞 RSS 延遲太久失去即時性 | 高 | 高 | 接社群 API 補即時性（V2） |
-| AI 誤判率過高 | 中 | 高 | 加人工複核佇列（每日 <20 則） |
-| Geocoding 成本爆炸 | 中 | 中 | 自建 nominatim（OSM 開源） |
-| Web Push iOS 支援度 | 低 | 中 | iOS 16.4+ 已支援 PWA push，夠用 |
-| 法務（爬蟲/版權） | 中 | 高 | V1 只用 RSS + 政府 Open API |
+**8 週到公開 MVP** (1 人全職, 含 CC pair)。
 
 ---
 
-## 10. V2 之後的擴展方向
-- 群眾回報（使用者可發事件，AI + 人工審核）
-- 歷史熱圖（哪些區域高風險）
-- 原生 App（React Native，共用 API）
-- 國際化（日本、東南亞）
-- 訂閱制（家庭方案：共享關注地點）
+## 12. V2+ 預留
+
+- 付費訂閱 tier (家庭方案)
+- 群眾回報 + AI/人工複核
+- Widget + Apple Watch
+- 熱圖 / 事件統計
+- 國際化 (日本首發, 類似 persona)
+- 企業版 (校園 / 物業 B2B)

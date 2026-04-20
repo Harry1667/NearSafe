@@ -4,6 +4,7 @@
  */
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Link } from 'expo-router';
 
 interface WatchedPersonStub {
   name: string;
@@ -37,9 +38,17 @@ export default function LocationsScreen() {
           </View>
         ))}
 
-        <Pressable style={styles.addButton}>
-          <Text style={styles.addButtonText}>+ 邀請家人</Text>
-        </Pressable>
+        <Link href="/invite/create" asChild>
+          <Pressable style={styles.addButton}>
+            <Text style={styles.addButtonText}>+ 邀請家人</Text>
+          </Pressable>
+        </Link>
+
+        <Link href="/invite/scan" asChild>
+          <Pressable style={styles.scanButton}>
+            <Text style={styles.scanButtonText}>我收到邀請 · 掃描 QR 或輸入邀請碼</Text>
+          </Pressable>
+        </Link>
       </ScrollView>
     </SafeAreaView>
   );
@@ -71,4 +80,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addButtonText: { color: '#475569', fontSize: 16, fontWeight: '600' },
+  scanButton: {
+    marginTop: 8,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+  },
+  scanButtonText: { color: '#64748b', fontSize: 13 },
 });
