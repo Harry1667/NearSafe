@@ -1,0 +1,23 @@
+{
+  "name": "nearsafe",
+  "version": "0.0.1",
+  "private": true,
+  "description": "NearSafe 家人守護版 monorepo root",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @nearsafe/api",
+    "dev:mobile": "npm run start -w @nearsafe/mobile",
+    "build:api": "npm run build -w @nearsafe/api",
+    "build:shared": "npm run build -w @nearsafe/shared",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:down": "docker compose -f infra/docker-compose.yml down",
+    "db:logs": "docker compose -f infra/docker-compose.yml logs -f"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

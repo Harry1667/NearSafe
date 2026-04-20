@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+.expo/
+.env
+.env.local
+*.tsbuildinfo
+drizzle/meta/
+infra/data/

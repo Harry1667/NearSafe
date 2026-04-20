@@ -1,0 +1,3 @@
+-- PostGIS 擴充, 容器初次啟動時執行
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
