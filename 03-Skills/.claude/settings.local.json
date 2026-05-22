@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf '~/.claude/skills/daily-standup' '~/.claude/skills/todo-review' '~/.claude/skills/env-check' '~/.claude/skills/deploy-sop' '~/.claude/skills/hdw-proxycli' '~/.claude/skills/infra-memory' '~/.claude/skills/git-safety')",
+      "Bash(mkdir -p /Users/harryhwa/Documents/0-Dev/0-WebDev/03-Skills/003-infra-memory /Users/harryhwa/Documents/0-Dev/0-WebDev/03-Skills/004-git-safety /Users/harryhwa/Documents/0-Dev/0-WebDev/03-Skills/005-daily-standup /Users/harryhwa/Documents/0-Dev/0-WebDev/03-Skills/006-todo-review /Users/harryhwa/Documents/0-Dev/0-WebDev/03-Skills/007-env-check)",
+      "Bash(mkdir -p ~/.claude/skills/react-best-practices ~/.claude/skills/frontend-design ~/.claude/skills/web-design-guidelines)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/react-best-practices/SKILL.md\" -o ~/.claude/skills/react-best-practices/SKILL.md)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/anthropics/skills/main/skills/frontend-design/SKILL.md\" -o ~/.claude/skills/frontend-design/SKILL.md)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/web-design-guidelines/SKILL.md\" -o ~/.claude/skills/web-design-guidelines/SKILL.md)",
+      "Bash(mkdir -p ~/.claude/skills/skill-creator)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/anthropics/skills/main/skills/skill-creator/SKILL.md\" -o ~/.claude/skills/skill-creator/SKILL.md)",
+      "Bash(mkdir -p ~/.claude/skills/composition-patterns ~/.claude/skills/webapp-testing ~/.claude/skills/mcp-builder)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/vercel-labs/agent-skills/main/skills/composition-patterns/SKILL.md\" -o ~/.claude/skills/composition-patterns/SKILL.md)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/anthropics/skills/main/skills/webapp-testing/SKILL.md\" -o ~/.claude/skills/webapp-testing/SKILL.md)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/anthropics/skills/main/skills/mcp-builder/SKILL.md\" -o ~/.claude/skills/mcp-builder/SKILL.md)"
+    ]
+  }
+}
