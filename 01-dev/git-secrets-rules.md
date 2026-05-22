@@ -29,7 +29,7 @@
 任何能讓別人**冒充你身份**的東西：
 
 ```
-❌ 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    ← GitHub PAT (ghp_ / ghs_ / gho_)
+❌ ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx    ← GitHub PAT (ghp_ / ghs_ / gho_)
 ❌ sk-proj-xxxxxxxxxxxxx                       ← OpenAI API key
 ❌ sk-ant-xxxxxxxxxxxxx                        ← Anthropic API key
 ❌ AKIAIOSFODNN7EXAMPLE                        ← AWS access key
