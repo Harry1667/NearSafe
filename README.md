@@ -27,3 +27,35 @@ npm install
 docker compose -f infra/docker-compose.yml up -d
 npm run dev
 ```
+
+---
+
+## English
+
+A family safety-alert app. When a fire, violent incident, or major traffic accident happens at a watched location, your family gets an immediate push — with one-tap Call and LINE buttons.
+
+### Use cases
+- Adult children working in the city → parents back home
+- Parents → kids in cram school
+
+### Features
+- Watched-location setup (tracks places, not people)
+- Two-way consent via QR-code invite, with opt-out at any time
+- Push notifications with action buttons: Call / LINE / Confirm Safe
+- V1 event types: fire / violence / major traffic accident
+
+### Tech stack
+- **Mobile**: React Native (Expo) + TypeScript
+- **Backend**: Node.js + Fastify + TypeScript
+- **DB**: PostgreSQL 16 + PostGIS + Drizzle ORM
+- **Queue**: Redis + BullMQ
+- **AI**: Claude Haiku 4.5 (event classification / summarization)
+- **Push**: FCM + APNs
+
+### Quick start
+```bash
+cd 02-web
+npm install
+docker compose -f infra/docker-compose.yml up -d
+npm run dev
+```
