@@ -10,15 +10,18 @@ struct SafetyMapView: View {
     @State private var selectedAlert: RegionAlert?
     @State private var showShelters = false
     @State private var showHospitals = false
+    /// nil＝全家；對應產品規格「可切換媽媽、弟弟或全家」
+    @State private var selectedMemberKey: String?
+    /// .automatic 讓鏡頭自動框住地圖內容（生活圈與事件），取代舊版寫死的台北市中心
+    @State private var cameraPosition: MapCameraPosition = .automatic
     // 用 @AppStorage 與設定頁共用同一旗標，修正舊版兩邊狀態不同步的問題
     @AppStorage(SettingsKeys.alertsPaused) private var isPaused = false
 
-    private let camera = MapCameraPosition.region(
-        MKCoordinateRegion(
-            center: .init(latitude: 25.035, longitude: 121.54),
-            span: .init(latitudeDelta: 0.12, longitudeDelta: 0.18)
-        )
-    )
+    /// 目前顯示對象（家人切換器過濾後）
+    private var visibleMembers: [LocalFamilyMember] {
+        guard let key = selectedMemberKey else { return members }
+        return members.filter { $0.memberKey == key }
+    }
 
     private var activeEvents: [LocalSafetyEvent] {
         events.filter { !$0.isEnded && !$0.isArchived }
@@ -27,7 +30,7 @@ struct SafetyMapView: View {
     private var attentionCount: Int {
         activeEvents.filter { event in
             event.isOfficiallyConfirmed
-                && !AlertPolicy.evaluate(event: event, members: members).matches.isEmpty
+                && !AlertPolicy.evaluate(event: event, members: visibleMembers).matches.isEmpty
         }.count
     }
 
@@ -44,9 +47,32 @@ struct SafetyMapView: View {
                 nearbyUpdates
             }
             .navigationTitle("安心圈")
-            .toolbar { layerMenu }
+            .toolbar {
+                memberPicker
+                layerMenu
+            }
             .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
             .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
+        }
+    }
+
+    /// 家人切換器：全家或個別家人（切換時鏡頭重新框選）
+    private var memberPicker: some View {
+        Menu {
+            Picker("顯示對象", selection: $selectedMemberKey) {
+                Text("全家").tag(String?.none)
+                ForEach(members) { member in
+                    Text(member.name).tag(String?.some(member.memberKey))
+                }
+            }
+        } label: {
+            Label(
+                visibleMembers.count == members.count ? "全家" : (visibleMembers.first?.name ?? "全家"),
+                systemImage: "person.2"
+            )
+        }
+        .onChange(of: selectedMemberKey) {
+            cameraPosition = .automatic
         }
     }
 
@@ -71,7 +97,7 @@ struct SafetyMapView: View {
         }
     }
 
-    /// 首頁一句話回答「我家人附近有什麼事？」，並附資料時效
+    /// 首頁一句話回答「我家人附近有什麼事？」，並附資料時效與暫停狀態
     private var statusBanner: some View {
         let hasAttention = attentionCount > 0
         return HStack {
@@ -82,9 +108,16 @@ struct SafetyMapView: View {
                      ? "家人生活圈附近有 \(attentionCount) 件需要注意的事件"
                      : "生活圈附近暫無立即危險")
                     .font(.subheadline.bold())
-                Text("事件以來源、時間與距離篩選；未驗證線索不會推播。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if isPaused {
+                    // 暫停是影響安全的狀態，必須在主橫幅明確可見，不能只靠小按鈕
+                    Text("提醒已暫停——事件仍會顯示，但不會推播。")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("事件以來源、時間與距離篩選；未驗證線索不會推播。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 DataFreshnessLabel()
             }
             Spacer()
@@ -98,8 +131,8 @@ struct SafetyMapView: View {
     }
 
     private var map: some View {
-        Map(initialPosition: camera) {
-            ForEach(members.flatMap(\.lifeCircles)) { circle in
+        Map(position: $cameraPosition) {
+            ForEach(visibleMembers.flatMap(\.lifeCircles)) { circle in
                 MapCircle(
                     center: .init(latitude: circle.latitude, longitude: circle.longitude),
                     radius: CLLocationDistance(circle.radiusMeters)
@@ -108,7 +141,8 @@ struct SafetyMapView: View {
                 .stroke(.indigo.opacity(0.4), lineWidth: 1)
             }
             ForEach(activeEvents) { event in
-                Annotation(event.eventType, coordinate: .init(latitude: event.latitude, longitude: event.longitude)) {
+                Annotation(event.isDrill ? "演練" : event.eventType,
+                           coordinate: .init(latitude: event.latitude, longitude: event.longitude)) {
                     Button {
                         selected = event
                     } label: {
@@ -143,10 +177,11 @@ struct SafetyMapView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .padding(.horizontal)
         .overlay(alignment: .bottomTrailing) {
-            Button(isPaused ? "提醒已暫停" : "暫停提醒", systemImage: "bell.slash") {
+            Button(isPaused ? "提醒已暫停" : "暫停提醒", systemImage: isPaused ? "bell.slash.fill" : "bell.slash") {
                 isPaused.toggle()
             }
             .font(.caption.bold())
+            .foregroundStyle(isPaused ? .orange : .primary)
             .padding(10)
             .background(.thinMaterial, in: Capsule())
             .padding(26)
@@ -159,11 +194,15 @@ struct SafetyMapView: View {
             if activeEvents.isEmpty {
                 ContentUnavailableView("目前沒有事件", systemImage: "checkmark.shield")
             } else {
-                ForEach(activeEvents.prefix(2)) { event in
+                // 依「離生活圈最近」排序，最相關的先看到
+                let sorted = activeEvents.sorted {
+                    nearestCircleDistance($0, visibleMembers) < nearestCircleDistance($1, visibleMembers)
+                }
+                ForEach(sorted.prefix(3)) { event in
                     Button {
                         selected = event
                     } label: {
-                        EventRow(event: event, members: members)
+                        EventRow(event: event, members: visibleMembers)
                     }
                     .buttonStyle(.plain)
                 }

@@ -12,14 +12,27 @@ struct EventListView: View {
     @State private var selectedAlert: RegionAlert?
 
     private var visibleEvents: [LocalSafetyEvent] { events.filter { !$0.isArchived } }
+    /// 需要注意＝官方確認「且真的落在某個生活圈的提醒範圍」（分類標籤與邏輯必須一致）
     private var attention: [LocalSafetyEvent] {
-        visibleEvents.filter { !$0.isEnded && $0.isOfficiallyConfirmed }
+        visibleEvents
+            .filter { !$0.isEnded && $0.isOfficiallyConfirmed && isInAnyCircle($0) }
+            .sorted { nearestCircleDistance($0, members) < nearestCircleDistance($1, members) }
+    }
+    /// 官方確認、但離所有生活圈較遠的事件另立分類，不冒充「需要注意」
+    private var elsewhere: [LocalSafetyEvent] {
+        visibleEvents
+            .filter { !$0.isEnded && $0.isOfficiallyConfirmed && !isInAnyCircle($0) }
+            .sorted { nearestCircleDistance($0, members) < nearestCircleDistance($1, members) }
     }
     private var confirming: [LocalSafetyEvent] {
         visibleEvents.filter { !$0.isEnded && !$0.isOfficiallyConfirmed }
     }
     private var ended: [LocalSafetyEvent] {
         Array(visibleEvents.filter(\.isEnded).prefix(20))
+    }
+
+    private func isInAnyCircle(_ event: LocalSafetyEvent) -> Bool {
+        !AlertPolicy.evaluate(event: event, members: members).matches.isEmpty
     }
 
     private var activeRegionAlerts: [RegionAlert] {
@@ -33,8 +46,9 @@ struct EventListView: View {
                     ContentUnavailableView("目前沒有事件", systemImage: "checkmark.shield")
                 }
                 regionAlertSection
-                section(title: "需要注意", subtitle: "官方確認且位於生活圈附近", items: attention)
+                section(title: "需要注意", subtitle: "官方確認且位於生活圈提醒範圍內", items: attention)
                 section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming)
+                section(title: "其他區域動態", subtitle: "官方事件，但離所有生活圈較遠", items: elsewhere)
                 section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended)
             }
             .navigationTitle("提醒中心")

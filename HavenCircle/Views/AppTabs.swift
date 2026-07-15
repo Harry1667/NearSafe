@@ -11,14 +11,21 @@ struct AppTabs: View {
         members.first { $0.relationship == "擁有者" }?.name ?? members.first?.name ?? "我"
     }
 
-    // DEBUG：--start-tab-safety 讓 App 直接開在安否分頁，方便自動化截圖驗證
-    @State private var selection: Int = {
+    // DEBUG：--start-tab <n> 讓 App 直接開在指定分頁，方便自動化截圖驗證
+    @State private var selection: Int = Self.initialTab()
+
+    private static func initialTab() -> Int {
         #if DEBUG
-        ProcessInfo.processInfo.arguments.contains("--start-tab-safety") ? 2 : 0
-        #else
-        0
+        let args = ProcessInfo.processInfo.arguments
+        if let flagIndex = args.firstIndex(of: "--start-tab"),
+           flagIndex + 1 < args.count,
+           let tab = Int(args[flagIndex + 1]) {
+            return min(max(tab, 0), 4)
+        }
+        if args.contains("--start-tab-safety") { return 2 }
         #endif
-    }()
+        return 0
+    }
 
     var body: some View {
         TabView(selection: $selection) {
