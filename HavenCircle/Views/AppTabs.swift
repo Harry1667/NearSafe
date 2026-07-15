@@ -22,28 +22,27 @@ struct AppTabs: View {
            let tab = Int(args[flagIndex + 1]) {
             return min(max(tab, 0), 4)
         }
-        if args.contains("--start-tab-safety") { return 2 }
         #endif
-        return 0
+        return TabRouter.mapTab  // 打開就是完整地圖
     }
 
     var body: some View {
         TabView(selection: Bindable(router).selection) {
-            SafetyMapView()
-                .tabItem { Label("安全地圖", systemImage: "map.fill") }
-                .tag(0)
             EventListView()
                 .tabItem { Label("提醒中心", systemImage: "bell.badge.fill") }
-                .tag(1)
-            SafetyCheckInView(myName: myName)
-                .tabItem { Label("安否", systemImage: "hand.raised.fingers.spread.fill") }
-                .tag(2)
-            FamilyListView()
+                .tag(TabRouter.eventsTab)
+            NavigationStack { HistoryView() }
+                .tabItem { Label("回顧", systemImage: "clock.arrow.circlepath") }
+                .tag(TabRouter.historyTab)
+            SafetyMapView()
+                .tabItem { Label("安全地圖", systemImage: "map.fill") }
+                .tag(TabRouter.mapTab)
+            FamilyHubView(myName: myName)
                 .tabItem { Label("家人", systemImage: "person.2.fill") }
-                .tag(3)
+                .tag(TabRouter.familyTab)
             SettingsView()
                 .tabItem { Label("設定", systemImage: "slider.horizontal.3") }
-                .tag(4)
+                .tag(TabRouter.settingsTab)
         }
         .tint(.indigo)
         .environment(router)

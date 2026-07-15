@@ -53,7 +53,7 @@ struct EventListView: View {
             }
             .navigationTitle("提醒中心")
             .toolbar {
-                NavigationLink { HistoryView() } label: { Label("回顧", systemImage: "clock.arrow.circlepath") }
+                // 「回顧」已升級為獨立分頁，這裡只留演練
                 Button("演練", systemImage: "bell.and.waves.left.and.right") { showDrill = true }
             }
             // 手動下拉刷新：重跑一次資料管線

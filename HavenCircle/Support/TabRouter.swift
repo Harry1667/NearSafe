@@ -5,15 +5,16 @@ import Observation
 @Observable
 @MainActor
 final class TabRouter {
-    static let mapTab = 0
-    static let eventsTab = 1
-    static let safetyTab = 2
+    /// 分頁順序：地圖置中，開 App 直接看到完整地圖
+    static let eventsTab = 0
+    static let historyTab = 1
+    static let mapTab = 2
     static let familyTab = 3
     static let settingsTab = 4
 
     var selection: Int
 
-    init(selection: Int = 0) {
+    init(selection: Int = TabRouter.mapTab) {
         self.selection = selection
     }
 }

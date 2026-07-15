@@ -21,30 +21,28 @@ struct SafetyCheckInView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                accountSection
-                if sync.state == .sharing || !sync.pings.isEmpty {
-                    checkInSection
-                    familyPingsSection
-                }
+        // 由 FamilyHubView 承載（提供 NavigationStack 與分段切換）
+        List {
+            accountSection
+            if sync.state == .sharing || !sync.pings.isEmpty {
+                checkInSection
+                familyPingsSection
             }
-            .navigationTitle("安否回報")
-            .toolbar {
-                Button("邀請家人", systemImage: "person.badge.plus") {
-                    Task { await startShare() }
-                }
-                .disabled(sync.state == .noAccount || isWorking)
-            }
-            .sheet(item: $shareSheet) { bundle in
-                CloudSharingSheet(share: bundle.share, container: bundle.container)
-            }
-            .task {
-                await sync.refreshAccountStatus()
-                await sync.fetchPings()
-            }
-            .refreshable { await sync.fetchPings() }
         }
+        .toolbar {
+            Button("邀請家人", systemImage: "person.badge.plus") {
+                Task { await startShare() }
+            }
+            .disabled(sync.state == .noAccount || isWorking)
+        }
+        .sheet(item: $shareSheet) { bundle in
+            CloudSharingSheet(share: bundle.share, container: bundle.container)
+        }
+        .task {
+            await sync.refreshAccountStatus()
+            await sync.fetchPings()
+        }
+        .refreshable { await sync.fetchPings() }
     }
 
     @ViewBuilder
