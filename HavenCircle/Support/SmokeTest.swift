@@ -15,6 +15,18 @@ enum SmokeTest {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("--smoke-onboard") { onboard(context: context) }
         if args.contains("--smoke-drill") { drill(context: context) }
+        if args.contains("--smoke-cloud") { Task { await cloud() } }
+    }
+
+    /// 驗證 CloudKit 降級：無 iCloud 帳號時，帳號狀態應為 noAccount，
+    /// 且送出回報不應讓 App 崩潰（僅記錄錯誤並設為 error 狀態）。
+    private static func cloud() async {
+        AppLog.cloud.notice("SMOKE cloud：進入（Task 已啟動）")
+        let sync = FamilySyncService()
+        await sync.refreshAccountStatus()
+        AppLog.cloud.notice("SMOKE cloud：帳號狀態 = \(String(describing: sync.state), privacy: .public)")
+        await sync.postPing(senderName: "測試者", status: .safe, note: "冒煙測試")
+        AppLog.cloud.notice("SMOKE cloud：postPing 後狀態 = \(String(describing: sync.state), privacy: .public)，未崩潰")
     }
 
     private static func onboard(context: ModelContext) {
