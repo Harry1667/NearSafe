@@ -51,8 +51,19 @@ struct SafetyMapView: View {
                 memberPicker
                 layerMenu
             }
-            .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
-            .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
+            // 對應規格「點選標記後，底部出現事件摘要；上滑看完整資訊」：
+            // 半版先看摘要（狀態＋提醒判斷），上拉展開全頁；半版時地圖仍可互動
+            .sheet(item: $selected) {
+                EventDetailView(event: $0, members: members)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            }
+            .sheet(item: $selectedAlert) {
+                RegionAlertDetailView(alert: $0, members: members)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
 

@@ -6,9 +6,21 @@ struct FamilyListView: View {
     @Query private var members: [LocalFamilyMember]
     @State private var adding = false
 
+    @Environment(TabRouter.self) private var router
+
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Button {
+                        router.selection = TabRouter.safetyTab
+                    } label: {
+                        Label("邀請家人加入安心圈", systemImage: "person.crop.circle.badge.plus")
+                    }
+                    Text("家人接受邀請後，事件發生時可互相回報平安。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(members) { member in
                     NavigationLink {
                         MemberDetailView(member: member)
@@ -45,4 +57,5 @@ struct FamilyListView: View {
 #Preview {
     FamilyListView()
         .modelContainer(PreviewSupport.container())
+        .environment(TabRouter())
 }

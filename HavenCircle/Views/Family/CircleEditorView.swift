@@ -89,6 +89,10 @@ struct CircleEditorView: View {
         do {
             found = try await MKLocalSearch(request: request).start().mapItems.first
             searchFailed = (found == nil)
+            // 搜尋成功且尚未手動選行政區時，從地址文字自動帶入
+            if district == Districts.unspecified {
+                district = OnboardingView.guessDistrict(from: "\(found?.name ?? "") \(address)")
+            }
         } catch {
             AppLog.data.error("地點搜尋失敗：\(error.localizedDescription)")
             found = nil

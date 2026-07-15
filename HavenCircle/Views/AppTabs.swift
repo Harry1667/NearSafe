@@ -12,7 +12,7 @@ struct AppTabs: View {
     }
 
     // DEBUG：--start-tab <n> 讓 App 直接開在指定分頁，方便自動化截圖驗證
-    @State private var selection: Int = Self.initialTab()
+    @State private var router = TabRouter(selection: Self.initialTab())
 
     private static func initialTab() -> Int {
         #if DEBUG
@@ -28,7 +28,7 @@ struct AppTabs: View {
     }
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: Bindable(router).selection) {
             SafetyMapView()
                 .tabItem { Label("安全地圖", systemImage: "map.fill") }
                 .tag(0)
@@ -46,6 +46,7 @@ struct AppTabs: View {
                 .tag(4)
         }
         .tint(.indigo)
+        .environment(router)
         // App 每次回到前景重跑資料管線（含每日摘要重算）。
         // 原型限制：沒有背景更新，用前景時機讓資料與摘要盡量新鮮。
         .onChange(of: scenePhase) { _, phase in
