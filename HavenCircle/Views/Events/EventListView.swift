@@ -42,6 +42,7 @@ struct EventListView: View {
     var body: some View {
         NavigationStack {
             List {
+                miniMapSection
                 if visibleEvents.isEmpty && activeRegionAlerts.isEmpty {
                     ContentUnavailableView("目前沒有事件", systemImage: "checkmark.shield")
                 }
@@ -61,6 +62,19 @@ struct EventListView: View {
             .sheet(isPresented: $showDrill) { DrillView() }
             .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
             .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
+        }
+    }
+
+    /// 頂部精簡地圖：只放進行中的事件，點標記開詳情
+    @ViewBuilder
+    private var miniMapSection: some View {
+        let active = visibleEvents.filter { !$0.isEnded }
+        if !active.isEmpty {
+            Section {
+                EventsMiniMap(events: active, members: members) { selected = $0 }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
         }
     }
 
