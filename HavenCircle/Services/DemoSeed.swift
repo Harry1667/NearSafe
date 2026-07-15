@@ -22,5 +22,6 @@ enum DemoSeed {
             expiresAt: .now.addingTimeInterval(86_400)
         ))
         context.saveReporting()
+        DataFreshness.markRefreshedNow()
     }
 }

@@ -12,6 +12,13 @@ final class LocalLifeCircle {
     var radiusMeters: Int
     /// 這個生活圈要接收的事件類型（改為陣列，取代舊版頓號分隔字串）
     var alertTypes: [String]
+    /// 時段感知：只在指定作息時段推播（例如公司圈只在上班時間）。
+    /// 時段外的官方事件仍會顯示在 App 內，只是不推播——這是對抗通知疲勞的主要機制。
+    var scheduleEnabled: Bool = false
+    /// 適用星期（Calendar.weekday 慣例：1=週日 … 7=週六）
+    var scheduleWeekdays: [Int] = [1, 2, 3, 4, 5, 6, 7]
+    var scheduleStartHour: Int = 0
+    var scheduleEndHour: Int = 24
     var member: LocalFamilyMember?
 
     init(
@@ -32,6 +39,27 @@ final class LocalLifeCircle {
         self.radiusMeters = radiusMeters
         self.alertTypes = alertTypes
         self.member = member
+    }
+}
+
+extension LocalLifeCircle {
+    /// 事件發生時間是否落在這個生活圈的提醒時段內
+    func isWithinSchedule(at date: Date = .now) -> Bool {
+        guard scheduleEnabled else { return true }
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: date)
+        let hour = calendar.component(.hour, from: date)
+        return scheduleWeekdays.contains(weekday)
+            && hour >= scheduleStartHour
+            && hour < scheduleEndHour
+    }
+
+    /// 顯示用的時段描述
+    var scheduleText: String {
+        guard scheduleEnabled else { return "全天提醒" }
+        let names = ["日", "一", "二", "三", "四", "五", "六"]
+        let days = scheduleWeekdays.sorted().compactMap { $0 >= 1 && $0 <= 7 ? names[$0 - 1] : nil }
+        return "週\(days.joined(separator: "、")) \(scheduleStartHour):00–\(scheduleEndHour):00"
     }
 }
 

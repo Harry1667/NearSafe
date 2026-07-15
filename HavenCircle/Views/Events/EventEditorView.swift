@@ -5,6 +5,7 @@ import SwiftData
 struct EventEditorView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var members: [LocalFamilyMember]
     @State private var title = ""
     @State private var type = EventCategory.fire
     @State private var location = "台北市"
@@ -55,14 +56,10 @@ struct EventEditorView: View {
         )
         context.insert(event)
         context.saveReporting()
-        if official {
-            Task {
-                await NotificationScheduler.scheduleAlert(
-                    title: event.title,
-                    body: "\(event.approximateLocation)附近有需要注意的事件。",
-                    id: event.eventKey
-                )
-            }
+        DataFreshness.markRefreshedNow()
+        // 走正式的提醒決策管線：不在生活圈內或未驗證的事件不會推播（與正式資料流一致）
+        Task {
+            await NotificationScheduler.notifyIfNeeded(for: event, members: members)
         }
         dismiss()
     }

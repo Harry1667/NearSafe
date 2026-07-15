@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import UserNotifications
 import os
 
 @main
@@ -13,6 +14,8 @@ struct HavenCircleApp: App {
 
     init() {
         modelContainer = Self.makeContainer()
+        // 前景也要顯示通知橫幅（演練模式必要）
+        UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
     }
 
     /// 建立本機資料庫。取代舊版 try!：schema 變動導致遷移失敗時，
@@ -45,7 +48,12 @@ struct HavenCircleApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .task { DemoSeed.insertIfNeeded(into: modelContainer.mainContext) }
+                .task {
+                    DemoSeed.insertIfNeeded(into: modelContainer.mainContext)
+                    #if DEBUG
+                    SmokeTest.runIfNeeded(context: modelContainer.mainContext)
+                    #endif
+                }
         }
         .modelContainer(modelContainer)
     }

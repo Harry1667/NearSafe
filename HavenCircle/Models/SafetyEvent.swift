@@ -8,6 +8,12 @@ enum TrustStatus {
     static let confirming = "持續確認中"
 }
 
+/// 事件生命週期狀態機：進行中 → 已解除（解除時發送解除通知，關閉使用者的焦慮迴圈）
+enum EventStatus: String {
+    case active = "進行中"
+    case resolved = "已解除"
+}
+
 @Model
 final class LocalSafetyEvent {
     @Attribute(.unique) var eventKey: String
@@ -28,6 +34,12 @@ final class LocalSafetyEvent {
     /// 相似事件去重群組
     var deduplicationGroup: String
     var expiresAt: Date
+    /// 生命週期狀態（EventStatus 的 rawValue；新欄位給預設值以支援輕量遷移）
+    var status: String = EventStatus.active.rawValue
+    /// 演練模式產生的模擬事件
+    var isDrill: Bool = false
+    /// 已封存（過期後保留供歷史回顧，不再出現在提醒中心）
+    var isArchived: Bool = false
 
     init(
         eventKey: String,
@@ -44,7 +56,9 @@ final class LocalSafetyEvent {
         trustStatus: String,
         severity: String,
         deduplicationGroup: String,
-        expiresAt: Date
+        expiresAt: Date,
+        status: EventStatus = .active,
+        isDrill: Bool = false
     ) {
         self.eventKey = eventKey
         self.title = title
@@ -61,6 +75,8 @@ final class LocalSafetyEvent {
         self.severity = severity
         self.deduplicationGroup = deduplicationGroup
         self.expiresAt = expiresAt
+        self.status = status.rawValue
+        self.isDrill = isDrill
     }
 }
 
@@ -71,4 +87,18 @@ extension LocalSafetyEvent {
     }
 
     var isExpired: Bool { expiresAt <= .now }
+
+    var isResolved: Bool { status == EventStatus.resolved.rawValue }
+
+    /// 提醒中心「已結束」分類：使用者標記解除、或已過期
+    var isEnded: Bool { isResolved || isExpired }
+
+    /// 對使用者顯示的狀態文字（不能只靠顏色）
+    var statusText: String { isEnded ? EventStatus.resolved.rawValue : EventStatus.active.rawValue }
+
+    /// 標記為已解除（呼叫端負責存檔與發送解除通知）
+    func resolve() {
+        status = EventStatus.resolved.rawValue
+        updatedAt = .now
+    }
 }

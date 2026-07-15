@@ -18,7 +18,7 @@ struct MemberDetailView: View {
                         Text("\(circle.encryptedAddress) · 半徑 \(circle.radiusMeters) 公尺")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text("提醒：\(circle.alertTypes.joined(separator: "、"))")
+                        Text("提醒：\(circle.alertTypes.joined(separator: "、")) · \(circle.scheduleText)")
                             .font(.caption)
                             .foregroundStyle(.indigo)
                     }

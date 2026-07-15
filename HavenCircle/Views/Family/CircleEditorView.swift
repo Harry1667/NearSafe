@@ -12,6 +12,10 @@ struct CircleEditorView: View {
     @State private var radius = 1000
     @State private var found: MKMapItem?
     @State private var searchFailed = false
+    @State private var scheduleEnabled = false
+    @State private var weekdays: Set<Int> = [2, 3, 4, 5, 6]  // 預設週一到週五
+    @State private var startHour = 8
+    @State private var endHour = 19
 
     var body: some View {
         NavigationStack {
@@ -32,6 +36,7 @@ struct CircleEditorView: View {
                 Text("提醒類型：\(EventCategory.defaultSelection.joined(separator: "、"))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                scheduleSection
             }
             .navigationTitle("新增生活圈")
             .toolbar {
@@ -41,6 +46,32 @@ struct CircleEditorView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
+            }
+        }
+    }
+
+    /// 時段感知設定：公司圈只在上班時間推播、住家圈只在夜間等。
+    /// 時段外的官方事件仍會顯示在 App 內，只是不推播。
+    private var scheduleSection: some View {
+        Section {
+            Toggle("只在特定時段提醒", isOn: $scheduleEnabled)
+            if scheduleEnabled {
+                HStack {
+                    ForEach(1...7, id: \.self) { day in
+                        let names = ["日", "一", "二", "三", "四", "五", "六"]
+                        Button(names[day - 1]) {
+                            if weekdays.contains(day) { weekdays.remove(day) } else { weekdays.insert(day) }
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(weekdays.contains(day) ? .indigo : .gray)
+                        .font(.caption)
+                    }
+                }
+                Stepper("開始：\(startHour):00", value: $startHour, in: 0...23)
+                Stepper("結束：\(endHour):00", value: $endHour, in: (startHour + 1)...24)
+                Text("時段外的官方事件仍會顯示在 App 內，只是不推播。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -60,7 +91,7 @@ struct CircleEditorView: View {
 
     private func save() {
         let coordinate = found?.location.coordinate ?? .init(latitude: 25.035, longitude: 121.54)
-        context.insert(LocalLifeCircle(
+        let circle = LocalLifeCircle(
             name: name.isEmpty ? "生活圈" : name,
             encryptedAddress: found?.name ?? address,
             latitude: coordinate.latitude,
@@ -68,7 +99,12 @@ struct CircleEditorView: View {
             radiusMeters: radius,
             alertTypes: EventCategory.defaultSelection,
             member: member
-        ))
+        )
+        circle.scheduleEnabled = scheduleEnabled
+        circle.scheduleWeekdays = Array(weekdays).sorted()
+        circle.scheduleStartHour = startHour
+        circle.scheduleEndHour = endHour
+        context.insert(circle)
         context.saveReporting()
         dismiss()
     }

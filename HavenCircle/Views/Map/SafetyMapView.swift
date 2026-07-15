@@ -17,7 +17,14 @@ struct SafetyMapView: View {
     )
 
     private var activeEvents: [LocalSafetyEvent] {
-        events.filter { !$0.isExpired }
+        events.filter { !$0.isEnded && !$0.isArchived }
+    }
+
+    private var attentionCount: Int {
+        activeEvents.filter { event in
+            event.isOfficiallyConfirmed
+                && !AlertPolicy.evaluate(event: event, members: members).matches.isEmpty
+        }.count
     }
 
     var body: some View {
@@ -32,20 +39,29 @@ struct SafetyMapView: View {
         }
     }
 
+    /// 首頁一句話回答「我家人附近有什麼事？」，並附資料時效
     private var statusBanner: some View {
-        HStack {
-            Image(systemName: "checkmark.shield.fill").foregroundStyle(.green)
+        let hasAttention = attentionCount > 0
+        return HStack {
+            Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                .foregroundStyle(hasAttention ? .red : .green)
             VStack(alignment: .leading) {
-                Text("生活圈附近暫無立即危險")
+                Text(hasAttention
+                     ? "家人生活圈附近有 \(attentionCount) 件需要注意的事件"
+                     : "生活圈附近暫無立即危險")
                     .font(.subheadline.bold())
                 Text("事件以來源、時間與距離篩選；未驗證線索不會推播。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                DataFreshnessLabel()
             }
             Spacer()
         }
         .padding(12)
-        .background(.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+        .background(
+            (hasAttention ? Color.red : Color.green).opacity(0.1),
+            in: RoundedRectangle(cornerRadius: 14)
+        )
         .padding(.horizontal)
     }
 
