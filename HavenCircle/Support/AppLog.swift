@@ -9,6 +9,14 @@ enum AppLog {
     static let notifications = Logger(subsystem: subsystem, category: "notifications")
     static let pipeline = Logger(subsystem: subsystem, category: "pipeline")
     static let cloud = Logger(subsystem: subsystem, category: "cloud")
+
+    /// 純字串的錯誤記錄包裝。
+    /// 為什麼存在：專案開了 MemberImportVisibility，直接呼叫 Logger 的插值方法
+    /// 需要每個檔案自己 import os；View 層改用這個包裝就完全不碰 os 型別，
+    /// 也避免 Xcode 索引器狀態不同步時在 View 檔誤報 os 相關診斷。
+    static func cloudError(_ message: String) {
+        cloud.error("\(message, privacy: .public)")
+    }
 }
 
 extension ModelContext {

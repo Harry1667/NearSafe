@@ -1,6 +1,5 @@
 import SwiftUI
 import CloudKit
-import os
 
 /// 安否回報中心：雙向閉環的回報端。
 /// - 上半：我一鍵回報「我平安 / 需要協助」
@@ -135,7 +134,7 @@ struct SafetyCheckInView: View {
             let (share, container) = try await sync.makeShare()
             shareSheet = ShareBundle(share: share, container: container)
         } catch {
-            AppLog.cloud.error("建立分享失敗：\(error.localizedDescription)")
+            AppLog.cloudError("建立分享失敗：\(error.localizedDescription)")
         }
     }
 
