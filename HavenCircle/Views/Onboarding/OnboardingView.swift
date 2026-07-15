@@ -46,7 +46,7 @@ struct OnboardingView: View {
     private func finishSetup() {
         let me = LocalFamilyMember(name: name.isEmpty ? "我" : name, relationship: "擁有者")
         context.insert(me)
-        context.insert(LocalLifeCircle(
+        let circle = LocalLifeCircle(
             name: placeName.isEmpty ? "住家" : placeName,
             encryptedAddress: address,
             latitude: 25.0525,
@@ -54,8 +54,13 @@ struct OnboardingView: View {
             radiusMeters: radius,
             alertTypes: EventCategory.defaultSelection,
             member: me
-        ))
+        )
+        // 預設座標與行政區對應「台北市南港區」；之後可在生活圈編輯改為實際地點
+        circle.district = "南港區"
+        context.insert(circle)
         context.saveReporting()
+        // 首次設定完成是請求通知權限的最佳時機（使用者剛表達了「想被提醒」的意圖）
+        Task { _ = await NotificationScheduler.requestPermission() }
     }
 }
 

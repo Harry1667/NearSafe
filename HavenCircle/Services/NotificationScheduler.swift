@@ -29,8 +29,11 @@ enum NotificationScheduler {
             AppLog.notifications.info("提醒已停用或暫停，略過通知：\(id)")
             return
         }
-        guard await requestPermission() else {
-            AppLog.notifications.info("未取得通知權限，略過通知：\(id)")
+        // 只檢查現有權限，不在這裡觸發系統對話框——
+        // 否則資料管線會在刷新途中被權限框卡住。權限請求只發生在
+        // 明確的 UX 時機（首次設定完成、演練頁、設定頁按鈕）。
+        guard await authorizationStatus() == .authorized else {
+            AppLog.notifications.info("尚未取得通知權限，略過通知：\(id)")
             return
         }
         let content = UNMutableNotificationContent()
@@ -63,6 +66,8 @@ enum NotificationScheduler {
             body: "\(decision.reason)。",
             id: event.eventKey
         )
+        // 標記已推播：同一事件不重複打擾（通知限流的最小單位）
+        event.hasNotified = true
         return decision
     }
 

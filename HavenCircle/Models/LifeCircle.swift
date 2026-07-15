@@ -19,6 +19,8 @@ final class LocalLifeCircle {
     var scheduleWeekdays: [Int] = [1, 2, 3, 4, 5, 6, 7]
     var scheduleStartHour: Int = 0
     var scheduleEndHour: Int = 24
+    /// 所在行政區（供區域型警報比對；「未指定」表示不參與區域警報）
+    var district: String = "未指定"
     var member: LocalFamilyMember?
 
     init(

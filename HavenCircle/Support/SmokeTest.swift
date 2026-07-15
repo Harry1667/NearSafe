@@ -25,8 +25,8 @@ enum SmokeTest {
         }
         let me = LocalFamilyMember(name: "測試者", relationship: "擁有者")
         context.insert(me)
-        // 座標選在信義區，會命中 DemoSeed 的示範火警事件（距離約 340 公尺）
-        context.insert(LocalLifeCircle(
+        // 座標選在信義區，會命中 mock 管線的示範火警事件（距離約 340 公尺）
+        let circle = LocalLifeCircle(
             name: "住家",
             encryptedAddress: "台北市信義區",
             latitude: 25.0330,
@@ -34,7 +34,9 @@ enum SmokeTest {
             radiusMeters: 1000,
             alertTypes: EventCategory.defaultSelection,
             member: me
-        ))
+        )
+        circle.district = "信義區"
+        context.insert(circle)
         context.saveReporting()
         AppLog.pipeline.notice("SMOKE onboard：完成")
     }

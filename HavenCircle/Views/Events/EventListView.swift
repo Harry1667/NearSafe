@@ -6,8 +6,10 @@ struct EventListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \LocalSafetyEvent.occurredAt, order: .reverse) private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
+    @Query private var regionAlerts: [RegionAlert]
     @State private var showDrill = false
     @State private var selected: LocalSafetyEvent?
+    @State private var selectedAlert: RegionAlert?
 
     private var visibleEvents: [LocalSafetyEvent] { events.filter { !$0.isArchived } }
     private var attention: [LocalSafetyEvent] {
@@ -20,22 +22,47 @@ struct EventListView: View {
         Array(visibleEvents.filter(\.isEnded).prefix(20))
     }
 
+    private var activeRegionAlerts: [RegionAlert] {
+        regionAlerts.filter { !$0.isEnded }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                if visibleEvents.isEmpty {
+                if visibleEvents.isEmpty && activeRegionAlerts.isEmpty {
                     ContentUnavailableView("目前沒有事件", systemImage: "checkmark.shield")
                 }
+                regionAlertSection
                 section(title: "需要注意", subtitle: "官方確認且位於生活圈附近", items: attention)
                 section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming)
                 section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended)
             }
             .navigationTitle("提醒中心")
             .toolbar {
+                NavigationLink { HistoryView() } label: { Label("回顧", systemImage: "clock.arrow.circlepath") }
                 Button("演練", systemImage: "bell.and.waves.left.and.right") { showDrill = true }
             }
+            // 手動下拉刷新：重跑一次資料管線
+            .refreshable { await EventPipeline.refresh(context: context) }
             .sheet(isPresented: $showDrill) { DrillView() }
             .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
+            .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
+        }
+    }
+
+    @ViewBuilder
+    private var regionAlertSection: some View {
+        if !activeRegionAlerts.isEmpty {
+            Section("區域警報") {
+                ForEach(activeRegionAlerts) { alert in
+                    Button {
+                        selectedAlert = alert
+                    } label: {
+                        RegionAlertBanner(alert: alert, members: members)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 

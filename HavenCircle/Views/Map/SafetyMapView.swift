@@ -5,7 +5,11 @@ import MapKit
 struct SafetyMapView: View {
     @Query private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
+    @Query private var regionAlerts: [RegionAlert]
     @State private var selected: LocalSafetyEvent?
+    @State private var selectedAlert: RegionAlert?
+    @State private var showShelters = false
+    @State private var showHospitals = false
     // 用 @AppStorage 與設定頁共用同一旗標，修正舊版兩邊狀態不同步的問題
     @AppStorage(SettingsKeys.alertsPaused) private var isPaused = false
 
@@ -27,15 +31,43 @@ struct SafetyMapView: View {
         }.count
     }
 
+    private var activeRegionAlerts: [RegionAlert] {
+        regionAlerts.filter { !$0.isEnded }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 10) {
                 statusBanner
+                regionAlertBanners
                 map
                 nearbyUpdates
             }
             .navigationTitle("安心圈")
+            .toolbar { layerMenu }
             .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
+            .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
+        }
+    }
+
+    /// 圖層開關：緊急資源預設關閉，維持「安靜的地圖」
+    private var layerMenu: some View {
+        Menu("圖層", systemImage: "square.3.layers.3d") {
+            Toggle("避難收容所", isOn: $showShelters)
+            Toggle("急救責任醫院", isOn: $showHospitals)
+        }
+    }
+
+    @ViewBuilder
+    private var regionAlertBanners: some View {
+        ForEach(activeRegionAlerts) { alert in
+            Button {
+                selectedAlert = alert
+            } label: {
+                RegionAlertBanner(alert: alert, members: members)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal)
         }
     }
 
@@ -84,6 +116,26 @@ struct SafetyMapView: View {
                             .foregroundStyle(.white)
                             .padding(9)
                             .background(event.isOfficiallyConfirmed ? .red : .orange, in: Circle())
+                    }
+                }
+            }
+            if showShelters {
+                ForEach(EmergencyResourceStore.shelters) { resource in
+                    Annotation(resource.name, coordinate: .init(latitude: resource.latitude, longitude: resource.longitude)) {
+                        Image(systemName: "tent.fill")
+                            .foregroundStyle(.white)
+                            .padding(7)
+                            .background(.green, in: Circle())
+                    }
+                }
+            }
+            if showHospitals {
+                ForEach(EmergencyResourceStore.hospitals) { resource in
+                    Annotation(resource.name, coordinate: .init(latitude: resource.latitude, longitude: resource.longitude)) {
+                        Image(systemName: "cross.case.fill")
+                            .foregroundStyle(.white)
+                            .padding(7)
+                            .background(.teal, in: Circle())
                     }
                 }
             }

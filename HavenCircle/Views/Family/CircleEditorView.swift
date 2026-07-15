@@ -12,6 +12,7 @@ struct CircleEditorView: View {
     @State private var radius = 1000
     @State private var found: MKMapItem?
     @State private var searchFailed = false
+    @State private var district = Districts.unspecified
     @State private var scheduleEnabled = false
     @State private var weekdays: Set<Int> = [2, 3, 4, 5, 6]  // 預設週一到週五
     @State private var startHour = 8
@@ -33,6 +34,12 @@ struct CircleEditorView: View {
                         .foregroundStyle(.orange)
                 }
                 Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
+                Picker("所在行政區", selection: $district) {
+                    ForEach(Districts.all, id: \.self) { Text($0) }
+                }
+                Text("行政區用於颱風、豪雨等區域型警報的比對。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("提醒類型：\(EventCategory.defaultSelection.joined(separator: "、"))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -104,6 +111,7 @@ struct CircleEditorView: View {
         circle.scheduleWeekdays = Array(weekdays).sorted()
         circle.scheduleStartHour = startHour
         circle.scheduleEndHour = endHour
+        circle.district = district
         context.insert(circle)
         context.saveReporting()
         dismiss()

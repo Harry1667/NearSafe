@@ -1,0 +1,20 @@
+[
+  { "id": "h-ntuh", "name": "台大醫院", "kind": "急救責任醫院", "district": "中正區", "address": "台北市中正區中山南路7號", "latitude": 25.0408, "longitude": 121.5192 },
+  { "id": "h-mackay", "name": "馬偕紀念醫院", "kind": "急救責任醫院", "district": "中山區", "address": "台北市中山區中山北路二段92號", "latitude": 25.0585, "longitude": 121.5223 },
+  { "id": "h-vghtpe", "name": "臺北榮民總醫院", "kind": "急救責任醫院", "district": "北投區", "address": "台北市北投區石牌路二段201號", "latitude": 25.1207, "longitude": 121.5205 },
+  { "id": "h-tsgh", "name": "三軍總醫院內湖院區", "kind": "急救責任醫院", "district": "內湖區", "address": "台北市內湖區成功路二段325號", "latitude": 25.0713, "longitude": 121.5903 },
+  { "id": "h-wanfang", "name": "萬芳醫院", "kind": "急救責任醫院", "district": "文山區", "address": "台北市文山區興隆路三段111號", "latitude": 25.0007, "longitude": 121.5581 },
+  { "id": "h-renai", "name": "臺北市立聯合醫院仁愛院區", "kind": "急救責任醫院", "district": "大安區", "address": "台北市大安區仁愛路四段10號", "latitude": 25.0377, "longitude": 121.5462 },
+  { "id": "h-fareast", "name": "亞東紀念醫院", "kind": "急救責任醫院", "district": "板橋區", "address": "新北市板橋區南雅南路二段21號", "latitude": 24.9985, "longitude": 121.4527 },
+  { "id": "h-shuanho", "name": "雙和醫院", "kind": "急救責任醫院", "district": "中和區", "address": "新北市中和區中正路291號", "latitude": 24.9911, "longitude": 121.4913 },
+  { "id": "h-mackay-tamsui", "name": "淡水馬偕紀念醫院", "kind": "急救責任醫院", "district": "淡水區", "address": "新北市淡水區民生路45號", "latitude": 25.1786, "longitude": 121.4600 },
+  { "id": "h-tzuchi", "name": "台北慈濟醫院", "kind": "急救責任醫院", "district": "新店區", "address": "新北市新店區建國路289號", "latitude": 24.9679, "longitude": 121.5416 },
+  { "id": "s-daan-park", "name": "大安森林公園", "kind": "避難收容所", "district": "大安區", "address": "台北市大安區新生南路二段1號", "latitude": 25.0296, "longitude": 121.5357 },
+  { "id": "s-cks", "name": "中正紀念堂廣場", "kind": "避難收容所", "district": "中正區", "address": "台北市中正區中山南路21號", "latitude": 25.0347, "longitude": 121.5217 },
+  { "id": "s-rongxing", "name": "榮星花園公園", "kind": "避難收容所", "district": "中山區", "address": "台北市中山區民權東路三段1號", "latitude": 25.0620, "longitude": 121.5410 },
+  { "id": "s-nangang-park", "name": "南港公園", "kind": "避難收容所", "district": "南港區", "address": "台北市南港區東新街170號", "latitude": 25.0430, "longitude": 121.5990 },
+  { "id": "s-xinyi-square", "name": "信義廣場（市府前廣場）", "kind": "避難收容所", "district": "信義區", "address": "台北市信義區市府路1號", "latitude": 25.0375, "longitude": 121.5637 },
+  { "id": "s-banqiao-stadium", "name": "板橋第一運動場", "kind": "避難收容所", "district": "板橋區", "address": "新北市板橋區漢生東路278號", "latitude": 25.0146, "longitude": 121.4665 },
+  { "id": "s-sanchong-stadium", "name": "三重綜合運動場", "kind": "避難收容所", "district": "三重區", "address": "新北市三重區集美街60號", "latitude": 25.0716, "longitude": 121.4890 },
+  { "id": "s-xindian-sunshine", "name": "新店陽光運動公園", "kind": "避難收容所", "district": "新店區", "address": "新北市新店區安業街", "latitude": 24.9823, "longitude": 121.5240 }
+]

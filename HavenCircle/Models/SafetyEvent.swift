@@ -38,6 +38,8 @@ final class LocalSafetyEvent {
     var status: String = EventStatus.active.rawValue
     /// 演練模式產生的模擬事件
     var isDrill: Bool = false
+    /// 是否已成功推播過（避免同一事件重複打擾；生活圈事後新增時補通知也靠它判斷）
+    var hasNotified: Bool = false
     /// 已封存（過期後保留供歷史回顧，不再出現在提醒中心）
     var isArchived: Bool = false
 

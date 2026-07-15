@@ -22,7 +22,7 @@ struct HavenCircleApp: App {
     /// 先刪除舊資料庫重建（原型階段可接受），再不行才退回記憶體模式，
     /// 每一步都記錄原因，不讓 App 無聲閃退。
     private static func makeContainer() -> ModelContainer {
-        let schema = Schema([LocalSafetyEvent.self, LocalFamilyMember.self, LocalLifeCircle.self])
+        let schema = Schema([LocalSafetyEvent.self, LocalFamilyMember.self, LocalLifeCircle.self, RegionAlert.self])
         let config = ModelConfiguration(schema: schema)
         do {
             return try ModelContainer(for: schema, configurations: [config])
@@ -49,10 +49,11 @@ struct HavenCircleApp: App {
         WindowGroup {
             ContentView()
                 .task {
-                    DemoSeed.insertIfNeeded(into: modelContainer.mainContext)
                     #if DEBUG
                     SmokeTest.runIfNeeded(context: modelContainer.mainContext)
                     #endif
+                    // 啟動即跑一次資料管線（mock 來源；階段 4 換成真實來源）
+                    await EventPipeline.refresh(context: modelContainer.mainContext)
                 }
         }
         .modelContainer(modelContainer)

@@ -20,6 +20,7 @@ struct EventDetailView: View {
                 whySection
                 infoSection
                 sourceSection
+                resourceSection
                 actionSection
             }
             .navigationTitle(event.isDrill ? "【演練】\(event.title)" : event.title)
@@ -80,6 +81,49 @@ struct EventDetailView: View {
                 // 來源網址格式異常時仍以文字呈現，不讓 App 因強制解包閃退
                 LabeledContent("來源網址", value: event.sourceURL)
             }
+        }
+    }
+
+    /// 事件「發生後怎麼辦」：離事件最近的緊急資源與導航（示例資料，上線前接開放資料）
+    private var resourceSection: some View {
+        Section("附近緊急資源") {
+            resourceRow(kind: ResourceKind.shelter)
+            resourceRow(kind: ResourceKind.hospital)
+            Text("緊急資源為示例資料；上線前應接內政部與地方政府開放資料。")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private func resourceRow(kind: String) -> some View {
+        if let nearest = EmergencyResourceStore.nearest(
+            kind: kind, latitude: event.latitude, longitude: event.longitude
+        ) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("\(kind)：\(nearest.resource.name)").font(.subheadline)
+                    Text("約 \(max(nearest.distanceMeters / 100 * 100, 100)) 公尺 · \(nearest.resource.district)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("導航", systemImage: "arrow.triangle.turn.up.right.circle") {
+                    openInMaps(nearest.resource)
+                }
+                .font(.caption)
+            }
+        }
+    }
+
+    private func openInMaps(_ resource: EmergencyResource) {
+        var components = URLComponents(string: "https://maps.apple.com/")
+        components?.queryItems = [
+            URLQueryItem(name: "daddr", value: "\(resource.latitude),\(resource.longitude)"),
+            URLQueryItem(name: "q", value: resource.name),
+        ]
+        if let url = components?.url {
+            UIApplication.shared.open(url)
         }
     }
 
