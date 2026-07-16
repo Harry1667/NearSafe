@@ -42,6 +42,20 @@ struct HomeStatusView: View {
                 .padding(.top, HCSpacing.x4)
             }
             .navigationTitle("安心圈")
+            // 情緒底色：狀態色從頁面頂部滲下來的極淡漸層——平安是守護綠、
+            // 有事件變警示紅，「變臉」從盾牌擴散到整頁氛圍，但淡到不搶警示色的戲
+            .background(alignment: .top) {
+                LinearGradient(
+                    colors: [
+                        (status.isAllClear ? HCColor.safe : HCColor.danger).opacity(0.12),
+                        .clear,
+                    ],
+                    startPoint: .top,
+                    endPoint: UnitPoint(x: 0.5, y: 0.6)
+                )
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.6), value: status.isAllClear)
+            }
             .toolbar {
                 Button("設定", systemImage: "gearshape") { router.showSettings = true }
             }

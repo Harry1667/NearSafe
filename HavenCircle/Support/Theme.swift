@@ -31,8 +31,10 @@ private extension UIColor {
 enum HCColor {
     /// 品牌主色（深群青）：CTA、選取狀態、生活圈。與 AccentColor.colorset 同值。
     static let brand = Color(light: 0x3657D6, dark: 0x89A0FF)
-    /// 無需注意、回報平安、操作成功
-    static let safe = Color(light: 0x18794E, dark: 0x5ED49A)
+    /// 無需注意、回報平安、操作成功。
+    /// 刻意偏 teal（藍綠）而非標準成功綠：與品牌群青更和諧、更有識別度；
+    /// 色相仍與 medical（0x0E7C86，偏青）保持距離，地圖上盾牌與醫院標記不混淆
+    static let safe = Color(light: 0x0F8A6B, dark: 0x4AD6B8)
     /// 確認中、需留意、時段外。深色值刻意偏橘（0xFFAF52）：
     /// 與 notice 的黃（0xF5D76E）拉開色相，深色模式下兩階才分得出來
     static let attention = Color(light: 0xA96400, dark: 0xFFAF52)
