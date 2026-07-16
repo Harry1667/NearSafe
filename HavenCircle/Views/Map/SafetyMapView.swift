@@ -54,7 +54,7 @@ struct SafetyMapView: View {
     }
 
     private var allActiveEvents: [LocalSafetyEvent] {
-        events.filter { !$0.isEnded && !$0.isArchived && !EventVisibility.isSuppressed($0) }
+        SafetyOverview.activeEvents(events)
     }
 
     /// 套用圖層過濾後、顯示在地圖與卡片上的事件
@@ -64,27 +64,18 @@ struct SafetyMapView: View {
         }
     }
 
-    /// 安全狀態一律以「未過濾」的事件計算——過濾是顯示偏好，不能過濾掉安全警告
-    private var attentionCount: Int {
-        allActiveEvents.filter { event in
-            event.isOfficiallyConfirmed
-                && !AlertPolicy.evaluate(event: event, members: visibleMembers).matches.isEmpty
-        }.count
+    /// 安全狀態一律以「未過濾」的事件計算——聚合邏輯與安心頁共用 SafetyStatus，
+    /// 兩頁對「平安與否」的說法永遠一致
+    private var status: SafetyOverview {
+        SafetyOverview.compute(events: events, regionAlerts: regionAlerts, members: visibleMembers)
     }
+
+    private var attentionCount: Int { status.attentionCount }
+    private var confirmingCount: Int { status.confirmingCount }
+    private var elsewhereCount: Int { status.elsewhereCount }
 
     private var activeRegionAlerts: [RegionAlert] {
         regionAlerts.filter { !$0.isEnded }
-    }
-
-    private var confirmingCount: Int {
-        allActiveEvents.filter { !$0.isOfficiallyConfirmed }.count
-    }
-
-    private var elsewhereCount: Int {
-        allActiveEvents.filter { event in
-            event.isOfficiallyConfirmed
-                && AlertPolicy.evaluate(event: event, members: visibleMembers).matches.isEmpty
-        }.count
     }
 
     /// 家人最後回報位置：每人取「最新一筆有座標」的安否回報（沒附位置的回報不上圖）

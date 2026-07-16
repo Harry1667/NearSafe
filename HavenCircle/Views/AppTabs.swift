@@ -24,14 +24,17 @@ struct AppTabs: View {
         if let flagIndex = args.firstIndex(of: "--start-tab"),
            flagIndex + 1 < args.count,
            let tab = Int(args[flagIndex + 1]) {
-            return min(max(tab, 0), 4)
+            return min(max(tab, 0), 5)
         }
         #endif
-        return TabRouter.mapTab  // 打開就是完整地圖
+        return TabRouter.homeTab  // 打開就是安心頁：3 秒讀完「家人都平安嗎」
     }
 
     var body: some View {
         TabView(selection: Bindable(router).selection) {
+            HomeStatusView(myName: myName)
+                .tabItem { Label("安心", systemImage: "checkmark.shield.fill") }
+                .tag(TabRouter.homeTab)
             EventListView()
                 .tabItem { Label("提醒中心", systemImage: "bell.badge.fill") }
                 .tag(TabRouter.eventsTab)

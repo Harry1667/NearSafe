@@ -11,6 +11,8 @@ final class TabRouter {
     static let mapTab = 2
     static let familyTab = 3
     static let settingsTab = 4
+    /// 安心頁（狀態優先的新啟動頁）。tag 值沿用遞增避免動到既有 deep link 對應
+    static let homeTab = 5
 
     var selection: Int
 
