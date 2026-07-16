@@ -11,6 +11,8 @@ enum SettingsKeys {
     static let profileContactNote = "profileContactNote"
     /// 最後一次資料更新時間（timeIntervalSince1970；0 表示尚未更新過）
     static let lastDataRefresh = "lastDataRefresh"
+    /// 新手設定是否完成（獨立旗標，不再以「有沒有家人資料」推斷）
+    static let onboardingCompleted = "onboardingCompleted"
 }
 
 /// 資料時效：所有會刷新事件資料的路徑都應呼叫這裡

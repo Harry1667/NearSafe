@@ -3,9 +3,14 @@ import SwiftData
 import MapKit
 import os
 
-/// 首次設定：建立本人與第一個生活圈
+/// 首次設定：五步分頁精靈（歡迎 → 名稱 → 生活圈 → 通知 → 完成）。
+/// 設計原則：一步只問一件事、先講理由再要權限、家人邀請可略過（軟門檻）。
 struct OnboardingView: View {
     @Environment(\.modelContext) private var context
+    @AppStorage(SettingsKeys.profileDisplayName) private var profileName = ""
+    @AppStorage(SettingsKeys.onboardingCompleted) private var onboardingCompleted = false
+
+    @State private var step: Step = .welcome
     @State private var name = ""
     @State private var placeName = "住家"
     @State private var address = "台北市南港區"
@@ -13,34 +18,147 @@ struct OnboardingView: View {
     @State private var found: MKMapItem?
     @State private var searchFailed = false
     @State private var showFallbackConfirmation = false
+    @State private var notificationGranted: Bool?
+
+    enum Step: Int, CaseIterable {
+        case welcome, name, circle, notification, done
+    }
 
     var body: some View {
         NavigationStack {
+            VStack(spacing: 0) {
+                progressBar
+                TabView(selection: $step) {
+                    welcomePage.tag(Step.welcome)
+                    namePage.tag(Step.name)
+                    circlePage.tag(Step.circle)
+                    notificationPage.tag(Step.notification)
+                    donePage.tag(Step.done)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                // 只允許用按鈕前進：滑動跳步會略過必要輸入
+                .animation(.easeInOut, value: step)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if step != .welcome && step != .done {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("返回", systemImage: "chevron.left") {
+                            withAnimation { step = Step(rawValue: step.rawValue - 1) ?? .welcome }
+                        }
+                    }
+                }
+            }
+            .confirmationDialog("尚未確認生活圈位置", isPresented: $showFallbackConfirmation) {
+                Button("使用台北市南港區預設位置") { advanceFromCircle() }
+                Button("返回確認地址", role: .cancel) {}
+            } message: {
+                Text("建議先用 Apple Maps 搜尋並確認位置，避免提醒範圍設在錯誤地點。")
+            }
+        }
+    }
+
+    // MARK: - 進度條
+
+    private var progressBar: some View {
+        HStack(spacing: 6) {
+            ForEach(Step.allCases, id: \.rawValue) { s in
+                Capsule()
+                    .fill(s.rawValue <= step.rawValue ? Color.indigo : Color.secondary.opacity(0.2))
+                    .frame(height: 4)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+        .accessibilityLabel("設定進度：第 \(step.rawValue + 1) 步，共 \(Step.allCases.count) 步")
+    }
+
+    // MARK: - 第 1 步：歡迎
+
+    private var welcomePage: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.system(size: 64))
+                .foregroundStyle(.indigo)
+            Text("安心圈")
+                .font(.largeTitle.bold())
+            Text("替家人留意住家與生活範圍的安全動態")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 12) {
+                valueCard("checkmark.seal.fill", .green,
+                          "官方示警來源", "災害警報來自 NCDR 民生示警等政府公開資料")
+                valueCard("mappin.and.ellipse", .indigo,
+                          "只提醒重要的", "事件落在家人生活圈內且可信度足夠，才會通知你")
+                valueCard("person.2.fill", .orange,
+                          "家人互報平安", "一鍵回報「我平安」，家人立刻知道")
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+            Text("所有生活圈與事件資料只儲存在這支手機；不會追蹤任何人的即時位置。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            primaryButton("開始設定") { withAnimation { step = .name } }
+        }
+        .padding(.bottom, 24)
+    }
+
+    private func valueCard(_ icon: String, _ color: Color, _ title: String, _ detail: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.bold())
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - 第 2 步：名稱
+
+    private var namePage: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            stepHeader("怎麼稱呼你？", "這個名稱會顯示在家人的安否回報裡，例如「媽媽 回報了平安」。")
+            TextField("你的名稱", text: $name)
+                .font(.title2)
+                .multilineTextAlignment(.center)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal, 48)
+            Spacer()
+            primaryButton("下一步", disabled: name.trimmingCharacters(in: .whitespaces).isEmpty) {
+                withAnimation { step = .circle }
+            }
+        }
+        .padding(.bottom, 24)
+    }
+
+    // MARK: - 第 3 步：第一個生活圈
+
+    private var circlePage: some View {
+        VStack(spacing: 0) {
+            stepHeader("設定第一個生活圈", "生活圈是你想守護的範圍，例如住家或長輩家。只有圈內的事件才會提醒。")
+                .padding(.bottom, 8)
             Form {
                 Section {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 54))
-                        .foregroundStyle(.indigo)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                    Text("守護家人的日常生活圈。")
-                        .font(.title2.bold())
-                        .frame(maxWidth: .infinity)
-                    Text("資料只儲存在這支手機；不會追蹤任何人的即時位置。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                }
-                Section("先建立你的生活圈") {
-                    TextField("你的名稱", text: $name)
-                    TextField("地點名稱", text: $placeName)
+                    TextField("地點名稱（例如：住家）", text: $placeName)
                     TextField("城市或地址", text: $address)
-                    Button("使用 Apple Maps 搜尋位置") {
+                    Button("使用 Apple Maps 搜尋位置", systemImage: "magnifyingglass") {
                         Task { await search() }
                     }
                     if let found {
-                        Text("找到：\(found.name ?? address)").foregroundStyle(.green)
+                        Label("找到：\(found.name ?? address)", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
                     } else if searchFailed {
                         Text("找不到這個地點，會先用台北市南港區的預設位置，之後可在「家人」頁修改。")
                             .font(.caption)
@@ -48,29 +166,103 @@ struct OnboardingView: View {
                     }
                     Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 }
-                Section {
-                    Text("完成後才會詢問你是否允許通知；只有符合生活圈與可信度條件的事件才會提醒。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("完成設定") {
-                        if found == nil {
-                            showFallbackConfirmation = true
-                        } else {
-                            finishSetup()
-                        }
-                    }
-                        .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
+            }
+            .scrollContentBackground(.hidden)
+            primaryButton("下一步") {
+                if found == nil {
+                    showFallbackConfirmation = true
+                } else {
+                    advanceFromCircle()
                 }
             }
-            .navigationTitle("歡迎使用安心圈")
-            .confirmationDialog("尚未確認生活圈位置", isPresented: $showFallbackConfirmation) {
-                Button("使用台北市南港區預設位置") { finishSetup() }
-                Button("返回確認地址", role: .cancel) {}
-            } message: {
-                Text("建議先用 Apple Maps 搜尋並確認位置，避免提醒範圍設在錯誤地點。")
+        }
+        .padding(.bottom, 24)
+    }
+
+    // MARK: - 第 4 步：通知權限
+
+    private var notificationPage: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "bell.badge.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(.red)
+            stepHeader("打開通知，關鍵時刻才收得到",
+                       "只有「落在生活圈內、且可信度足夠」的事件才會推播；確認中的線索只在 App 內顯示，不會吵你。")
+            if notificationGranted == true {
+                Label("通知已允許", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else if notificationGranted == false {
+                Text("你選擇了不允許。之後可以在設定 App 裡隨時打開。")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            Spacer()
+            if notificationGranted == nil {
+                primaryButton("允許通知") {
+                    Task {
+                        notificationGranted = await NotificationScheduler.requestPermission()
+                        withAnimation { step = .done }
+                    }
+                }
+                Button("稍後再說") { withAnimation { step = .done } }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                primaryButton("下一步") { withAnimation { step = .done } }
             }
         }
+        .padding(.bottom, 24)
+    }
+
+    // MARK: - 第 5 步：完成
+
+    private var donePage: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.green)
+            stepHeader("設定完成！", "地圖上已經可以看到你的生活圈與最新的安全動態。")
+            valueCard("person.crop.circle.badge.plus", .indigo,
+                      "下一步：邀請家人（可略過）",
+                      "到「家人」分頁邀請家人加入，支援 QR code 或 8 位邀請碼；需要登入 iCloud。")
+                .padding(.horizontal, 24)
+            Spacer()
+            primaryButton("開始使用") { finishSetup() }
+        }
+        .padding(.bottom, 24)
+    }
+
+    // MARK: - 共用元件與邏輯
+
+    private func stepHeader(_ title: String, _ subtitle: String) -> some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    private func primaryButton(_ title: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.body.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(disabled)
+        .padding(.horizontal, 24)
+    }
+
+    private func advanceFromCircle() {
+        withAnimation { step = .notification }
     }
 
     private func search() async {
@@ -87,7 +279,8 @@ struct OnboardingView: View {
     }
 
     private func finishSetup() {
-        let me = LocalFamilyMember(name: name.isEmpty ? "我" : name, relationship: "擁有者")
+        let displayName = name.trimmingCharacters(in: .whitespaces)
+        let me = LocalFamilyMember(name: displayName.isEmpty ? "我" : displayName, relationship: "擁有者")
         context.insert(me)
         // 有搜尋結果用實際座標；沒有就退回南港區預設位置
         let coordinate = found?.location.coordinate ?? .init(latitude: 25.0525, longitude: 121.6072)
@@ -103,8 +296,10 @@ struct OnboardingView: View {
         circle.district = Self.guessDistrict(from: "\(found?.name ?? "") \(address)")
         context.insert(circle)
         context.saveReporting()
-        // 首次設定完成是請求通知權限的最佳時機（使用者剛表達了「想被提醒」的意圖）
-        Task { _ = await NotificationScheduler.requestPermission() }
+        // 名稱同步進個人資訊（安否回報署名用），使用者不必到設定頁再填一次
+        if !displayName.isEmpty { profileName = displayName }
+        // 完成旗標與家人資料脫鉤：之後就算刪光家人資料也不會被打回新手流程
+        onboardingCompleted = true
     }
 
     /// 從地址文字比對雙北行政區（供區域型警報使用）；找不到就標「未指定」
