@@ -10,9 +10,13 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
+    @AppStorage(SettingsKeys.apnsDeviceToken) private var apnsToken = ""
     @State private var showTutorial = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
+    @State private var demoNoticeScheduled = false
+    @State private var tokenCopied = false
+    @State private var demoSeedFeedback: String?
 
     var body: some View {
         NavigationStack {
@@ -97,6 +101,8 @@ struct SettingsView: View {
                     Text("清除這支手機上的所有家人、生活圈與事件資料，並退出（擁有者則刪除）iCloud 家庭圈。此動作無法復原。")
                 }
 
+                demoSection
+
                 Section {
                     Label("安心圈不是緊急服務。遇立即危險請直接撥打 110 或 119。", systemImage: "phone.fill")
                         .font(.footnote)
@@ -116,6 +122,110 @@ struct SettingsView: View {
             } message: {
                 Text("本機資料與 iCloud 家庭圈都會被清除，無法復原。")
             }
+        }
+    }
+
+    // MARK: - 示範與開發
+
+    /// 模擬警報通知與 APNs 權杖。誠實原則：模擬通知標題一律帶【示範】字樣，
+    /// 不冒充真實災害警報；權杖只在本機顯示，供 Apple Push Console 推播測試。
+    @ViewBuilder
+    private var demoSection: some View {
+        Section {
+            Button {
+                Task { await scheduleDemoNotification() }
+            } label: {
+                Label {
+                    Text("模擬警報通知（示範用）")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "bell.and.waves.left.and.right.fill")
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .frame(width: 29, height: 29)
+                        .background(HCColor.attention.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                }
+            }
+            if demoNoticeScheduled {
+                Label("已排程，5 秒後送達——現在鎖定螢幕可看到鎖屏通知。", systemImage: "checkmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(HCColor.safe)
+            }
+            Button {
+                DemoSeed.loadHistoricalEvents(context: context)
+                demoSeedFeedback = "已載入 2 筆歷史官方事件（標題含【歷史示範】）"
+            } label: {
+                Label {
+                    Text("載入歷史官方事件示範")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .frame(width: 29, height: 29)
+                        .background(HCColor.brand.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                }
+            }
+            Button {
+                DemoSeed.removeAll(context: context)
+                demoSeedFeedback = "已移除所有歷史示範與演練事件"
+            } label: {
+                Label {
+                    Text("重設 Demo 資料")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .frame(width: 29, height: 29)
+                        .background(Color.gray.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                }
+            }
+            if let demoSeedFeedback {
+                Label(demoSeedFeedback, systemImage: "checkmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(HCColor.safe)
+            }
+            if !apnsToken.isEmpty {
+                Button {
+                    UIPasteboard.general.string = apnsToken
+                    tokenCopied = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tokenCopied ? "APNs 裝置權杖（已複製）" : "APNs 裝置權杖（點一下複製）")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Text(apnsToken)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+        } header: {
+            Text("示範與開發")
+        } footer: {
+            Text("模擬通知為本機發送的示範內容（標題含【示範】字樣），非真實災害警報。歷史事件示範重播的是 NCDR 實際發布過的官方示警原文（標題含【歷史示範】，僅顯示效期經過調整）。權杖供 APNs 推播測試，操作步驟見專案 APNS_PUSH_TEST.md。")
+        }
+    }
+
+    /// 延遲 5 秒發送：留時間鎖定螢幕，展示通知在鎖屏上的真實樣貌
+    private func scheduleDemoNotification() async {
+        guard await NotificationScheduler.requestPermission() else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "【示範】地震速報：臺北市南港區"
+        content.body = "官方確認事件落在「住家」提醒範圍內。此為示範內容，非真實警報。"
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+        do {
+            try await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "demo-alert", content: content, trigger: trigger)
+            )
+            demoNoticeScheduled = true
+            try? await Task.sleep(for: .seconds(6))
+            demoNoticeScheduled = false
+        } catch {
+            AppLog.notificationsError("示範通知排程失敗：\(error.localizedDescription)")
         }
     }
 

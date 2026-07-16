@@ -21,6 +21,10 @@ enum AppLog {
     static func dataError(_ message: String) {
         data.error("\(message, privacy: .public)")
     }
+
+    static func notificationsError(_ message: String) {
+        notifications.error("\(message, privacy: .public)")
+    }
 }
 
 extension ModelContext {

@@ -12,4 +12,17 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     ) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
+
+    /// 點擊通知 → 打開提醒中心。冷啟動時視圖可能尚未訂閱 NotificationCenter，
+    /// 所以同時寫入 DeepLinkStore.pending（AppTabs 出現後會補路由），兩條路都通。
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        await MainActor.run {
+            guard let url = URL(string: "havencircle://alerts") else { return }
+            DeepLinkStore.pending = url
+            NotificationCenter.default.post(name: .didReceiveDeepLink, object: url)
+        }
+    }
 }

@@ -72,6 +72,9 @@ struct HavenCircleApp: App {
                     #if DEBUG
                     SmokeTest.runIfNeeded(context: modelContainer.mainContext)
                     #endif
+                    // 註冊 APNs：權杖與通知權限互相獨立，先拿權杖存著（AppDelegate 回呼），
+                    // 之後伺服器推播只差「上傳權杖＋後端發送」這一段
+                    UIApplication.shared.registerForRemoteNotifications()
                     // 啟動即跑一次資料管線（mock 來源；階段 4 換成真實來源）
                     await EventPipeline.refresh(context: modelContainer.mainContext)
                     await familySync.refreshAccountStatus()

@@ -1,5 +1,6 @@
 import SwiftUI
 import CloudKit
+import os // Swift 6.2 MemberImportVisibility：直接使用 os.Logger 插值的檔案必須自行 import
 
 /// CKShare 邀請接受的處理鏈。
 ///
@@ -25,6 +26,27 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
         config.delegateClass = ShareSceneDelegate.self
         return config
+    }
+
+    // MARK: - APNs 裝置權杖
+
+    /// 拿到權杖就存本機：設定頁「示範與開發」區可複製，貼到 Apple Push Console 測試推播。
+    /// 之後接 Oracle 後端時，改成把權杖連同「關心的行政區」一起上傳。
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+        UserDefaults.standard.set(token, forKey: SettingsKeys.apnsDeviceToken)
+        AppLog.notifications.info("已取得 APNs 裝置權杖")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        // 模擬器與未佈建的裝置會走到這裡，只記錄不打擾使用者
+        AppLog.notifications.error("APNs 註冊失敗：\(error.localizedDescription)")
     }
 }
 
