@@ -7,7 +7,7 @@ struct EventDetailView: View {
     let members: [LocalFamilyMember]
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @State private var unrelated = false
+    @State private var showResolveConfirmation = false
 
     private var decision: AlertDecision {
         AlertPolicy.evaluate(event: event, members: members)
@@ -25,6 +25,17 @@ struct EventDetailView: View {
             }
             .navigationTitle(event.isDrill ? "【演練】\(event.title)" : event.title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("關閉") { dismiss() }
+                }
+            }
+            .confirmationDialog("將這則事件標記為本機已解除？", isPresented: $showResolveConfirmation) {
+                Button("確認標記", role: .destructive) { resolveLocally() }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("這只會更新此裝置的顯示與解除通知，不會改變官方來源。")
+            }
         }
     }
 
@@ -67,8 +78,8 @@ struct EventDetailView: View {
             LabeledContent("概略位置", value: event.approximateLocation)
             LabeledContent("嚴重程度", value: event.severity)
             LabeledContent("位置精準度", value: "約 \(event.precisionMeters) 公尺")
-            LabeledContent("發生時間", value: event.occurredAt.formatted(date: .abbreviated, time: .shortened))
-            LabeledContent("最近更新", value: event.updatedAt.formatted(date: .abbreviated, time: .shortened))
+            LabeledContent("發生時間", value: localizedDate(event.occurredAt))
+            LabeledContent("最近更新", value: localizedDate(event.updatedAt))
         }
     }
 
@@ -129,24 +140,39 @@ struct EventDetailView: View {
 
     private var actionSection: some View {
         Section {
-            Button(unrelated ? "已隱藏相似提醒" : "此事件與我無關",
-                   systemImage: unrelated ? "checkmark" : "hand.thumbsdown") {
-                unrelated = true
+            Button("隱藏此裝置的相似提醒", systemImage: "hand.thumbsdown") {
+                EventVisibility.suppressSimilar(to: event)
+                dismiss()
             }
             if !event.isEnded {
-                Button("標記為已結束") {
-                    event.resolve()
-                    context.saveReporting()
-                    Task { await NotificationScheduler.notifyResolved(for: event) }
-                    dismiss()
+                Button("回報此事件在我這裡已解除") {
+                    showResolveConfirmation = true
                 }
             }
-            Button("緊急情況請撥打 119", systemImage: "phone.fill") {
-                if let tel = URL(string: "tel://119") {
-                    UIApplication.shared.open(tel)
-                }
+            Button("人身安全或犯罪請撥 110", systemImage: "phone.fill") {
+                call("110")
+            }
+            .foregroundStyle(.red)
+            Button("火災或緊急救護請撥 119", systemImage: "cross.case.fill") {
+                call("119")
             }
             .foregroundStyle(.red)
         }
+    }
+
+    private func resolveLocally() {
+        event.resolve()
+        context.saveReporting()
+        Task { await NotificationScheduler.notifyResolved(for: event) }
+        dismiss()
+    }
+
+    private func call(_ number: String) {
+        guard let tel = URL(string: "tel://\(number)") else { return }
+        UIApplication.shared.open(tel)
+    }
+
+    private func localizedDate(_ date: Date) -> String {
+        date.formatted(.dateTime.locale(Locale(identifier: "zh_TW")).year().month().day().hour().minute())
     }
 }

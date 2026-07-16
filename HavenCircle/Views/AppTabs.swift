@@ -5,10 +5,14 @@ struct AppTabs: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var context
     @Query private var members: [LocalFamilyMember]
+    @AppStorage(SettingsKeys.profileDisplayName) private var profileDisplayName = ""
 
     /// 擁有者名稱作為安否回報的發送者署名
     private var myName: String {
-        members.first { $0.relationship == "擁有者" }?.name ?? members.first?.name ?? "我"
+        if !profileDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return profileDisplayName
+        }
+        return members.first { $0.relationship == "擁有者" }?.name ?? members.first?.name ?? "我"
     }
 
     // DEBUG：--start-tab <n> 讓 App 直接開在指定分頁，方便自動化截圖驗證

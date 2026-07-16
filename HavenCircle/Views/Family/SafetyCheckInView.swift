@@ -7,6 +7,7 @@ import CloudKit
 /// - 工具列：邀請家人加入家庭圈（CKShare）
 struct SafetyCheckInView: View {
     @Environment(FamilySyncService.self) private var sync
+    @Environment(TabRouter.self) private var router
     let myName: String
 
     @State private var shareSheet: ShareBundle?
@@ -51,9 +52,12 @@ struct SafetyCheckInView: View {
             Section {
                 Label("尚未登入 iCloud", systemImage: "icloud.slash")
                     .foregroundStyle(.orange)
-                Text("安否回報需要 iCloud 才能在家人之間同步。請到「設定 > Apple 帳號」登入後再回來。")
+                Text("安否回報需要 iCloud 才能在家人之間同步。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("前往設定查看 Apple 帳號", systemImage: "gearshape") {
+                    router.selection = TabRouter.settingsTab
+                }
             }
         case .error(let message):
             Section {

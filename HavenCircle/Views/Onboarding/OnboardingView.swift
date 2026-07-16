@@ -12,6 +12,7 @@ struct OnboardingView: View {
     @State private var radius = 1000
     @State private var found: MKMapItem?
     @State private var searchFailed = false
+    @State private var showFallbackConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -48,12 +49,27 @@ struct OnboardingView: View {
                     Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 }
                 Section {
-                    Button("完成設定") { finishSetup() }
+                    Text("完成後才會詢問你是否允許通知；只有符合生活圈與可信度條件的事件才會提醒。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("完成設定") {
+                        if found == nil {
+                            showFallbackConfirmation = true
+                        } else {
+                            finishSetup()
+                        }
+                    }
                         .buttonStyle(.borderedProminent)
                         .frame(maxWidth: .infinity)
                 }
             }
             .navigationTitle("歡迎使用安心圈")
+            .confirmationDialog("尚未確認生活圈位置", isPresented: $showFallbackConfirmation) {
+                Button("使用台北市南港區預設位置") { finishSetup() }
+                Button("返回確認地址", role: .cancel) {}
+            } message: {
+                Text("建議先用 Apple Maps 搜尋並確認位置，避免提醒範圍設在錯誤地點。")
+            }
         }
     }
 
