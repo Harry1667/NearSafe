@@ -60,6 +60,23 @@ try:
     from proxy import ai as _sdk_ai
 except Exception:
     _sdk_ai = None
+
+# 簡轉繁保險（opencc-python-reimplemented，純 Python）：LLM 偶爾無視「禁止簡體」指令，
+# prompt 押不住就用機械轉換兜底；沒裝 opencc 時照常運作（只少這層保護，不 crash）
+try:
+    from opencc import OpenCC
+    _s2twp = OpenCC("s2twp")  # 簡體 → 台灣正體（含慣用詞轉換）
+except Exception:
+    _s2twp = None
+
+
+def to_traditional(text):
+    """LLM 產出的中文欄位過一遍簡轉繁；opencc 未安裝或輸入非字串時原樣返回"""
+    if _s2twp is None or not isinstance(text, str):
+        return text
+    return _s2twp.convert(text)
+
+
 LLM_TIMEOUT = 30
 LLM_MIN_CONFIDENCE = 0.6  # LLM 信心低於此值 → 丟棄 LLM 結果、退回規則結果
 
@@ -290,7 +307,7 @@ LLM_PROMPT_TEMPLATE = """你是災害事故新聞分類器。判斷下面這則�
 描述：{description}
 
 只回覆一行 JSON，不要任何其他文字，格式：
-{{"is_incident": true或false, "county": "縣市全名（如 台中市）或null", "district": "鄉鎮市區或null", "place": "地點簡述或null", "category": "火災|交通|天災|公共安全|民生 其中之一", "confidence": 0到1的數字}}"""
+{{"is_incident": true或false, "county": "縣市全名（如 台中市）或null", "district": "鄉鎮市區或null", "place": "地點簡述或null", "category": "火災|交通|天災|公共安全|民生 其中之一", "confidence": 0到1的數字, "summary": "20字以內的事件重點（格式：地點＋發生什麼事，如「板橋警匪追逐，警破窗逮人」；去掉驚嘆號與媒體渲染詞；一律使用台灣繁體中文，禁止任何簡體字）"}}"""
 
 
 def call_proxy_llm(prompt):
@@ -389,6 +406,16 @@ def llm_classify(title, description):
     valid_categories = {c for c, _ in INCLUDE_CATEGORIES}
     if result.get("category") not in valid_categories:
         return None  # 分類不在白名單 → 不可信，退回規則
+    # summary 消毒：必須是非空字串才收，超長截斷（App 端顯示空間有限），並強制簡轉繁
+    summary = result.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        result["summary"] = to_traditional(summary.strip()[:30])
+    else:
+        result["summary"] = None
+    # 地點欄位同樣過簡轉繁（LLM 抽的 district/place 也可能混簡體）
+    for key in ("district", "place"):
+        if isinstance(result.get(key), str):
+            result[key] = to_traditional(result[key])
     return result
 
 
@@ -422,8 +449,8 @@ def merge_duplicate(existing, new_event):
     names = [n.strip() for n in existing["sourceName"].split("、")]
     if new_event["sourceName"] not in names:
         existing["sourceName"] = existing["sourceName"] + "、" + new_event["sourceName"]
-    # 既有欄位缺值時，用新來源的值補上（縣市/地點越齊越好）
-    for key in ("county", "district", "place"):
+    # 既有欄位缺值時，用新來源的值補上（縣市/地點/摘要越齊越好）
+    for key in ("county", "district", "place", "summary"):
         if not existing.get(key) and new_event.get(key):
             existing[key] = new_event[key]
 
@@ -562,6 +589,7 @@ def main(feeds=None, out_dir=None):
                 "place": None,
                 "category": category,
                 "confidence": 0.5,          # 規則路徑的預設信心值
+                "summary": None,            # 短摘要只有 LLM 路徑會產生；App 端 null 時退回原標題
                 "extraction": "rules",
                 "trust": "media-report",    # 媒體報導層：只進「持續確認中」，永不推播
                 "corroboration": 1,
@@ -580,6 +608,7 @@ def main(feeds=None, out_dir=None):
                         "place": llm.get("place") or None,
                         "category": llm["category"],
                         "confidence": llm["confidence"],
+                        "summary": llm.get("summary"),
                         "extraction": "llm",
                     })
 

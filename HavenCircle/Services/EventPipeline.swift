@@ -98,6 +98,11 @@ enum EventPipeline {
                 // 使用者標記結束的事件不再喚醒
                 guard !existing.isEnded else { continue }
                 existing.updatedAt = .now
+                // 來源端的標題與地點可能改善（例：媒體事件改用 LLM 短摘要重推），同步最新版
+                if let primary = group.first(where: \.isOfficial) ?? group.first {
+                    existing.title = primary.title
+                    existing.approximateLocation = primary.approximateLocation
+                }
                 if trustRank(trust) > trustRank(existing.trustStatus) {
                     existing.trustStatus = trust
                 }

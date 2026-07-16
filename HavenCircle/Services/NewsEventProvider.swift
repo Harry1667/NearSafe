@@ -32,7 +32,9 @@ struct NewsEventProvider: EventProvider {
                 .filter { !$0.isEmpty }
                 .joined()
             return RawEventReport(
-                title: event.title,
+                // 優先用爬蟲 LLM 產的 ≤20 字短摘要（地點＋事件重點）；
+                // 舊資料或 LLM 未產出時退回原始新聞標題，永不因缺欄位丟事件
+                title: event.summary?.isEmpty == false ? event.summary! : event.title,
                 eventType: Self.eventType(for: event.category),
                 approximateLocation: location,
                 latitude: anchor.latitude,
@@ -136,6 +138,8 @@ private struct NewsEvent: Decodable {
     let district: String?
     let place: String?
     let category: String?
+    /// LLM 產的短摘要（≤20 字）。必須是 Optional：舊資料沒有這欄，缺欄硬解會讓整批事件消失
+    let summary: String?
     /// sourceName 可能是字串（單一來源）或陣列（跨來源合併），寬鬆解碼
     private let sourceName: SourceName?
 

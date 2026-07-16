@@ -72,6 +72,8 @@ rm -f seen.json                  # 想重測時清掉狀態檔
    ```bash
    sudo apt-get install -y python3-venv   # ensurepip
    python3 -m venv .venv && .venv/bin/pip install grpcio protobuf
+   # 簡轉繁兜底（LLM 摘要偶爾冒簡體字，prompt 押不住，用 OpenCC 機械轉換保險）
+   .venv/bin/pip install opencc-python-reimplemented
    ```
 
 3. token 放 `.env`（chmod 600，內容 `export AI_PROXY_TOKEN=…` 與
