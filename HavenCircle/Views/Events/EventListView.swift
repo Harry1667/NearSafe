@@ -4,6 +4,7 @@ import SwiftData
 /// 提醒中心：按「需要注意 / 持續確認中 / 已結束」分類（對應產品規格的通知頁分類）
 struct EventListView: View {
     @Environment(\.modelContext) private var context
+    @Environment(TabRouter.self) private var router
     @Query(sort: \LocalSafetyEvent.occurredAt, order: .reverse) private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
     @Query private var regionAlerts: [RegionAlert]
@@ -11,7 +12,9 @@ struct EventListView: View {
     @State private var selected: LocalSafetyEvent?
     @State private var selectedAlert: RegionAlert?
 
-    private var visibleEvents: [LocalSafetyEvent] { events.filter { !$0.isArchived } }
+    private var visibleEvents: [LocalSafetyEvent] {
+        events.filter { !$0.isArchived && !EventVisibility.isSuppressed($0) }
+    }
     /// 需要注意＝官方確認「且真的落在某個生活圈的提醒範圍」（分類標籤與邏輯必須一致）
     private var attention: [LocalSafetyEvent] {
         visibleEvents
@@ -71,9 +74,14 @@ struct EventListView: View {
         let active = visibleEvents.filter { !$0.isEnded }
         if !active.isEmpty {
             Section {
-                EventsMiniMap(events: active, members: members) { selected = $0 }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
+                EventsMiniMap(
+                    events: active,
+                    members: members,
+                    onSelect: { selected = $0 },
+                    onExpand: { router.selection = TabRouter.mapTab }
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
             }
         }
     }
@@ -128,4 +136,5 @@ struct EventListView: View {
 #Preview {
     EventListView()
         .modelContainer(PreviewSupport.container())
+        .environment(TabRouter())
 }

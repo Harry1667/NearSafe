@@ -16,6 +16,9 @@ struct SafetyMapView: View {
     @State private var showHospitals = false
     @State private var enabledTypes: Set<String> = Set(EventCategory.all)
     @State private var showUnverified = true
+    @State private var isSummaryExpanded = false
+    /// 乾淨地圖模式：收起頂部摘要與底部卡片列，只留地圖（顯示偏好，不影響通知）
+    @State private var isChromeHidden = false
 
     /// nil＝全家；對應產品規格「可切換媽媽、弟弟或全家」
     @State private var selectedMemberKey: String?
@@ -31,7 +34,7 @@ struct SafetyMapView: View {
     }
 
     private var allActiveEvents: [LocalSafetyEvent] {
-        events.filter { !$0.isEnded && !$0.isArchived }
+        events.filter { !$0.isEnded && !$0.isArchived && !EventVisibility.isSuppressed($0) }
     }
 
     /// 套用圖層過濾後、顯示在地圖與卡片上的事件
@@ -53,11 +56,27 @@ struct SafetyMapView: View {
         regionAlerts.filter { !$0.isEnded }
     }
 
+    private var confirmingCount: Int {
+        allActiveEvents.filter { !$0.isOfficiallyConfirmed }.count
+    }
+
+    private var elsewhereCount: Int {
+        allActiveEvents.filter { event in
+            event.isOfficiallyConfirmed
+                && AlertPolicy.evaluate(event: event, members: visibleMembers).matches.isEmpty
+        }.count
+    }
+
     var body: some View {
         NavigationStack {
             map
-                .overlay(alignment: .top) { topOverlays }
-                .safeAreaInset(edge: .bottom) { nearbyStrip }
+                .overlay(alignment: .top) {
+                    if !isChromeHidden { topOverlays }
+                }
+                .overlay(alignment: .bottomTrailing) { chromeToggle }
+                .safeAreaInset(edge: .bottom) {
+                    if !isChromeHidden { nearbyStrip }
+                }
                 .navigationTitle("安心圈")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -105,6 +124,7 @@ struct SafetyMapView: View {
                             .padding(9)
                             .background(event.isOfficiallyConfirmed ? .red : .orange, in: Circle())
                     }
+                    .accessibilityLabel("\(event.title)，\(event.trustStatus)，\(event.approximateLocation)")
                 }
             }
             if showShelters {
@@ -192,60 +212,119 @@ struct SafetyMapView: View {
 
     // MARK: - 浮層
 
-    private var topOverlays: some View {
-        VStack(spacing: 8) {
-            statusBanner
-            ForEach(activeRegionAlerts.prefix(2)) { alert in
-                Button {
-                    selectedAlert = alert
-                } label: {
-                    regionAlertChip(alert)
-                }
-                .buttonStyle(.plain)
-            }
+    /// 乾淨地圖模式切換鈕：收起／恢復資訊浮層。
+    /// 永遠可見（否則收起後沒有入口恢復）；有「需要注意」事件時不隱藏警示——
+    /// 收起的只是摘要卡與卡片列，地圖上的事件標記仍在。
+    private var chromeToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { isChromeHidden.toggle() }
+        } label: {
+            Image(systemName: isChromeHidden
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
+                .font(.body.weight(.semibold))
+                .padding(12)
+                .background(.regularMaterial, in: Circle())
         }
+        .buttonStyle(.plain)
+        .padding(.trailing, 16)
+        .padding(.bottom, 12)
+        .accessibilityLabel(isChromeHidden ? "顯示資訊面板" : "收合資訊面板，只看地圖")
+    }
+
+    private var topOverlays: some View {
+        safetySummary
         .padding(.horizontal)
         .padding(.top, 8)
     }
 
-    /// 一句話回答「我家人附近有什麼事？」，並附資料時效與暫停狀態
-    private var statusBanner: some View {
+    /// 一張摘要卡先回答安全狀態，再提供各層級事件與區域警報的入口。
+    private var safetySummary: some View {
         let hasAttention = attentionCount > 0
-        return HStack {
-            Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
-                .foregroundStyle(hasAttention ? .red : .green)
-            VStack(alignment: .leading) {
-                Text(hasAttention
-                     ? "家人生活圈附近有 \(attentionCount) 件需要注意的事件"
-                     : "生活圈附近暫無立即危險")
-                    .font(.subheadline.bold())
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                    .foregroundStyle(hasAttention ? .red : .green)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(hasAttention ? "生活圈有需要注意的事件" : "生活圈目前沒有需要注意的事件")
+                        .font(.subheadline.bold())
+                    Text(hasAttention ? "已確認且位於提醒範圍內：\(attentionCount) 件" : "持續留意資料更新即可")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if isSummaryExpanded {
+                HStack(spacing: 8) {
+                    summaryMetric("需要注意", count: attentionCount, emphasis: hasAttention)
+                    summaryMetric("確認中（不限生活圈）", count: confirmingCount, emphasis: false)
+                    summaryMetric("其他區域", count: elsewhereCount, emphasis: false)
+                }
+
+                if let alert = activeRegionAlerts.first {
+                    Button {
+                        selectedAlert = alert
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "cloud.bolt.rain.fill")
+                                .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
+                            Text("區域警報：\(alert.kind)｜\(alert.title)")
+                                .font(.caption.bold())
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("區域警報：\(alert.kind)，\(alert.title)")
+                }
+            } else {
+                Button("查看確認中 \(confirmingCount) 件、其他區域 \(elsewhereCount) 件與區域警報 \(activeRegionAlerts.count) 則") {
+                    withAnimation { isSummaryExpanded = true }
+                }
+                .font(.caption)
+            }
+
+            if isSummaryExpanded {
+                Button("收合摘要") {
+                    withAnimation { isSummaryExpanded = false }
+                }
+                .font(.caption.bold())
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
                 if isPaused {
-                    // 暫停是影響安全的狀態，必須在主橫幅明確可見
                     Text("提醒已暫停——事件仍會顯示，但不會推播。")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
                 DataFreshnessLabel()
             }
-            Spacer()
         }
-        .padding(10)
-        .background((hasAttention ? Color.red : Color.green).opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(12)
+        .background((hasAttention ? Color.red : Color.green).opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func regionAlertChip(_ alert: RegionAlert) -> some View {
-        HStack {
-            Image(systemName: "cloud.bolt.rain.fill").foregroundStyle(.orange)
-            Text("\(alert.kind)警報：\(alert.title)")
+    private func summaryMetric(_ title: String, count: Int, emphasis: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("\(count) 件")
                 .font(.caption.bold())
-            Spacer()
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                .foregroundStyle(emphasis ? .red : .primary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.15), in: Capsule())
-        .background(.regularMaterial, in: Capsule())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
     }
 
     /// 附近更新：地圖底部的橫向卡片（依離生活圈最近排序）
