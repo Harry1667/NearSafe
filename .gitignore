@@ -9,3 +9,7 @@ xcuserdata/
 
 # 本機審查截圖（session 產物，不入庫）
 .audit/
+.gstack/
+
+# 編輯器工作區檔（含機器特定路徑）
+*.code-workspace

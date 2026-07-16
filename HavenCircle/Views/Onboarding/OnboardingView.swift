@@ -207,8 +207,8 @@ struct OnboardingView: View {
                     }
                     Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 } footer: {
-                    // 服務範圍誠實告知：不能讓雙北以外的使用者以為「安靜＝平安」
-                    Text("颱風、豪雨等區域型警報的自動比對目前支援台北市與新北市；其他地區仍可查看全國官方警報。")
+                    // 服務範圍誠實告知（行政區已擴至全國 375 鄉鎮市區，文案同步更新）
+                    Text("颱風、豪雨等區域型警報依行政區自動比對，已支援全國鄉鎮市區；地址判斷不到行政區時，可稍後在生活圈編輯裡手動指定。")
                 }
             }
             .scrollContentBackground(.hidden)
@@ -353,7 +353,7 @@ struct OnboardingView: View {
         UserDefaults.standard.set(true, forKey: SettingsKeys.guardianIntroPending)
     }
 
-    /// 從地址文字比對雙北行政區（供區域型警報使用）；找不到就標「未指定」
+    /// 從地址文字比對全國鄉鎮市區（供區域型警報使用）；找不到就標「未指定」
     static func guessDistrict(from text: String) -> String {
         Districts.all.dropFirst().first { text.contains($0) } ?? Districts.unspecified
     }

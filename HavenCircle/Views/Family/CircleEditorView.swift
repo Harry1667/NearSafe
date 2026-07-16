@@ -37,7 +37,7 @@ struct CircleEditorView: View {
                 Picker("所在行政區", selection: $district) {
                     ForEach(Districts.all, id: \.self) { Text($0) }
                 }
-                Text("行政區用於颱風、豪雨等區域型警報的比對。目前自動比對支援台北市與新北市；其他地區仍可查看全國官方警報，比對範圍擴充中。")
+                Text("行政區用於颱風、豪雨等區域型警報的比對，已支援全國鄉鎮市區；沒把握就選「未指定」，仍可收到點狀事件與全國官方警報。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("提醒類型：\(EventCategory.defaultSelection.joined(separator: "、"))")
