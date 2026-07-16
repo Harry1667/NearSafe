@@ -7,8 +7,13 @@ struct RegionAlertBanner: View {
     let members: [LocalFamilyMember]
 
     var body: some View {
-        HStack {
-            Image(systemName: alert.iconName).foregroundStyle(.orange)
+        HStack(spacing: HCSpacing.x3) {
+            Image(systemName: alert.iconName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(HCColor.attention)
+                .frame(width: 34, height: 34)
+                .background(HCColor.attention.opacity(0.12), in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous))
+                .accessibilityHidden(true)
             VStack(alignment: .leading) {
                 Text("\(alert.kind)警報：\(alert.title)")
                     .font(.subheadline.bold())
@@ -19,15 +24,23 @@ struct RegionAlertBanner: View {
             Spacer()
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
         }
-        .padding(12)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .padding(HCSpacing.x3)
+        .background(HCColor.attention.opacity(0.10), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
     }
 
     private var matchedText: String {
         let matched = alert.matchedCircles(members: members)
-        guard !matched.isEmpty else { return "影響 \(alert.affectedDistricts.joined(separator: "、"))" }
+        guard !matched.isEmpty else { return "影響 \(districtSummary)" }
         let names = matched.map { "\($0.memberName)（\($0.circleName)）" }.joined(separator: "、")
         return "影響 \(names) 所在行政區"
+    }
+
+    /// 影響範圍截斷：前 3 個行政區＋「等 N 個地區」——NCDR 大範圍警報動輒列數十個鄉鎮，
+    /// 整串塞進副標會把卡片撐到五六行；完整清單留在詳情頁
+    private var districtSummary: String {
+        let districts = alert.affectedDistricts
+        guard districts.count > 3 else { return districts.joined(separator: "、") }
+        return districts.prefix(3).joined(separator: "、") + " 等 \(districts.count) 個地區"
     }
 }
 
@@ -40,7 +53,7 @@ struct RegionAlertDetailView: View {
             List {
                 Section {
                     Label("\(alert.statusText)・\(alert.severity)", systemImage: alert.iconName)
-                        .foregroundStyle(alert.isEnded ? Color.secondary : Color.orange)
+                        .foregroundStyle(alert.isEnded ? Color.secondary : HCColor.attention)
                     Text(alert.guidance)
                 }
                 Section("影響範圍") {

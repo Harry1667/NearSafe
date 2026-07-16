@@ -72,7 +72,7 @@ struct DrillView: View {
                              ? "已發送演練通知：\(lastDecision.reason)"
                              : "未發送通知：\(lastDecision.reason)")
                             .font(.caption)
-                            .foregroundStyle(lastDecision.shouldPush ? .green : .orange)
+                            .foregroundStyle(lastDecision.shouldPush ? HCColor.safe : HCColor.attention)
                     }
                 }
                 Button("結束演練（發送解除通知）") {
@@ -90,7 +90,7 @@ struct DrillView: View {
                          ? "上次演練已發送通知：\(lastDecision.reason)"
                          : "上次演練未發送通知：\(lastDecision.reason)")
                         .font(.caption)
-                        .foregroundStyle(lastDecision.shouldPush ? .green : .orange)
+                        .foregroundStyle(lastDecision.shouldPush ? HCColor.safe : HCColor.attention)
                 }
             }
             if !drillEvents.isEmpty {
@@ -153,7 +153,7 @@ private struct ChecklistRow: View {
             Text(ok ? okText : problemText)
         } icon: {
             Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(ok ? .green : .orange)
+                .foregroundStyle(ok ? HCColor.safe : HCColor.attention)
         }
     }
 }

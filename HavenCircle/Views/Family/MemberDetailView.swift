@@ -20,7 +20,7 @@ struct MemberDetailView: View {
                             .foregroundStyle(.secondary)
                         Text("提醒：\(circle.alertTypes.joined(separator: "、")) · \(circle.scheduleText)")
                             .font(.caption)
-                            .foregroundStyle(.indigo)
+                            .foregroundStyle(HCColor.brand)
                     }
                 }
             }

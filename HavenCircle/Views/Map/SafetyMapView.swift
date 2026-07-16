@@ -13,8 +13,12 @@ struct SafetyMapView: View {
     // 圖層與過濾（顯示偏好，不影響通知決策）
     @State private var showCircles = true
     @State private var showAlertAreas = true
+    /// 避難所／醫院圖層：已接上消防署／衛福部開放資料（近 6,000 筆官方座標）。
+    /// 預設關；開啟後只在鏡頭夠近時顯示視野內最近的一批，全國點位一次全畫會拖垮地圖。
     @State private var showShelters = false
     @State private var showHospitals = false
+    /// 目前鏡頭範圍，供資源圖層做視野內過濾
+    @State private var visibleRegion: MKCoordinateRegion?
     /// 空品圖層：日常環境資訊，預設關（開啟時才抓資料）
     @State private var showAirQuality = false
     @State private var aqiStations: [AQIStation] = []
@@ -26,6 +30,13 @@ struct SafetyMapView: View {
     @State private var isSummaryExpanded = false
     /// 乾淨地圖模式：收起頂部摘要與底部卡片列，只留地圖（顯示偏好，不影響通知）
     @State private var isChromeHidden = false
+
+    // 守護圈開場（簽名動效）：Onboarding 完成後首次進地圖才演一次
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 開場進行中：摘要卡先隱藏，鏡頭抵達生活圈後才進場
+    @State private var isIntroRunning = false
+    /// 盾牌確認脈衝：翻轉一次觸發 symbolEffect bounce 與成功觸覺
+    @State private var shieldConfirmPulse = false
 
     /// nil＝全家；對應產品規格「可切換媽媽、弟弟或全家」
     @State private var selectedMemberKey: String?
@@ -97,22 +108,15 @@ struct SafetyMapView: View {
     var body: some View {
         NavigationStack {
             map
-                .onAppear { cameraPosition = circlesRegion }
+                .onAppear { playGuardianIntroIfNeeded() }
                 .overlay(alignment: .top) {
                     if !isChromeHidden { topOverlays }
                 }
                 .overlay(alignment: .bottomTrailing) { chromeToggle }
-                // 治安層免責說明：統計≠即時安全程度，避免標籤化社區（產品倫理要求）
+                // 圖例：地圖有多層塗色，沒有圖例評審與使用者都無法自行解讀顏色
+                // （含治安層免責：統計≠即時安全程度，避免標籤化社區——產品倫理要求）
                 .overlay(alignment: .bottomLeading) {
-                    if showCrimeLayer {
-                        Text("治安參考為\(crimeReference?.period.prefix(5) ?? "")季度歷史統計，僅供參考，不代表實際安全程度")
-                            .font(.caption2)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.regularMaterial, in: Capsule())
-                            .padding(.leading, 12)
-                            .padding(.bottom, 12)
-                    }
+                    if !isChromeHidden { legendPanel }
                 }
                 .safeAreaInset(edge: .bottom) {
                     if !isChromeHidden { nearbyStrip }
@@ -184,10 +188,10 @@ struct SafetyMapView: View {
 
     private static func severityColor(_ rank: Int) -> Color {
         switch rank {
-        case 3: .red
-        case 2: .red
-        case 1: .orange
-        default: .yellow
+        case 3: HCColor.danger
+        case 2: HCColor.danger
+        case 1: HCColor.attention
+        default: HCColor.notice
         }
     }
 
@@ -233,7 +237,7 @@ struct SafetyMapView: View {
             if showCrimeLayer {
                 ForEach(crimeAreas) { area in
                     MapPolygon(coordinates: area.ring)
-                        .foregroundStyle(.indigo.opacity(Self.crimeOpacity(area.severityRank)))
+                        .foregroundStyle(HCColor.reference.opacity(Self.crimeOpacity(area.severityRank)))
                 }
             }
             if showAlertAreas {
@@ -249,8 +253,19 @@ struct SafetyMapView: View {
                         center: .init(latitude: circle.latitude, longitude: circle.longitude),
                         radius: CLLocationDistance(circle.radiusMeters)
                     )
-                    .foregroundStyle(.indigo.opacity(0.08))
-                    .stroke(.indigo.opacity(0.4), lineWidth: 1)
+                    .foregroundStyle(HCColor.brand.opacity(0.08))
+                    .stroke(HCColor.brand.opacity(0.4), lineWidth: 1.5)
+                }
+            }
+            // 資源點放在事件標記之前宣告，讓事件永遠蓋在資源點上層
+            if showShelters, let region = resourceRegion {
+                ForEach(EmergencyResourceStore.resources(kind: ResourceKind.shelter, in: region, limit: 60)) { resource in
+                    resourceAnnotation(resource, icon: "tent.fill", color: HCColor.safe)
+                }
+            }
+            if showHospitals, let region = resourceRegion {
+                ForEach(EmergencyResourceStore.resources(kind: ResourceKind.hospital, in: region, limit: 30)) { resource in
+                    resourceAnnotation(resource, icon: "cross.case.fill", color: HCColor.medical)
                 }
             }
             ForEach(filteredEvents) { event in
@@ -259,32 +274,19 @@ struct SafetyMapView: View {
                     Button {
                         selected = event
                     } label: {
-                        Image(systemName: event.isOfficiallyConfirmed ? "exclamationmark.triangle.fill" : "eye.fill")
+                        // 兩套視覺通道：圖示＝事件類型、顏色＝可信度（官方紅／確認中琥珀）；
+                        // 白色外圈讓標記在任何底圖上都可辨識
+                        Image(systemName: event.isDrill
+                              ? "bell.and.waves.left.and.right"
+                              : EventCategory.icon(for: event.eventType))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(.white)
-                            .padding(9)
-                            .background(event.isOfficiallyConfirmed ? .red : .orange, in: Circle())
+                            .frame(width: 36, height: 36)
+                            .background(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention, in: Circle())
+                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
                     }
                     .accessibilityLabel("\(event.title)，\(event.trustStatus)，\(event.approximateLocation)")
-                }
-            }
-            if showShelters {
-                ForEach(EmergencyResourceStore.shelters) { resource in
-                    Annotation(resource.name, coordinate: .init(latitude: resource.latitude, longitude: resource.longitude)) {
-                        Image(systemName: "tent.fill")
-                            .foregroundStyle(.white)
-                            .padding(7)
-                            .background(.green, in: Circle())
-                    }
-                }
-            }
-            if showHospitals {
-                ForEach(EmergencyResourceStore.hospitals) { resource in
-                    Annotation(resource.name, coordinate: .init(latitude: resource.latitude, longitude: resource.longitude)) {
-                        Image(systemName: "cross.case.fill")
-                            .foregroundStyle(.white)
-                            .padding(7)
-                            .background(.teal, in: Circle())
-                    }
                 }
             }
             if showAirQuality {
@@ -301,6 +303,9 @@ struct SafetyMapView: View {
                 }
             }
         }
+        // 降噪底圖：壓低底圖彩度並排除 Apple Maps 的 POI（餐廳、商店……），
+        // 讓警報塗層、生活圈與事件標記成為畫面主角，而不是跟底圖搶注意力
+        .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false))
         // 開啟空品圖層時才抓資料（不開不花流量）
         .onChange(of: showAirQuality) { _, isOn in
             guard isOn, aqiStations.isEmpty else { return }
@@ -321,6 +326,42 @@ struct SafetyMapView: View {
                     AppLog.dataError("治安統計抓取失敗：\(error.localizedDescription)")
                 }
             }
+        }
+        // 鏡頭停下才更新（.onEnd），拖曳過程不重算資源過濾
+        .onMapCameraChange(frequency: .onEnd) { context in
+            visibleRegion = context.region
+        }
+    }
+
+    // MARK: - 緊急資源圖層
+
+    /// 鏡頭夠近才顯示資源點：縮到全台視角時畫幾千個點既讀不了也拖效能
+    private static let resourceZoomThreshold: CLLocationDegrees = 0.35
+    private var resourceRegion: MKCoordinateRegion? {
+        guard let region = visibleRegion,
+              region.span.latitudeDelta <= Self.resourceZoomThreshold else { return nil }
+        return region
+    }
+
+    /// 點資源標記→在 Apple 地圖顯示該地點（不直接發起導航，把決定權留給使用者）
+    private func resourceAnnotation(_ resource: EmergencyResource, icon: String, color: Color) -> some MapContent {
+        Annotation(resource.name, coordinate: .init(latitude: resource.latitude, longitude: resource.longitude)) {
+            Button {
+                var components = URLComponents(string: "https://maps.apple.com/")
+                components?.queryItems = [
+                    URLQueryItem(name: "q", value: resource.name),
+                    URLQueryItem(name: "ll", value: "\(resource.latitude),\(resource.longitude)"),
+                ]
+                if let url = components?.url { UIApplication.shared.open(url) }
+            } label: {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(color, in: Circle())
+                    .overlay(Circle().stroke(.white, lineWidth: 1.5))
+            }
+            .accessibilityLabel("\(resource.kind)：\(resource.name)，點擊在地圖 App 查看")
         }
     }
 
@@ -384,7 +425,7 @@ struct SafetyMapView: View {
                systemImage: isPaused ? "bell.slash.fill" : "bell.slash") {
             isPaused.toggle()
         }
-        .tint(isPaused ? .orange : nil)
+        .tint(isPaused ? HCColor.attention : nil)
     }
 
     // MARK: - 浮層
@@ -413,6 +454,99 @@ struct SafetyMapView: View {
         safetySummary
         .padding(.horizontal)
         .padding(.top, 8)
+        // 開場時摘要卡先退場，鏡頭抵達生活圈後縮放進場（Reduce Motion 只做淡入不縮放）
+        .scaleEffect(isIntroRunning && !reduceMotion ? 0.9 : 1, anchor: .top)
+        .opacity(isIntroRunning ? 0 : 1)
+        .animation(
+            reduceMotion ? .easeInOut(duration: 0.45) : .spring(response: 0.5, dampingFraction: 0.75),
+            value: isIntroRunning
+        )
+        // 進場完成的「守護開始」確認觸覺，與盾牌 bounce 同一個觸發源
+        .sensoryFeedback(.success, trigger: shieldConfirmPulse)
+    }
+
+    // MARK: - 守護圈開場（簽名動效）
+
+    /// 開場起點：全台廣域鏡頭
+    private static let taiwanWideRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 23.7, longitude: 120.96),
+        span: MKCoordinateSpan(latitudeDelta: 4.6, longitudeDelta: 4.6)
+    )
+
+    /// Onboarding 完成後首次進地圖：鏡頭從全台飛向生活圈，抵達後摘要卡進場、
+    /// 盾牌 bounce＋成功觸覺——把「開始守護這個範圍」演成一個確認儀式。
+    /// 旗標消耗制只演一次；Reduce Motion 時不飛鏡頭，改直接定位＋交叉淡入。
+    private func playGuardianIntroIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: SettingsKeys.guardianIntroPending) else {
+            cameraPosition = circlesRegion
+            return
+        }
+        defaults.set(false, forKey: SettingsKeys.guardianIntroPending)
+        isIntroRunning = true
+        if reduceMotion {
+            cameraPosition = circlesRegion
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                isIntroRunning = false
+                shieldConfirmPulse.toggle()
+            }
+            return
+        }
+        cameraPosition = .region(Self.taiwanWideRegion)
+        Task { @MainActor in
+            // 讓廣域畫面站穩一拍再起飛，觀眾才看得出「從哪裡飛到哪裡」
+            try? await Task.sleep(for: .milliseconds(600))
+            withAnimation(.easeInOut(duration: 1.5)) { cameraPosition = circlesRegion }
+            try? await Task.sleep(for: .milliseconds(1700))
+            isIntroRunning = false
+            shieldConfirmPulse.toggle()
+        }
+    }
+
+    /// 圖例面板：只在對應圖層開啟且畫面上真的有塗色時出現，避免常駐佔位
+    @ViewBuilder
+    private var legendPanel: some View {
+        let showsSeverity = showAlertAreas && !alertAreas.isEmpty
+        // 資源圖層開著但鏡頭太遠時，要說明「為什麼看不到點」——不說會像壞掉
+        let resourceHint = (showShelters || showHospitals) && resourceRegion == nil
+        if showsSeverity || showCrimeLayer || resourceHint {
+            VStack(alignment: .leading, spacing: 5) {
+                if showsSeverity {
+                    Text("警報區").font(.caption2.bold())
+                    legendRow(Self.severityColor(3), "警戒／危急")
+                    legendRow(Self.severityColor(1), "注意")
+                    legendRow(Self.severityColor(0), "留意／提醒")
+                }
+                if showCrimeLayer {
+                    Text("治安參考").font(.caption2.bold())
+                    legendRow(HCColor.reference.opacity(0.7), "季度統計高於全國中位數（越深越多）")
+                    Text("統計≠即時安全程度，僅供參考")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if resourceHint {
+                    Label("放大地圖即可顯示避難所／醫院", systemImage: "plus.magnifyingglass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.leading, 12)
+            .padding(.bottom, 12)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func legendRow(_ color: Color, _ text: String) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(color.opacity(0.35))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(color.opacity(0.8), lineWidth: 1))
+                .frame(width: 14, height: 10)
+            Text(text).font(.caption2)
+        }
     }
 
     /// 一張摘要卡先回答安全狀態，再提供各層級事件與區域警報的入口。
@@ -420,8 +554,13 @@ struct SafetyMapView: View {
         let hasAttention = attentionCount > 0
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
+                // 盾牌放進色底圓形 chip：狀態色作底、白色圖示，讓「目前安全與否」一眼可辨
                 Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
-                    .foregroundStyle(hasAttention ? .red : .green)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(hasAttention ? HCColor.danger : HCColor.safe, in: Circle())
+                    .symbolEffect(.bounce, value: shieldConfirmPulse)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(hasAttention ? "生活圈有需要注意的事件" : "生活圈目前沒有需要注意的事件")
@@ -446,7 +585,7 @@ struct SafetyMapView: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: alert.iconName)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(HCColor.attention)
                                 .accessibilityHidden(true)
                             Text("區域警報：\(alert.kind)｜\(alert.title)")
                                 .font(.caption.bold())
@@ -478,14 +617,17 @@ struct SafetyMapView: View {
                 if isPaused {
                     Text("提醒已暫停——事件仍會顯示，但不會推播。")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(HCColor.attention)
                 }
                 DataFreshnessLabel()
             }
         }
-        .padding(12)
-        .background((hasAttention ? Color.red : Color.green).opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding(HCSpacing.x3)
+        .background(
+            (hasAttention ? HCColor.danger : HCColor.safe).opacity(0.10),
+            in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+        )
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
     }
 
     private func summaryMetric(_ title: String, count: Int, emphasis: Bool) -> some View {
@@ -495,7 +637,7 @@ struct SafetyMapView: View {
                 .foregroundStyle(.secondary)
             Text("\(count) 件")
                 .font(.caption.bold())
-                .foregroundStyle(emphasis ? .red : .primary)
+                .foregroundStyle(emphasis ? HCColor.danger : .primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
@@ -504,11 +646,15 @@ struct SafetyMapView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// 附近更新：地圖底部的橫向卡片（依離生活圈最近排序）
+    /// 附近更新：地圖底部的橫向卡片（依離生活圈最近排序，且真的要「附近」——
+    /// 超過 NearbyScope 上限的事件只留在地圖與提醒中心，不冒充附近）
     @ViewBuilder
     private var nearbyStrip: some View {
-        if !filteredEvents.isEmpty {
-            let sorted = filteredEvents.sorted {
+        let nearby = filteredEvents.filter {
+            nearestCircleDistance($0, visibleMembers) <= NearbyScope.maxMeters
+        }
+        if !nearby.isEmpty {
+            let sorted = nearby.sorted {
                 nearestCircleDistance($0, visibleMembers) < nearestCircleDistance($1, visibleMembers)
             }
             ScrollView(.horizontal, showsIndicators: false) {
@@ -519,7 +665,7 @@ struct SafetyMapView: View {
                         } label: {
                             EventRow(event: event, members: visibleMembers)
                                 .frame(width: 320)
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }

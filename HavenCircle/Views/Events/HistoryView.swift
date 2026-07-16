@@ -56,7 +56,7 @@ struct HistoryView: View {
             Text(type).font(.subheadline).frame(width: 100, alignment: .leading)
             GeometryReader { geo in
                 Capsule()
-                    .fill(.indigo.opacity(0.6))
+                    .fill(HCColor.brand.opacity(0.6))
                     .frame(width: max(geo.size.width * CGFloat(count) / CGFloat(maxCount), 8))
                     .frame(maxHeight: .infinity, alignment: .center)
             }

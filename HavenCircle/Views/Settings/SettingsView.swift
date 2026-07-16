@@ -72,7 +72,7 @@ struct SettingsView: View {
                                 .font(.callout)
                                 .foregroundStyle(.white)
                                 .frame(width: 29, height: 29)
-                                .background(Color.green.gradient, in: RoundedRectangle(cornerRadius: 7))
+                                .background(HCColor.safe.gradient, in: RoundedRectangle(cornerRadius: 7))
                         }
                     }
                 }
@@ -89,7 +89,7 @@ struct SettingsView: View {
                                 .font(.callout)
                                 .foregroundStyle(.white)
                                 .frame(width: 29, height: 29)
-                                .background(Color.red.gradient, in: RoundedRectangle(cornerRadius: 7))
+                                .background(HCColor.danger.gradient, in: RoundedRectangle(cornerRadius: 7))
                         }
                     }
                     .disabled(isDeleting)
@@ -160,7 +160,7 @@ struct SettingsView: View {
     /// 頭像：取顯示名稱第一個字，沒設名稱用預設盾牌
     private var avatar: some View {
         ZStack {
-            Circle().fill(.indigo.gradient)
+            Circle().fill(HCColor.brand.gradient)
             if let initial = displayName.first {
                 Text(String(initial))
                     .font(.title2.weight(.semibold))
@@ -242,7 +242,7 @@ private struct AppleAccountView: View {
                 if let signInError {
                     Text(signInError)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(HCColor.danger)
                 }
                 Text("授權一次即可把名稱與 email 帶入設定頁。Apple 只在首次授權時提供這些資料，資料只存在這支手機。")
                     .font(.caption)
@@ -389,15 +389,25 @@ private struct AlertSettingsView: View {
     @AppStorage(SettingsKeys.digestHour) private var digestHour = 20
     @Query private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
+    /// 「允許通知」按下後的結果（nil＝尚未按過）——按了沒反應等於壞掉，必須有可見回饋
+    @State private var notificationGranted: Bool?
 
     var body: some View {
         Form {
             Section("提醒偏好") {
                 Toggle("啟用本機提醒", isOn: $alertsEnabled)
-                Toggle("暴力事件僅高可信度提醒", isOn: $highConfidenceOnly)
+                Toggle("公共安全事件僅高可信度提醒", isOn: $highConfidenceOnly)
                 Toggle("暫停提醒", isOn: $paused)
                 Button("允許通知") {
-                    Task { _ = await NotificationScheduler.requestPermission() }
+                    Task { notificationGranted = await NotificationScheduler.requestPermission() }
+                }
+                if let granted = notificationGranted {
+                    Label(
+                        granted ? "通知已開啟" : "通知未開啟——請到系統「設定 > 通知」中允許安心圈",
+                        systemImage: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(granted ? HCColor.safe : HCColor.attention)
                 }
             }
             Section("每日安全摘要") {

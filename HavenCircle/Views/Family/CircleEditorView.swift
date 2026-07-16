@@ -27,17 +27,17 @@ struct CircleEditorView: View {
                     Task { await search() }
                 }
                 if let found {
-                    Text("找到：\(found.name ?? address)").foregroundStyle(.green)
+                    Text("找到：\(found.name ?? address)").foregroundStyle(HCColor.safe)
                 } else if searchFailed {
                     Text("找不到這個地點，會改用預設座標（台北市中心）")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(HCColor.attention)
                 }
                 Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 Picker("所在行政區", selection: $district) {
                     ForEach(Districts.all, id: \.self) { Text($0) }
                 }
-                Text("行政區用於颱風、豪雨等區域型警報的比對。")
+                Text("行政區用於颱風、豪雨等區域型警報的比對。目前自動比對支援台北市與新北市；其他地區仍可查看全國官方警報，比對範圍擴充中。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("提醒類型：\(EventCategory.defaultSelection.joined(separator: "、"))")
@@ -70,7 +70,7 @@ struct CircleEditorView: View {
                             if weekdays.contains(day) { weekdays.remove(day) } else { weekdays.insert(day) }
                         }
                         .buttonStyle(.bordered)
-                        .tint(weekdays.contains(day) ? .indigo : .gray)
+                        .tint(weekdays.contains(day) ? HCColor.brand : .gray)
                         .font(.caption)
                     }
                 }

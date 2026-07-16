@@ -18,8 +18,8 @@ struct EventsMiniMap: View {
                     center: .init(latitude: circle.latitude, longitude: circle.longitude),
                     radius: CLLocationDistance(circle.radiusMeters)
                 )
-                .foregroundStyle(.indigo.opacity(0.08))
-                .stroke(.indigo.opacity(0.4), lineWidth: 1)
+                .foregroundStyle(HCColor.brand.opacity(0.08))
+                .stroke(HCColor.brand.opacity(0.4), lineWidth: 1.5)
             }
             ForEach(events) { event in
                 Annotation(event.isDrill ? "演練" : event.eventType,
@@ -27,16 +27,23 @@ struct EventsMiniMap: View {
                     Button {
                         onSelect(event)
                     } label: {
-                        Image(systemName: event.isOfficiallyConfirmed ? "exclamationmark.triangle.fill" : "eye.fill")
+                        // 與安全地圖同一套標記語言：圖示＝類型、顏色＝可信度
+                        Image(systemName: event.isDrill
+                              ? "bell.and.waves.left.and.right"
+                              : EventCategory.icon(for: event.eventType))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.white)
-                            .padding(7)
-                            .background(event.isOfficiallyConfirmed ? .red : .orange, in: Circle())
+                            .frame(width: 28, height: 28)
+                            .background(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention, in: Circle())
+                            .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                     }
                 }
             }
         }
+        .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false))
         .frame(height: 240)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
         // 空白處點擊＝放大；Annotation 內的 Button 優先攔截，不受影響
         .onTapGesture { onExpand() }
         .overlay(alignment: .topTrailing) {

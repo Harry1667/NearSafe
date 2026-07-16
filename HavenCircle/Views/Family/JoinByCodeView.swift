@@ -20,7 +20,7 @@ struct JoinByCodeView: View {
                 if joined {
                     Section {
                         Label("已加入家庭圈！", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(HCColor.safe)
                         Text("現在可以在「安否回報」跟家人互報平安。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -50,7 +50,7 @@ struct JoinByCodeView: View {
                         if let joinError {
                             Text(joinError)
                                 .font(.caption)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(HCColor.danger)
                         }
                     }
                 }

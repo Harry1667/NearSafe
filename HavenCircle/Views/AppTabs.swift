@@ -48,7 +48,7 @@ struct AppTabs: View {
                 .tabItem { Label("設定", systemImage: "slider.horizontal.3") }
                 .tag(TabRouter.settingsTab)
         }
-        .tint(.indigo)
+        .tint(HCColor.brand)
         .environment(router)
         // App 每次回到前景重跑資料管線（含每日摘要重算）。
         // 原型限制：沒有背景更新，用前景時機讓資料與摘要盡量新鮮。

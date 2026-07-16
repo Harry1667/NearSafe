@@ -16,11 +16,24 @@ struct DataSourceView: View {
                     Link("前往 NCDR 民生示警平台", destination: url)
                 }
             }
+            Section("緊急應變資源") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("避難收容所與急救責任醫院").font(.subheadline.bold())
+                    Text("避難收容所來自內政部消防署「避難收容處所點位檔」（全國約 5,900 處）；急救責任醫院來自衛福部分區名單（全國 205 家），座標取自內政部國土測繪中心。全部內建於 App，斷網時仍可查詢與導航。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section("環境與統計圖層") {
+                Text("空氣品質：環境部空品測站即時資料，每小時更新。治安參考：內政部警政署刑事案件統計，每季更新（統計≠即時安全程度）。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Section("資料怎麼到你手上") {
                 Text("政府示警 → 安心圈中繼站（整理與去重）→ 你的手機（依生活圈與可信度篩選）。全程只傳遞公開示警內容，不上傳你的任何位置資料。")
                     .font(.footnote)
             }
-            Section("尚未接入") {
+            Section("目前限制（誠實告知）") {
                 Text("即時交通事故與治安事件目前沒有政府公開的即時資料源；有新來源可用時會在更新中加入。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

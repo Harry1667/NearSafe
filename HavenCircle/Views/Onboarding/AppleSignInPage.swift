@@ -16,7 +16,7 @@ struct AppleSignInPage: View {
             Spacer()
             Image(systemName: "person.crop.circle.badge.checkmark")
                 .font(.system(size: 56))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(HCColor.brand)
             VStack(spacing: 8) {
                 Text("用 Apple 帳號登入")
                     .font(.title2.bold())
@@ -38,7 +38,7 @@ struct AppleSignInPage: View {
             if let signInError {
                 Text(signInError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(HCColor.danger)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }

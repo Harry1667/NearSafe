@@ -5,11 +5,19 @@ struct EventRow: View {
     let event: LocalSafetyEvent
     let members: [LocalFamilyMember]
 
+    /// 可信度顏色（官方確認＝危險紅、確認中＝琥珀）；事件類型交給圖示表達
+    private var trustColor: Color {
+        event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: HCSpacing.x3) {
             Image(systemName: iconName)
-                .foregroundStyle(event.isOfficiallyConfirmed ? .red : .orange)
-                .frame(width: 25)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(trustColor)
+                .frame(width: 34, height: 34)
+                .background(trustColor.opacity(0.12), in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.isDrill ? "【演練】\(event.title)" : event.title)
                     .font(.subheadline.bold())
@@ -23,16 +31,18 @@ struct EventRow: View {
             }
             Spacer()
             Text(event.trustStatus)
-                .font(.caption2)
-                .foregroundStyle(event.isOfficiallyConfirmed ? .red : .orange)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(trustColor)
+                .background(trustColor.opacity(0.12), in: Capsule())
         }
-        .padding(10)
-        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .hcCard()
     }
 
     private var iconName: String {
         if event.isDrill { return "bell.and.waves.left.and.right" }
-        return event.eventType == EventCategory.fire ? "flame.fill" : "exclamationmark.triangle.fill"
+        return EventCategory.icon(for: event.eventType)
     }
 }
 
@@ -67,6 +77,13 @@ func relativeTime(_ date: Date) -> String {
     let hours = minutes / 60
     if hours < 24 { return "\(hours) 小時前" }
     return "\(hours / 24) 天前"
+}
+
+/// 「附近」的距離語意：離所有生活圈超過這個距離的事件不算「附近」。
+/// 審查發現：沒有上限時，145 公里外的花蓮路況會被當「附近更新」推到台北使用者眼前，
+/// 稀釋真正相關的訊號。超過上限的事件收進「全台其他」次級清單，不是消失。
+enum NearbyScope {
+    static let maxMeters: Double = 30_000
 }
 
 /// 事件到最近生活圈的距離（公尺），供排序使用

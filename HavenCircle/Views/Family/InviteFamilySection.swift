@@ -25,7 +25,7 @@ struct InviteFamilySection: View {
             switch sync.state {
             case .noAccount:
                 Label("邀請家人需要先登入 iCloud", systemImage: "icloud.slash")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(HCColor.attention)
                 Button("查看 Apple 帳號狀態", systemImage: "gearshape") {
                     router.selection = TabRouter.settingsTab
                 }
@@ -48,7 +48,7 @@ struct InviteFamilySection: View {
                 if let shareError {
                     Text(shareError)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(HCColor.danger)
                 }
                 Text("邀請支援 QR code、8 位邀請碼或訊息連結；家人接受後就能互相回報平安。")
                     .font(.caption)

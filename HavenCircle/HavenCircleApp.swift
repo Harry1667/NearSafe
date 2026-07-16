@@ -18,6 +18,8 @@ struct HavenCircleApp: App {
 
     init() {
         modelContainer = Self.makeContainer()
+        // 導航標題套圓體，appearance 要在第一個視圖建立前設定才會生效
+        HCAppearance.apply()
         // 前景也要顯示通知橫幅（演練模式必要）
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
         // 背景任務處理器必須在啟動完成前登記（Apple 規定），所以放 init 不放 .task

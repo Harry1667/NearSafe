@@ -25,7 +25,7 @@ struct InviteOptionsView: View {
                     // 理論上 makeShare 存檔成功後一定有 url；保留降級路徑不讓畫面開天窗
                     Section {
                         Label("分享連結尚未就緒，請改用下方系統分享", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(HCColor.attention)
                     }
                 }
                 Section {
@@ -58,7 +58,7 @@ struct InviteOptionsView: View {
                         .accessibilityLabel("家庭圈邀請 QR code")
                 } else {
                     Label("QR code 產生失敗", systemImage: "xmark.circle")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(HCColor.danger)
                 }
                 Spacer()
             }
@@ -101,7 +101,7 @@ struct InviteOptionsView: View {
                 if let codeError {
                     Text(codeError)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(HCColor.danger)
                 }
             }
         }

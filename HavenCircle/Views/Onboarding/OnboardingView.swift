@@ -80,7 +80,7 @@ struct OnboardingView: View {
         HStack(spacing: 6) {
             ForEach(Step.allCases, id: \.rawValue) { s in
                 Capsule()
-                    .fill(s.rawValue <= step.rawValue ? Color.indigo : Color.secondary.opacity(0.2))
+                    .fill(s.rawValue <= step.rawValue ? HCColor.brand : Color.secondary.opacity(0.2))
                     .frame(height: 4)
             }
         }
@@ -94,21 +94,36 @@ struct OnboardingView: View {
     private var welcomePage: some View {
         VStack(spacing: 20) {
             Spacer()
-            Image(systemName: "shield.lefthalf.filled")
-                .font(.system(size: 64))
-                .foregroundStyle(.indigo)
+            // 品牌漸層圓底座＋白色盾牌：歡迎頁的第一眼要像產品 logo，不是浮著的系統圖示
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [HCColor.brand.opacity(0.8), HCColor.brand],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 108, height: 108)
+                    .shadow(color: HCColor.brand.opacity(0.3), radius: 16, y: 8)
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 52, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+            .accessibilityHidden(true)
             Text("安心圈")
-                .font(.largeTitle.bold())
+                .font(.system(.largeTitle, design: .rounded).bold())
             Text("替家人留意住家與生活範圍的安全動態")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
+            // 三張價值卡統一品牌色：歡迎頁只留一個主色，靠圖示與文字區分——
+            // 綠橘藍各自搶焦會讓第一印象像「通用範例」而不是有品牌的產品
             VStack(spacing: 12) {
-                valueCard("checkmark.seal.fill", .green,
+                valueCard("checkmark.seal.fill", HCColor.brand,
                           "官方示警來源", "災害警報來自 NCDR 民生示警等政府公開資料")
-                valueCard("mappin.and.ellipse", .indigo,
+                valueCard("mappin.and.ellipse", HCColor.brand,
                           "只提醒重要的", "事件落在家人生活圈內且可信度足夠，才會通知你")
-                valueCard("person.2.fill", .orange,
+                valueCard("person.2.fill", HCColor.brand,
                           "家人互報平安", "一鍵回報「我平安」，家人立刻知道")
             }
             .padding(.horizontal, 24)
@@ -184,13 +199,16 @@ struct OnboardingView: View {
                     }
                     if let found {
                         Label("找到：\(found.name ?? address)", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(HCColor.safe)
                     } else if searchFailed {
                         Text("找不到這個地點，會先用台北市南港區的預設位置，之後可在「家人」頁修改。")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(HCColor.attention)
                     }
                     Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
+                } footer: {
+                    // 服務範圍誠實告知：不能讓雙北以外的使用者以為「安靜＝平安」
+                    Text("颱風、豪雨等區域型警報的自動比對目前支援台北市與新北市；其他地區仍可查看全國官方警報。")
                 }
             }
             .scrollContentBackground(.hidden)
@@ -212,16 +230,16 @@ struct OnboardingView: View {
             Spacer()
             Image(systemName: "bell.badge.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(.red)
+                .foregroundStyle(HCColor.brand)
             stepHeader("打開通知，關鍵時刻才收得到",
                        "只有「落在生活圈內、且可信度足夠」的事件才會推播；確認中的線索只在 App 內顯示，不會吵你。")
             if notificationGranted == true {
                 Label("通知已允許", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(HCColor.safe)
             } else if notificationGranted == false {
                 Text("你選擇了不允許。之後可以在設定 App 裡隨時打開。")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(HCColor.attention)
             }
             Spacer()
             if notificationGranted == nil {
@@ -248,9 +266,9 @@ struct OnboardingView: View {
             Spacer()
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 64))
-                .foregroundStyle(.green)
+                .foregroundStyle(HCColor.safe)
             stepHeader("設定完成！", "地圖上已經可以看到你的生活圈與最新的安全動態。")
-            valueCard("person.crop.circle.badge.plus", .indigo,
+            valueCard("person.crop.circle.badge.plus", HCColor.brand,
                       "下一步：邀請家人（可略過）",
                       "到「家人」分頁邀請家人加入，支援 QR code 或 8 位邀請碼；需要登入 iCloud。")
                 .padding(.horizontal, 24)
@@ -331,6 +349,8 @@ struct OnboardingView: View {
         if !displayName.isEmpty { profileName = displayName }
         // 完成旗標與家人資料脫鉤：之後就算刪光家人資料也不會被打回新手流程
         onboardingCompleted = true
+        // 種下守護圈開場動效旗標：首次進地圖時演「鏡頭飛向生活圈」的確認儀式
+        UserDefaults.standard.set(true, forKey: SettingsKeys.guardianIntroPending)
     }
 
     /// 從地址文字比對雙北行政區（供區域型警報使用）；找不到就標「未指定」

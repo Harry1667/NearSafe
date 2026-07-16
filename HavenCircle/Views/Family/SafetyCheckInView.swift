@@ -13,6 +13,8 @@ struct SafetyCheckInView: View {
     @State private var shareSheet: ShareBundle?
     @State private var note = ""
     @State private var isWorking = false
+    /// 邀請失敗時的可見錯誤——只寫 log 的話，使用者看到的是「按了沒反應＝App 壞了」
+    @State private var shareError: String?
 
     struct ShareBundle: Identifiable {
         let id = UUID()
@@ -30,10 +32,22 @@ struct SafetyCheckInView: View {
             }
         }
         .toolbar {
-            Button("邀請家人", systemImage: "person.badge.plus") {
-                Task { await startShare() }
+            if isWorking {
+                ProgressView()
+            } else {
+                Button("邀請家人", systemImage: "person.badge.plus") {
+                    Task { await startShare() }
+                }
+                .disabled(sync.state == .noAccount)
             }
-            .disabled(sync.state == .noAccount || isWorking)
+        }
+        .alert("邀請家人失敗", isPresented: .init(
+            get: { shareError != nil },
+            set: { if !$0 { shareError = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(shareError ?? "")
         }
         .sheet(item: $shareSheet) { bundle in
             CloudSharingSheet(share: bundle.share, container: bundle.container)
@@ -51,7 +65,7 @@ struct SafetyCheckInView: View {
         case .noAccount:
             Section {
                 Label("尚未登入 iCloud", systemImage: "icloud.slash")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(HCColor.attention)
                 Text("安否回報需要 iCloud 才能在家人之間同步。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -62,7 +76,7 @@ struct SafetyCheckInView: View {
         case .error(let message):
             Section {
                 Label("同步發生問題", systemImage: "exclamationmark.icloud")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(HCColor.danger)
                 Text(message).font(.caption).foregroundStyle(.secondary)
             }
         case .ready:
@@ -84,7 +98,7 @@ struct SafetyCheckInView: View {
                     Task { await report(status) }
                 } label: {
                     Label(status.rawValue, systemImage: status.systemImage)
-                        .foregroundStyle(status == .safe ? .green : .red)
+                        .foregroundStyle(status == .safe ? HCColor.safe : HCColor.danger)
                 }
                 .disabled(isWorking)
             }
@@ -108,7 +122,7 @@ struct SafetyCheckInView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: ping.status.systemImage)
-                    .foregroundStyle(ping.status == .safe ? .green : .red)
+                    .foregroundStyle(ping.status == .safe ? HCColor.safe : HCColor.danger)
                 Text(ping.senderName).font(.subheadline.bold())
                 Spacer()
                 Text(ping.createdAt.formatted(date: .omitted, time: .shortened))
@@ -139,6 +153,7 @@ struct SafetyCheckInView: View {
             shareSheet = ShareBundle(share: share, container: container)
         } catch {
             AppLog.cloudError("建立分享失敗：\(error.localizedDescription)")
+            shareError = "無法建立家庭圈邀請：\(error.localizedDescription)\n請確認已登入 iCloud 且網路正常後再試一次。"
         }
     }
 

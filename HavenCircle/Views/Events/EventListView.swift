@@ -21,11 +21,25 @@ struct EventListView: View {
             .filter { !$0.isEnded && $0.isOfficiallyConfirmed && isInAnyCircle($0) }
             .sorted { nearestCircleDistance($0, members) < nearestCircleDistance($1, members) }
     }
-    /// 官方確認、但離所有生活圈較遠的事件另立分類，不冒充「需要注意」
+    /// 官方確認、但離所有生活圈較遠的事件另立分類，不冒充「需要注意」。
+    /// 加距離上限：超過 NearbyScope 的全國事件再拆到「全台其他」摺疊清單，避免灌成雜訊。
     private var elsewhere: [LocalSafetyEvent] {
         visibleEvents
-            .filter { !$0.isEnded && $0.isOfficiallyConfirmed && !isInAnyCircle($0) }
+            .filter {
+                !$0.isEnded && $0.isOfficiallyConfirmed && !isInAnyCircle($0)
+                    && nearestCircleDistance($0, members) <= NearbyScope.maxMeters
+            }
             .sorted { nearestCircleDistance($0, members) < nearestCircleDistance($1, members) }
+    }
+
+    /// 離所有生活圈超過上限的全國官方事件（預設摺疊）
+    private var nationwide: [LocalSafetyEvent] {
+        visibleEvents
+            .filter {
+                !$0.isEnded && $0.isOfficiallyConfirmed && !isInAnyCircle($0)
+                    && nearestCircleDistance($0, members) > NearbyScope.maxMeters
+            }
+            .sorted { $0.occurredAt > $1.occurredAt }
     }
     private var confirming: [LocalSafetyEvent] {
         visibleEvents.filter { !$0.isEnded && !$0.isOfficiallyConfirmed }
@@ -38,8 +52,16 @@ struct EventListView: View {
         !AlertPolicy.evaluate(event: event, members: members).matches.isEmpty
     }
 
+    /// 進行中的區域警報，依 kind＋title 去重取最新——NCDR 同一場警報常拆成多筆
+    /// （鄉鎮清單不同、標題相同），全部列出會讓提醒中心看起來像同一則洗版
     private var activeRegionAlerts: [RegionAlert] {
-        regionAlerts.filter { !$0.isEnded }
+        var newest: [String: RegionAlert] = [:]
+        for alert in regionAlerts where !alert.isEnded {
+            let key = "\(alert.kind)|\(alert.title)"
+            if let kept = newest[key], kept.updatedAt >= alert.updatedAt { continue }
+            newest[key] = alert
+        }
+        return newest.values.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     var body: some View {
@@ -52,7 +74,8 @@ struct EventListView: View {
                 regionAlertSection
                 section(title: "需要注意", subtitle: "官方確認且位於生活圈提醒範圍內", items: attention)
                 section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming)
-                section(title: "其他區域動態", subtitle: "官方事件，但離所有生活圈較遠", items: elsewhere)
+                section(title: "附近動態", subtitle: "官方事件，離生活圈 30 公里內", items: elsewhere)
+                nationwideSection
                 section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended)
             }
             .navigationTitle("提醒中心")
@@ -86,22 +109,58 @@ struct EventListView: View {
         }
     }
 
-    /// 區域警報依分組分區顯示（天災→公共安全→民生→交通，安全相關優先排前）
+    /// 區域警報依分組分區顯示（天災→公共安全→民生→交通，安全相關優先排前）。
+    /// 每組最多直接顯示 3 則，其餘收進摺疊清單——警報是背景資訊，不該淹沒事件列表
     @ViewBuilder
     private var regionAlertSection: some View {
         let grouped = Dictionary(grouping: activeRegionAlerts, by: \.group)
         ForEach(["天災", "公共安全", "民生", "交通"], id: \.self) { group in
             if let alerts = grouped[group], !alerts.isEmpty {
                 Section("區域警報・\(group)（\(alerts.count)）") {
-                    ForEach(alerts) { alert in
+                    ForEach(alerts.prefix(3)) { alert in
+                        regionAlertRow(alert)
+                    }
+                    if alerts.count > 3 {
+                        DisclosureGroup("其餘 \(alerts.count - 3) 則") {
+                            ForEach(alerts.dropFirst(3)) { alert in
+                                regionAlertRow(alert)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// 警報卡自帶底色與圓角，列背景改透明避免「卡中卡」的雙層框
+    private func regionAlertRow(_ alert: RegionAlert) -> some View {
+        Button {
+            selectedAlert = alert
+        } label: {
+            RegionAlertBanner(alert: alert, members: members)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: HCSpacing.x1, leading: HCSpacing.x4, bottom: HCSpacing.x1, trailing: HCSpacing.x4))
+    }
+
+    /// 全台其他官方示警：預設摺疊——它們是真資料，但不該與「附近」搶注意力
+    @ViewBuilder
+    private var nationwideSection: some View {
+        if !nationwide.isEmpty {
+            Section {
+                DisclosureGroup("全台其他官方示警（\(nationwide.count)）") {
+                    ForEach(Array(nationwide.prefix(15))) { event in
                         Button {
-                            selectedAlert = alert
+                            selected = event
                         } label: {
-                            RegionAlertBanner(alert: alert, members: members)
+                            EventRow(event: event, members: members)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+            } footer: {
+                Text("離所有生活圈超過 30 公里的官方事件收在這裡，避免稀釋與你相關的訊號。")
             }
         }
     }

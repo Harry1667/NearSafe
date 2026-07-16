@@ -47,7 +47,7 @@ struct EventDetailView: View {
                     ? "checkmark.circle"
                     : (event.isOfficiallyConfirmed ? "checkmark.seal.fill" : "clock.badge.questionmark")
             )
-            .foregroundStyle(event.isEnded ? Color.secondary : (event.isOfficiallyConfirmed ? Color.red : Color.orange))
+            .foregroundStyle(event.isEnded ? Color.secondary : (event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention))
             if event.isEnded {
                 Text("此事件已結束，無需進一步行動。")
             } else {
@@ -95,12 +95,17 @@ struct EventDetailView: View {
         }
     }
 
-    /// 事件「發生後怎麼辦」：離事件最近的緊急資源與導航（示例資料，上線前接開放資料）
+    /// 事件「發生後怎麼辦」：離事件最近的避難收容所與急救責任醫院＋一鍵導航。
+    /// 座標全數來自政府開放資料官方欄位（消防署／衛福部＋國土測繪中心），未自行 geocode——
+    /// 導航目的地的正確性是安全產品的誠信底線。
     private var resourceSection: some View {
-        Section("附近緊急資源") {
+        Section("緊急應變") {
             resourceRow(kind: ResourceKind.shelter)
             resourceRow(kind: ResourceKind.hospital)
-            Text("緊急資源為示例資料；上線前應接內政部與地方政府開放資料。")
+            Text("有立即危險時請勿等待 App 指引：直接撥打 119（火災、救護）或 110（治安）。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("資料來源：內政部消防署避難收容處所、衛福部急救責任醫院名單。")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -112,9 +117,9 @@ struct EventDetailView: View {
             kind: kind, latitude: event.latitude, longitude: event.longitude
         ) {
             HStack {
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("\(kind)：\(nearest.resource.name)").font(.subheadline)
-                    Text("約 \(max(nearest.distanceMeters / 100 * 100, 100)) 公尺 · \(nearest.resource.district)")
+                    Text("約 \(formattedDistance(nearest.distanceMeters)) · \(nearest.resource.district)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -125,6 +130,12 @@ struct EventDetailView: View {
                 .font(.caption)
             }
         }
+    }
+
+    private func formattedDistance(_ meters: Int) -> String {
+        meters >= 1000
+            ? String(format: "%.1f 公里", Double(meters) / 1000)
+            : "\(max(meters / 100 * 100, 100)) 公尺"
     }
 
     private func openInMaps(_ resource: EmergencyResource) {
@@ -152,11 +163,11 @@ struct EventDetailView: View {
             Button("人身安全或犯罪請撥 110", systemImage: "phone.fill") {
                 call("110")
             }
-            .foregroundStyle(.red)
+            .foregroundStyle(HCColor.danger)
             Button("火災或緊急救護請撥 119", systemImage: "cross.case.fill") {
                 call("119")
             }
-            .foregroundStyle(.red)
+            .foregroundStyle(HCColor.danger)
         }
     }
 
