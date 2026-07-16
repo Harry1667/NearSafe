@@ -63,6 +63,8 @@ enum EventPipeline {
         await sweep(context: context, members: members)
         context.saveReporting()
         DataFreshness.markRefreshedNow()
+        // 每次刷新都同步 Widget 快照（Widget 不自己抓網路，靠這裡餵）
+        WidgetSnapshotWriter.refresh(context: context)
 
         let events = (try? context.fetch(FetchDescriptor<LocalSafetyEvent>())) ?? []
         await NotificationScheduler.refreshDailyDigest(

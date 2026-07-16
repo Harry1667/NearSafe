@@ -445,7 +445,7 @@ struct SafetyMapView: View {
                         selectedAlert = alert
                     } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: "cloud.bolt.rain.fill")
+                            Image(systemName: alert.iconName)
                                 .foregroundStyle(.orange)
                                 .accessibilityHidden(true)
                             Text("區域警報：\(alert.kind)｜\(alert.title)")

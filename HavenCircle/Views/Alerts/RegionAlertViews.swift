@@ -8,7 +8,7 @@ struct RegionAlertBanner: View {
 
     var body: some View {
         HStack {
-            Image(systemName: "cloud.bolt.rain.fill").foregroundStyle(.orange)
+            Image(systemName: alert.iconName).foregroundStyle(.orange)
             VStack(alignment: .leading) {
                 Text("\(alert.kind)警報：\(alert.title)")
                     .font(.subheadline.bold())
@@ -39,7 +39,7 @@ struct RegionAlertDetailView: View {
         NavigationStack {
             List {
                 Section {
-                    Label("\(alert.statusText)・\(alert.severity)", systemImage: "cloud.bolt.rain.fill")
+                    Label("\(alert.statusText)・\(alert.severity)", systemImage: alert.iconName)
                         .foregroundStyle(alert.isEnded ? Color.secondary : Color.orange)
                     Text(alert.guidance)
                 }

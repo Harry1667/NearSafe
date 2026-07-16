@@ -11,5 +11,17 @@
 	<array>
 		<string>fetch</string>
 	</array>
+	<!-- Widget deep link 用的自訂 URL scheme -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.gomiigo.CamMenuApp.HavenCircle</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>havencircle</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

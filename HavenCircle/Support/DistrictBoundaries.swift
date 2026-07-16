@@ -20,6 +20,9 @@ struct DistrictBoundaries {
     /// 寧可多塗不漏塗——這是安全 App 的正確取捨方向。
     private let byTown: [String: [District]]
 
+    /// 全國鄉鎮市區名清單（排序去重），供生活圈行政區選單與警報比對使用
+    var allTownNames: [String] { byTown.keys.sorted() }
+
     private init() {
         guard let url = Bundle.main.url(forResource: "TaiwanDistricts", withExtension: "json"),
               let data = try? Data(contentsOf: url),

@@ -6,8 +6,41 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C17535F13008C645003BEC75 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C17535F03008C645003BEC75 /* WidgetKit.framework */; };
+		C17535F33008C645003BEC75 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C17535F23008C645003BEC75 /* SwiftUI.framework */; };
+		C17536003008C647003BEC75 /* HavenCircleWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C17535EE3008C645003BEC75 /* HavenCircleWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C17535FE3008C647003BEC75 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C15F63C43007348F00E2194F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C17535ED3008C645003BEC75;
+			remoteInfo = HavenCircleWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C17536053008C647003BEC75 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C17536003008C647003BEC75 /* HavenCircleWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		C15F63CC3007348F00E2194F /* HavenCircle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HavenCircle.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C17535EE3008C645003BEC75 /* HavenCircleWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HavenCircleWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C17535F03008C645003BEC75 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		C17535F23008C645003BEC75 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -17,6 +50,13 @@
 				Info.plist,
 			);
 			target = C15F63CB3007348F00E2194F /* HavenCircle */;
+		};
+		C17536043008C647003BEC75 /* Exceptions for "HavenCircleWidget" folder in "HavenCircleWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C17535ED3008C645003BEC75 /* HavenCircleWidgetExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -29,6 +69,14 @@
 			path = HavenCircle;
 			sourceTree = "<group>";
 		};
+		C17535F43008C645003BEC75 /* HavenCircleWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C17536043008C647003BEC75 /* Exceptions for "HavenCircleWidget" folder in "HavenCircleWidgetExtension" target */,
+			);
+			path = HavenCircleWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -39,6 +87,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C17535EB3008C645003BEC75 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C17535F33008C645003BEC75 /* SwiftUI.framework in Frameworks */,
+				C17535F13008C645003BEC75 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -46,6 +103,8 @@
 			isa = PBXGroup;
 			children = (
 				C15F63CE3007348F00E2194F /* HavenCircle */,
+				C17535F43008C645003BEC75 /* HavenCircleWidget */,
+				C17535EF3008C645003BEC75 /* Frameworks */,
 				C15F63CD3007348F00E2194F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,8 +113,18 @@
 			isa = PBXGroup;
 			children = (
 				C15F63CC3007348F00E2194F /* HavenCircle.app */,
+				C17535EE3008C645003BEC75 /* HavenCircleWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C17535EF3008C645003BEC75 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C17535F03008C645003BEC75 /* WidgetKit.framework */,
+				C17535F23008C645003BEC75 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -68,10 +137,12 @@
 				C15F63C83007348F00E2194F /* Sources */,
 				C15F63C93007348F00E2194F /* Frameworks */,
 				C15F63CA3007348F00E2194F /* Resources */,
+				C17536053008C647003BEC75 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C17535FF3008C647003BEC75 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C15F63CE3007348F00E2194F /* HavenCircle */,
@@ -82,6 +153,28 @@
 			productName = HavenCircle;
 			productReference = C15F63CC3007348F00E2194F /* HavenCircle.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C17535ED3008C645003BEC75 /* HavenCircleWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C17536013008C647003BEC75 /* Build configuration list for PBXNativeTarget "HavenCircleWidgetExtension" */;
+			buildPhases = (
+				C17535EA3008C645003BEC75 /* Sources */,
+				C17535EB3008C645003BEC75 /* Frameworks */,
+				C17535EC3008C645003BEC75 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C17535F43008C645003BEC75 /* HavenCircleWidget */,
+			);
+			name = HavenCircleWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = HavenCircleWidgetExtension;
+			productReference = C17535EE3008C645003BEC75 /* HavenCircleWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -94,6 +187,9 @@
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					C15F63CB3007348F00E2194F = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					C17535ED3008C645003BEC75 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 				};
@@ -113,12 +209,20 @@
 			projectRoot = "";
 			targets = (
 				C15F63CB3007348F00E2194F /* HavenCircle */,
+				C17535ED3008C645003BEC75 /* HavenCircleWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		C15F63CA3007348F00E2194F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C17535EC3008C645003BEC75 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -135,7 +239,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C17535EA3008C645003BEC75 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C17535FF3008C647003BEC75 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C17535ED3008C645003BEC75 /* HavenCircleWidgetExtension */;
+			targetProxy = C17535FE3008C647003BEC75 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C15F63D53007349000E2194F /* Debug */ = {
@@ -327,6 +446,68 @@
 			};
 			name = Release;
 		};
+		C17536023008C647003BEC75 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = HavenCircleWidget/HavenCircleWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q377MM9X45;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HavenCircleWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HavenCircleWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gomiigo.CamMenuApp.HavenCircle.HavenCircleWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C17536033008C647003BEC75 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = HavenCircleWidget/HavenCircleWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q377MM9X45;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HavenCircleWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HavenCircleWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gomiigo.CamMenuApp.HavenCircle.HavenCircleWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -344,6 +525,15 @@
 			buildConfigurations = (
 				C15F63D83007349000E2194F /* Debug */,
 				C15F63D93007349000E2194F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C17536013008C647003BEC75 /* Build configuration list for PBXNativeTarget "HavenCircleWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C17536023008C647003BEC75 /* Debug */,
+				C17536033008C647003BEC75 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

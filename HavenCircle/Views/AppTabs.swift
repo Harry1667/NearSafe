@@ -56,6 +56,31 @@ struct AppTabs: View {
             guard phase == .active else { return }
             Task { await EventPipeline.refresh(context: context) }
         }
+        // Widget deep link 路由（經 scene delegate 轉交，.onOpenURL 在自訂 delegate 下收不到）
+        .onReceive(NotificationCenter.default.publisher(for: .didReceiveDeepLink)) { note in
+            if let url = note.object as? URL { route(url) }
+        }
+        .onAppear {
+            // 冷啟動由 URL 拉起的情況
+            if let url = DeepLinkStore.pending {
+                DeepLinkStore.pending = nil
+                route(url)
+            }
+        }
+    }
+
+    /// havencircle://alerts｜map｜family｜refresh
+    private func route(_ url: URL) {
+        guard url.scheme == "havencircle" else { return }
+        switch url.host {
+        case "alerts": router.selection = TabRouter.eventsTab
+        case "map": router.selection = TabRouter.mapTab
+        case "family": router.selection = TabRouter.familyTab
+        case "refresh":
+            router.selection = TabRouter.eventsTab
+            Task { await EventPipeline.refresh(context: context) }
+        default: break
+        }
     }
 }
 
