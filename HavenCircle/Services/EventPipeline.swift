@@ -44,8 +44,9 @@ protocol RegionAlertProvider {
 // MARK: - 管線
 
 /// 資料管線：來源擷取 → 去重 → 可信度評分 → 生活圈比對 → 通知 → 封存。
-/// 階段 2 用確定性的 mock 來源把管線「形狀」建好；
-/// 階段 4 接 NCDR/CWA/消防開放資料時只替換 provider，不動管線本身。
+/// 區域警報（regionProviders）已接上 NCDR 民生示警平台真實資料（見 NCDRRegionAlertProvider）。
+/// 點狀事件（providers）還是 mock——NCDR CAP 幾乎不附精確經緯度，套不進「事件點＋半徑」模型，
+/// 之後要接消防局等有座標的即時來源時只替換 provider，不動管線本身。
 @MainActor
 enum EventPipeline {
     static let providers: [any EventProvider] = [
@@ -53,7 +54,7 @@ enum EventPipeline {
         MockCommunityProvider(),
     ]
     static let regionProviders: [any RegionAlertProvider] = [
-        MockWeatherBureauProvider(),
+        NCDRRegionAlertProvider(),
     ]
 
     static func refresh(context: ModelContext) async {
@@ -216,7 +217,7 @@ enum EventPipeline {
     }
 }
 
-// MARK: - Mock 來源（階段 4 換成 NCDR / CWA / 消防開放資料）
+// MARK: - Mock 來源（點狀事件，等未來接上有座標的即時來源再替換）
 
 /// 模擬官方來源：消防與警廣
 struct MockFireDepartmentProvider: EventProvider {
@@ -270,27 +271,6 @@ struct MockCommunityProvider: EventProvider {
                 latitude: 25.0421, longitude: 121.5079, precisionMeters: 600,
                 sourceName: "網路論壇（模擬）", sourceURL: "https://example.com/forum",
                 isOfficial: false, occurredAt: .now.addingTimeInterval(-900), ttlSeconds: 21_600
-            ),
-        ]
-    }
-}
-
-/// 模擬中央氣象署：區域型天災警報
-struct MockWeatherBureauProvider: RegionAlertProvider {
-    let sourceName = "中央氣象署（模擬）"
-
-    func fetchAlerts() async throws -> [RawRegionAlert] {
-        [
-            RawRegionAlert(
-                alertKey: "cwa-heavyrain-demo",
-                title: "大雨特報",
-                kind: "天災",
-                affectedDistricts: ["信義區", "南港區", "內湖區", "汐止區"],
-                severity: "注意",
-                guidance: "山區請留意坍方與落石，低窪地區慎防積水。",
-                sourceName: sourceName,
-                sourceURL: "https://www.cwa.gov.tw/",
-                ttlSeconds: 21_600
             ),
         ]
     }
