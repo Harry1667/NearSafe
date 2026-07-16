@@ -17,6 +17,14 @@ if (!hash_equals(INGEST_KEY, $key)) {
     exit;
 }
 
+// 多資料集：ncdr（預設，災害示警）與 aqi（環境部空品）各存一份檔案
+$dataset = $_GET['dataset'] ?? 'ncdr';
+if (!in_array($dataset, ['ncdr', 'aqi', 'crime'], true)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'unknown dataset']);
+    exit;
+}
+
 $raw = file_get_contents('php://input');
 $data = json_decode($raw, true);
 if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
@@ -30,14 +38,16 @@ if (!is_dir($dataDir)) {
     mkdir($dataDir, 0775, true);
 }
 
+$items = $data['events'] ?? $data['stations'] ?? $data['districts'] ?? $data['alerts'] ?? null;
 $payload = [
     'received_at' => gmdate('Y-m-d\TH:i:s\Z'),
-    'count'       => is_array($data['events'] ?? $data['alerts'] ?? null) ? count($data['events'] ?? $data['alerts']) : null,
+    'count'       => is_array($items) ? count($items) : null,
     'data'        => $data,
 ];
 
-$tmpFile   = $dataDir . '/latest.json.tmp';
-$finalFile = $dataDir . '/latest.json';
+$basename  = ['ncdr' => 'latest', 'aqi' => 'latest_aqi', 'crime' => 'latest_crime'][$dataset] ?? 'latest';
+$tmpFile   = $dataDir . '/' . $basename . '.json.tmp';
+$finalFile = $dataDir . '/' . $basename . '.json';
 
 if (file_put_contents($tmpFile, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)) === false) {
     http_response_code(500);

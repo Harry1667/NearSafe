@@ -15,6 +15,12 @@ struct SafetyMapView: View {
     @State private var showAlertAreas = true
     @State private var showShelters = false
     @State private var showHospitals = false
+    /// 空品圖層：日常環境資訊，預設關（開啟時才抓資料）
+    @State private var showAirQuality = false
+    @State private var aqiStations: [AQIStation] = []
+    /// 治安參考圖層：季度歷史統計，預設關；刻意用靛藍色系與紅色系的即時警報區隔
+    @State private var showCrimeLayer = false
+    @State private var crimeReference: CrimeReference?
     @State private var enabledTypes: Set<String> = Set(EventCategory.all)
     @State private var showUnverified = true
     @State private var isSummaryExpanded = false
@@ -96,6 +102,18 @@ struct SafetyMapView: View {
                     if !isChromeHidden { topOverlays }
                 }
                 .overlay(alignment: .bottomTrailing) { chromeToggle }
+                // 治安層免責說明：統計≠即時安全程度，避免標籤化社區（產品倫理要求）
+                .overlay(alignment: .bottomLeading) {
+                    if showCrimeLayer {
+                        Text("治安參考為\(crimeReference?.period.prefix(5) ?? "")季度歷史統計，僅供參考，不代表實際安全程度")
+                            .font(.caption2)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.regularMaterial, in: Capsule())
+                            .padding(.leading, 12)
+                            .padding(.bottom, 12)
+                    }
+                }
                 .safeAreaInset(edge: .bottom) {
                     if !isChromeHidden { nearbyStrip }
                 }
@@ -173,8 +191,51 @@ struct SafetyMapView: View {
         }
     }
 
+    /// 治安參考塗層：只塗「高於全國中位數」的行政區（四分位分級），
+    /// 低於中位數不塗——全塗會讓圖層變成無資訊的雜訊。
+    private var crimeAreas: [AlertArea] {
+        guard let reference = crimeReference, !reference.districts.isEmpty else { return [] }
+        let totals = reference.districts.map(\.total).sorted()
+        let p50 = totals[totals.count / 2]
+        let p75 = totals[totals.count * 3 / 4]
+        let p90 = totals[min(totals.count * 9 / 10, totals.count - 1)]
+        func normalize(_ s: String) -> String { s.replacingOccurrences(of: "臺", with: "台") }
+
+        return reference.districts.flatMap { district -> [AlertArea] in
+            let tier: Int
+            switch district.total {
+            case let t where t >= p90: tier = 3
+            case let t where t >= p75: tier = 2
+            case let t where t >= p50: tier = 1
+            default: return [] // 低於中位數不塗
+            }
+            return DistrictBoundaries.shared.districts(named: district.town)
+                .filter { normalize($0.county) == normalize(district.county) } // 縣市也要對上，避免同名區誤塗
+                .flatMap { boundary in
+                    boundary.rings.enumerated().map { index, ring in
+                        AlertArea(id: "crime-\(district.county)-\(district.town)-\(index)",
+                                  ring: ring, severityRank: tier)
+                    }
+                }
+        }
+    }
+
+    private static func crimeOpacity(_ tier: Int) -> Double {
+        switch tier {
+        case 3: 0.32
+        case 2: 0.20
+        default: 0.10
+        }
+    }
+
     private var map: some View {
         Map(position: $cameraPosition) {
+            if showCrimeLayer {
+                ForEach(crimeAreas) { area in
+                    MapPolygon(coordinates: area.ring)
+                        .foregroundStyle(.indigo.opacity(Self.crimeOpacity(area.severityRank)))
+                }
+            }
             if showAlertAreas {
                 ForEach(alertAreas) { area in
                     MapPolygon(coordinates: area.ring)
@@ -226,6 +287,40 @@ struct SafetyMapView: View {
                     }
                 }
             }
+            if showAirQuality {
+                ForEach(aqiStations) { station in
+                    Annotation(station.name ?? "測站",
+                               coordinate: .init(latitude: station.latitude, longitude: station.longitude)) {
+                        Text("\(station.aqi)")
+                            .font(.caption2.bold())
+                            .foregroundStyle(station.aqi > 100 ? .white : .black)
+                            .padding(6)
+                            .background(station.color, in: Circle())
+                            .accessibilityLabel("\(station.name ?? "")空品測站，AQI \(station.aqi)，\(station.status ?? "")")
+                    }
+                }
+            }
+        }
+        // 開啟空品圖層時才抓資料（不開不花流量）
+        .onChange(of: showAirQuality) { _, isOn in
+            guard isOn, aqiStations.isEmpty else { return }
+            Task {
+                do {
+                    aqiStations = try await AirQualityService.fetchStations()
+                } catch {
+                    AppLog.dataError("空品資料抓取失敗：\(error.localizedDescription)")
+                }
+            }
+        }
+        .onChange(of: showCrimeLayer) { _, isOn in
+            guard isOn, crimeReference == nil else { return }
+            Task {
+                do {
+                    crimeReference = try await CrimeReferenceService.fetch()
+                } catch {
+                    AppLog.dataError("治安統計抓取失敗：\(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -259,6 +354,8 @@ struct SafetyMapView: View {
                 Toggle("區域警報範圍", isOn: $showAlertAreas)
                 Toggle("避難收容所", isOn: $showShelters)
                 Toggle("急救責任醫院", isOn: $showHospitals)
+                Toggle("空氣品質（每小時）", isOn: $showAirQuality)
+                Toggle("治安參考（季更統計）", isOn: $showCrimeLayer)
             }
             Section("事件類型") {
                 ForEach(EventCategory.all, id: \.self) { type in

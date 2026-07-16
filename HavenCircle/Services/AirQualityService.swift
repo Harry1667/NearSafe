@@ -1,0 +1,49 @@
+import Foundation
+import SwiftUI
+
+/// 環境部空品測站資料（經 Oracle 中繼站，每小時更新）。
+/// 定位是「日常環境資訊圖層」，與災害警報嚴格區隔：不推播、不進提醒中心，只在地圖顯示。
+struct AQIStation: Decodable, Identifiable {
+    let siteId: String?
+    let name: String?
+    let county: String?
+    let aqi: Int
+    let status: String?
+    let pollutant: String
+    let pm25: Double?
+    let latitude: Double
+    let longitude: Double
+    let publishTime: String?
+
+    var id: String { siteId ?? "\(latitude),\(longitude)" }
+
+    /// AQI 標準色階（環境部定義的六級）
+    var color: Color {
+        switch aqi {
+        case ..<51: .green
+        case 51..<101: .yellow
+        case 101..<151: .orange
+        case 151..<201: .red
+        case 201..<301: .purple
+        default: Color(red: 0.5, green: 0.1, blue: 0.15) // 褐紅（危害）
+        }
+    }
+}
+
+enum AirQualityService {
+    private static let endpoint = URL(string: "https://havencircle.looptw.com/crawler/api/latest.php?dataset=aqi")!
+
+    static func fetchStations() async throws -> [AQIStation] {
+        let (data, response) = try await URLSession.shared.data(from: endpoint)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw NCDRProviderError.badResponse
+        }
+        struct Envelope: Decodable {
+            let data: Payload
+        }
+        struct Payload: Decodable {
+            let stations: [AQIStation]
+        }
+        return try JSONDecoder().decode(Envelope.self, from: data).data.stations
+    }
+}

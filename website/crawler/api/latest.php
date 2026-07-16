@@ -4,7 +4,9 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-cache, max-age=0');
 header('Access-Control-Allow-Origin: *');
 
-$file = __DIR__ . '/../data/latest.json';
+$dataset = $_GET['dataset'] ?? 'ncdr';
+$basename = ['ncdr' => 'latest', 'aqi' => 'latest_aqi', 'crime' => 'latest_crime'][$dataset] ?? 'latest';
+$file = __DIR__ . '/../data/' . $basename . '.json';
 if (!file_exists($file)) {
     http_response_code(404);
     echo json_encode(['error' => 'no data yet']);
