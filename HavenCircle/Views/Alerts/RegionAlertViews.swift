@@ -6,18 +6,30 @@ struct RegionAlertBanner: View {
     let alert: RegionAlert
     let members: [LocalFamilyMember]
 
+    /// 危急/警戒（rank ≥ 2）視覺升級：實底圖示徽章，掃視時第一眼就跳出來
+    private var isSevere: Bool { alert.severityRank >= 2 }
+
     var body: some View {
         HStack(spacing: HCSpacing.x3) {
+            // 左側嚴重度條＋依嚴重度取色：危急/警戒紅、注意橘、留意黃。
+            // 「哪則重要」不能只靠讀完標題才知道
+            RoundedRectangle(cornerRadius: 2)
+                .fill(alert.severityColor)
+                .frame(width: 4)
             Image(systemName: alert.iconName)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(HCColor.attention)
+                .foregroundStyle(isSevere ? Color.white : alert.severityColor)
                 .frame(width: 34, height: 34)
-                .background(HCColor.attention.opacity(0.12), in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous))
+                .background(
+                    isSevere ? AnyShapeStyle(alert.severityColor) : AnyShapeStyle(alert.severityColor.opacity(0.14)),
+                    in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+                )
                 .accessibilityHidden(true)
             VStack(alignment: .leading) {
                 Text("\(alert.kind)警報：\(alert.title)")
                     .font(.subheadline.bold())
-                Text(matchedText)
+                // 嚴重度用文字寫出來，不能只靠顏色（色覺障礙與投影環境）
+                Text("\(alert.severity)・\(matchedText)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -25,7 +37,7 @@ struct RegionAlertBanner: View {
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
         }
         .padding(HCSpacing.x3)
-        .background(HCColor.attention.opacity(0.10), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+        .background(alert.severityColor.opacity(0.10), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
     }
 
     private var matchedText: String {

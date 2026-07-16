@@ -161,7 +161,7 @@ struct SafetyMapView: View {
         // 同一區被多則警報涵蓋時取最嚴重的顏色
         var severityByTown: [String: (rank: Int, severity: String)] = [:]
         for alert in paintable {
-            let rank = Self.severityRank(alert.severity)
+            let rank = RegionAlert.severityRank(alert.severity)
             for town in alert.affectedDistricts where town != Districts.unspecified {
                 if rank > (severityByTown[town]?.rank ?? -1) {
                     severityByTown[town] = (rank, alert.severity)
@@ -177,23 +177,8 @@ struct SafetyMapView: View {
         }
     }
 
-    private static func severityRank(_ severity: String) -> Int {
-        switch severity {
-        case "危急": 3
-        case "警戒": 2
-        case "注意": 1
-        default: 0 // 留意／提醒
-        }
-    }
-
-    private static func severityColor(_ rank: Int) -> Color {
-        switch rank {
-        case 3: HCColor.danger
-        case 2: HCColor.danger
-        case 1: HCColor.attention
-        default: HCColor.notice
-        }
-    }
+    // 嚴重度排序與配色已上移到 RegionAlert extension（Theme.swift）：
+    // 警報卡、塗層、圖例共用同一套，避免「卡片的紅」與「地圖的紅」不一致
 
     /// 治安參考塗層：只塗「高於全國中位數」的行政區（四分位分級），
     /// 低於中位數不塗——全塗會讓圖層變成無資訊的雜訊。
@@ -243,8 +228,8 @@ struct SafetyMapView: View {
             if showAlertAreas {
                 ForEach(alertAreas) { area in
                     MapPolygon(coordinates: area.ring)
-                        .foregroundStyle(Self.severityColor(area.severityRank).opacity(0.18))
-                        .stroke(Self.severityColor(area.severityRank).opacity(0.55), lineWidth: 1)
+                        .foregroundStyle(RegionAlert.severityColor(rank: area.severityRank).opacity(0.18))
+                        .stroke(RegionAlert.severityColor(rank: area.severityRank).opacity(0.55), lineWidth: 1)
                 }
             }
             if showCircles {
@@ -514,9 +499,9 @@ struct SafetyMapView: View {
             VStack(alignment: .leading, spacing: 5) {
                 if showsSeverity {
                     Text("警報區").font(.caption2.bold())
-                    legendRow(Self.severityColor(3), "警戒／危急")
-                    legendRow(Self.severityColor(1), "注意")
-                    legendRow(Self.severityColor(0), "留意／提醒")
+                    legendRow(RegionAlert.severityColor(rank: 3), "警戒／危急")
+                    legendRow(RegionAlert.severityColor(rank: 1), "注意")
+                    legendRow(RegionAlert.severityColor(rank: 0), "留意／提醒")
                 }
                 if showCrimeLayer {
                     Text("治安參考").font(.caption2.bold())
@@ -560,6 +545,12 @@ struct SafetyMapView: View {
                     .foregroundStyle(.white)
                     .frame(width: 34, height: 34)
                     .background(hasAttention ? HCColor.danger : HCColor.safe, in: Circle())
+                    // 守護圈細環：與 Onboarding hero、提醒中心平安狀態同一個圓環 motif
+                    .overlay(
+                        Circle()
+                            .stroke((hasAttention ? HCColor.danger : HCColor.safe).opacity(0.35), lineWidth: 1.5)
+                            .frame(width: 42, height: 42)
+                    )
                     .symbolEffect(.bounce, value: shieldConfirmPulse)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {

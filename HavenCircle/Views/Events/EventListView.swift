@@ -69,7 +69,10 @@ struct EventListView: View {
             List {
                 miniMapSection
                 if visibleEvents.isEmpty && activeRegionAlerts.isEmpty {
-                    ContentUnavailableView("目前沒有事件", systemImage: "checkmark.shield")
+                    Section {
+                        safeStateHero
+                            .listRowBackground(Color.clear)
+                    }
                 }
                 regionAlertSection
                 section(title: "需要注意", subtitle: "官方確認且位於生活圈提醒範圍內", items: attention)
@@ -89,6 +92,34 @@ struct EventListView: View {
             .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
             .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
         }
+    }
+
+    /// 品牌簽名：平安不是「沒有內容」，是產品最想傳達的一刻——同心圓環＝守護圈完好。
+    /// 圓環 motif 與 Onboarding hero、地圖盾牌 chip 呼應，構成貫穿全 App 的視覺識別
+    private var safeStateHero: some View {
+        VStack(spacing: HCSpacing.x3) {
+            ZStack {
+                Circle()
+                    .stroke(HCColor.safe.opacity(0.18), lineWidth: 2)
+                    .frame(width: 96, height: 96)
+                Circle()
+                    .stroke(HCColor.safe.opacity(0.4), lineWidth: 2)
+                    .frame(width: 74, height: 74)
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 54, height: 54)
+                    .background(HCColor.safe.gradient, in: Circle())
+            }
+            .accessibilityHidden(true)
+            Text("生活圈一切平安")
+                .font(.system(.headline, design: .rounded))
+            Text("目前沒有需要注意的事件，守護持續進行中。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, HCSpacing.x6)
     }
 
     /// 頂部精簡地圖：只放進行中的事件，點標記開詳情

@@ -94,6 +94,33 @@ extension View {
     }
 }
 
+// MARK: - 區域警報嚴重度的視覺對應（單一事實來源：警報卡、地圖塗層、圖例共用）
+
+extension RegionAlert {
+    /// 嚴重度排序：危急(3)＞警戒(2)＞注意(1)＞留意/提醒(0)。NCDR severity 是封閉集合。
+    static func severityRank(_ severity: String) -> Int {
+        switch severity {
+        case "危急": 3
+        case "警戒": 2
+        case "注意": 1
+        default: 0
+        }
+    }
+
+    /// 嚴重度顏色：危急/警戒＝danger、注意＝attention、其餘＝notice。
+    /// 警報卡與地圖塗層必須同一套，使用者才能把「卡片的紅」和「地圖的紅」對起來。
+    static func severityColor(rank: Int) -> Color {
+        switch rank {
+        case 2...: HCColor.danger
+        case 1: HCColor.attention
+        default: HCColor.notice
+        }
+    }
+
+    var severityRank: Int { Self.severityRank(severity) }
+    var severityColor: Color { Self.severityColor(rank: severityRank) }
+}
+
 // MARK: - 事件分類的視覺對應（圖示＝類型、顏色＝可信度，分工明確）
 
 extension EventCategory {
