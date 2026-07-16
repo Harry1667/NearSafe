@@ -1,0 +1,3 @@
+# 密鑰與執行期資料，不進 git（避免以後 git add website/ 時外洩）
+api/_config.php
+data/*.json

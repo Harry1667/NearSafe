@@ -1,0 +1,14 @@
+<?php
+// 給 App／任何客戶端拉取最新示警資料，直接讀 data/latest.json 原封輸出。
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-cache, max-age=0');
+header('Access-Control-Allow-Origin: *');
+
+$file = __DIR__ . '/../data/latest.json';
+if (!file_exists($file)) {
+    http_response_code(404);
+    echo json_encode(['error' => 'no data yet']);
+    exit;
+}
+
+readfile($file);
