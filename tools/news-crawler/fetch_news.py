@@ -456,6 +456,39 @@ def save_seen(path, ids):
 # 主流程
 # ---------------------------------------------------------------------------
 
+INGEST_URL = "https://havencircle.looptw.com/crawler/api/ingest_news.php"
+
+
+def push_to_oracle(output, out_dir):
+    """
+    推送本輪結果到 Oracle 中繼站（與 NCDR 爬蟲同機制：X-Ingest-Key 驗證）。
+    就算 0 筆新事件也推——Oracle 端在 ingest 時才做 24 小時淘汰，
+    空推等於幫存檔保鮮。失敗只警告不中斷：本機檔案寫成功才是基本盤。
+    """
+    key_path = os.path.join(out_dir, "ingest_key.txt")
+    if not os.path.exists(key_path):
+        log("找不到 ingest_key.txt，跳過推送 Oracle")
+        return
+    with open(key_path, encoding="utf-8") as f:
+        key = f.read().strip()
+    body = json.dumps(output, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        INGEST_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "X-Ingest-Key": key,
+            "User-Agent": USER_AGENT,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            log("Oracle 已接收：{}".format(resp.read().decode("utf-8")))
+    except Exception as e:
+        log("推送 Oracle 失敗（不中斷）：{}".format(e))
+
+
 def main(feeds=None, out_dir=None):
     feeds = feeds if feeds is not None else FEEDS
     out_dir = out_dir or os.path.dirname(os.path.abspath(__file__))
@@ -577,6 +610,8 @@ def main(feeds=None, out_dir=None):
     log("完成：抓 {} 則（略過已見 {}）→ 事故 {} 則｜規則排除 {}｜LLM 排除 {}".format(
         total_fetched, skipped_seen, len(events), dropped_by_rules, dropped_by_llm))
     log("輸出：{}".format(latest_path))
+
+    push_to_oracle(output, out_dir)
 
     # 全部 feed 都掛才算失敗（exit code 給 cron 監控用）
     all_failed = bool(feeds) and all(not s["ok"] for s in sources_report)

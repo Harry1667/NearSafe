@@ -5,7 +5,7 @@ header('Cache-Control: no-cache, max-age=0');
 header('Access-Control-Allow-Origin: *');
 
 $dataset = $_GET['dataset'] ?? 'ncdr';
-$basename = ['ncdr' => 'latest', 'aqi' => 'latest_aqi', 'crime' => 'latest_crime'][$dataset] ?? 'latest';
+$basename = ['ncdr' => 'latest', 'aqi' => 'latest_aqi', 'crime' => 'latest_crime', 'news' => 'latest_news'][$dataset] ?? 'latest';
 $file = __DIR__ . '/../data/' . $basename . '.json';
 if (!file_exists($file)) {
     http_response_code(404);

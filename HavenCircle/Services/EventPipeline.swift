@@ -51,6 +51,8 @@ protocol RegionAlertProvider {
 enum EventPipeline {
     static let providers: [any EventProvider] = [
         NCDRPointEventProvider(),
+        // 媒體報導層：中央社/自由/ETtoday 現場事故（isOfficial=false，只顯示永不推播）
+        NewsEventProvider(),
     ]
     static let regionProviders: [any RegionAlertProvider] = [
         NCDRRegionAlertProvider(),
