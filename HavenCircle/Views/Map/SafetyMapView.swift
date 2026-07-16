@@ -133,9 +133,12 @@ struct SafetyMapView: View {
     }
 
     private var alertAreas: [AlertArea] {
+        // 只塗天災與公共安全：交通/民生類（捷運誤點、局部停水）把整區塗色會造成
+        // 視覺洪水，反而稀釋真正的危險訊號；它們仍在提醒中心的分組清單裡
+        let paintable = activeRegionAlerts.filter { ["天災", "公共安全"].contains($0.group) }
         // 同一區被多則警報涵蓋時取最嚴重的顏色
         var severityByTown: [String: (rank: Int, severity: String)] = [:]
-        for alert in activeRegionAlerts {
+        for alert in paintable {
             let rank = Self.severityRank(alert.severity)
             for town in alert.affectedDistricts where town != Districts.unspecified {
                 if rank > (severityByTown[town]?.rank ?? -1) {

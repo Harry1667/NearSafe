@@ -86,17 +86,21 @@ struct EventListView: View {
         }
     }
 
+    /// 區域警報依分組分區顯示（天災→公共安全→民生→交通，安全相關優先排前）
     @ViewBuilder
     private var regionAlertSection: some View {
-        if !activeRegionAlerts.isEmpty {
-            Section("區域警報") {
-                ForEach(activeRegionAlerts) { alert in
-                    Button {
-                        selectedAlert = alert
-                    } label: {
-                        RegionAlertBanner(alert: alert, members: members)
+        let grouped = Dictionary(grouping: activeRegionAlerts, by: \.group)
+        ForEach(["天災", "公共安全", "民生", "交通"], id: \.self) { group in
+            if let alerts = grouped[group], !alerts.isEmpty {
+                Section("區域警報・\(group)（\(alerts.count)）") {
+                    ForEach(alerts) { alert in
+                        Button {
+                            selectedAlert = alert
+                        } label: {
+                            RegionAlertBanner(alert: alert, members: members)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }

@@ -48,6 +48,23 @@ final class RegionAlert {
 }
 
 extension RegionAlert {
+    /// 警報分組（顯示分區與地圖塗層取捨用；對應爬蟲端的四組分類）。
+    /// 用 kind 靜態對應而不動資料模型：kind 清單由我們自己的爬蟲白名單決定，是封閉集合。
+    static func group(forKind kind: String) -> String {
+        switch kind {
+        case "火災", "疏散避難", "防空", "輻射災害", "傳染病", "急門診通報", "縣市災情通報":
+            "公共安全"
+        case "停水", "電力中斷", "行動電話中斷", "市話通訊中斷", "停班停課", "枯旱預警":
+            "民生"
+        case "道路封閉", "鐵路事故", "高速公路路況", "聯絡道淹水封閉", "強風管制路段", "地下道積淹水", "捷運營運":
+            "交通"
+        default:
+            "天災"
+        }
+    }
+
+    var group: String { Self.group(forKind: kind) }
+
     var isEnded: Bool {
         status == EventStatus.resolved.rawValue || expiresAt <= .now
     }

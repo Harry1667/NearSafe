@@ -29,16 +29,41 @@ INGEST_URL = "https://havencircle.looptw.com/crawler/api/ingest.php"
 INGEST_KEY_PATH = Path(__file__).parent / "ingest_key.txt"
 
 # capCode 白名單（官方 /api/dataset 代碼表，2026-07-16 取得）。
-# 原 13 類中文白名單的對應代碼，加上對家庭安全明顯有價值的新類別。
+# 值為 (中文名稱, 分組)。分組供 App 端分區顯示與地圖塗層取捨：
+#   天災＝氣象/地質/水文警報；公共安全＝人身安全與健康；
+#   民生＝基礎服務中斷；交通＝運輸事故與路況。
+# 刻意排除的類型：路邊停車、道路施工、水門資訊、海洋污染、海灘水質、
+# 國家公園/森林遊樂區、消防安檢不合格場所（非事件、更新慢或與家庭安全無關）。
 RELEVANT_CAPCODES = {
-    "TY": "颱風", "EQ": "地震", "EQF": "地震速報", "TS": "海嘯",
-    "FL": "淹水", "DF": "土石流", "RA": "豪雨", "th": "雷雨",
-    "SW": "強風", "htW": "高溫", "CS": "低溫",
-    "HW": "河川高水位", "RD": "水庫放流", "floodDiversion": "分洪警報",
-    "barrierLake": "堰塞湖警戒",
-    "Fire": "火災", "evacuation": "疏散避難", "AR": "防空", "nuclear": "輻射災害",
-    "TPE_water": "停水", "TWC_water": "停水", "electric": "電力中斷",
-    "Mobiles": "行動電話中斷", "CM": "傳染病", "WSC": "停班停課",
+    # 天災
+    "TY": ("颱風", "天災"), "EQ": ("地震", "天災"), "EQF": ("地震速報", "天災"),
+    "TS": ("海嘯", "天災"), "FL": ("淹水", "天災"), "DF": ("土石流", "天災"),
+    "RA": ("豪雨", "天災"), "th": ("雷雨", "天災"), "SW": ("強風", "天災"),
+    "htW": ("高溫", "天災"), "CS": ("低溫", "天災"), "DsF": ("濃霧", "天災"),
+    "HW": ("河川高水位", "天災"), "RD": ("水庫放流", "天災"),
+    "floodDiversion": ("分洪警報", "天災"), "barrierLake": ("堰塞湖警戒", "天災"),
+    "FloodSensor": ("淹水感測", "天災"), "VO": ("火山", "天災"),
+    "TCC_highwater": ("水位警戒", "天災"), "TNC_highwater": ("區排警戒", "天災"),
+    "highwater": ("水位警示", "天災"),
+    # 公共安全
+    "Fire": ("火災", "公共安全"), "evacuation": ("疏散避難", "公共安全"),
+    "AR": ("防空", "公共安全"), "nuclear": ("輻射災害", "公共安全"),
+    "CM": ("傳染病", "公共安全"), "HospitalReport": ("急門診通報", "公共安全"),
+    "NFA_City_Disaster": ("縣市災情通報", "公共安全"),
+    # 民生
+    "TPE_water": ("停水", "民生"), "TWC_water": ("停水", "民生"),
+    "electric": ("電力中斷", "民生"), "Mobiles": ("行動電話中斷", "民生"),
+    "landlines": ("市話通訊中斷", "民生"), "WSC": ("停班停課", "民生"),
+    "Drought": ("枯旱預警", "民生"),
+    # 交通
+    "RC": ("道路封閉", "交通"), "TRAC": ("鐵路事故", "交通"),
+    "RAC": ("鐵路事故", "交通"), "railIncident": ("鐵路事故", "交通"),
+    "Freeway_Alert": ("高速公路路況", "交通"),
+    "ICroadClose": ("聯絡道淹水封閉", "交通"), "SWroadClose": ("強風管制路段", "交通"),
+    "underpass": ("地下道積淹水", "交通"),
+    "TMRT": ("捷運營運", "交通"), "TPMRT_ALERT": ("捷運營運", "交通"),
+    "KRTC_ALERT": ("捷運營運", "交通"), "NTM_MRT": ("捷運營運", "交通"),
+    "MRT": ("捷運營運", "交通"),
 }
 
 # v1 的中文白名單（備援路徑用）
@@ -118,7 +143,8 @@ def fetch_via_api():
             "areaDesc": area_desc,
             "circle": circle,
             "polygon": polygon,
-            "category": RELEVANT_CAPCODES[code],
+            "category": RELEVANT_CAPCODES[code][0],
+            "group": RELEVANT_CAPCODES[code][1],
             "feedId": capid,
         })
     return events, len(items), skipped, duplicates
@@ -194,6 +220,9 @@ def fetch_via_feed():
             continue
         if parsed:
             parsed["category"] = term
+            # 備援路徑也補分組：從代碼表反查名稱對應的組，查不到歸天災
+            name_to_group = {name: group for name, group in RELEVANT_CAPCODES.values()}
+            parsed["group"] = name_to_group.get(term, "天災")
             parsed["feedId"] = feed_id
             results.append(parsed)
     return results, len(entries), skipped, duplicate_ids

@@ -18,7 +18,13 @@ struct NCDRRegionAlertProvider: RegionAlertProvider {
         let envelope = try JSONDecoder().decode(IngestEnvelope.self, from: data)
 
         return envelope.data.events.compactMap { event in
-            guard let districts = Self.districts(from: event.areaDesc), !districts.isEmpty else { return nil }
+            // 行政區擷取失敗時（例：道路封閉的「台9線 227k+500」）退而用原文描述——
+            // 仍能顯示在提醒中心，只是不參與生活圈比對（不推播）也不畫塗層
+            var districts = Self.districts(from: event.areaDesc) ?? []
+            if districts.isEmpty, let raw = event.areaDesc?.trimmingCharacters(in: .whitespaces), !raw.isEmpty {
+                districts = [raw]
+            }
+            guard !districts.isEmpty else { return nil }
             guard let expires = Self.parseDate(event.expires) else { return nil }
             let ttl = expires.timeIntervalSinceNow
             guard ttl > 0 else { return nil } // 已過期的示警不再收錄，避免一開啟就顯示過期通知
