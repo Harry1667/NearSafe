@@ -105,6 +105,32 @@ final class FamilySyncService {
 
     // MARK: - 接受分享（家人端）
 
+    /// 從分享連結接受邀請（8 位邀請碼兌換後走這條；點連結則由 scene delegate 走 accept(_:)）。
+    /// 只有「抓取 metadata」會拋錯；接受階段的錯誤沿用 accept(_:) 的慣例寫進 state。
+    func acceptShare(from url: URL) async throws {
+        let metadata: CKShare.Metadata = try await withCheckedThrowingContinuation { continuation in
+            let operation = CKFetchShareMetadataOperation(shareURLs: [url])
+            var fetched: CKShare.Metadata?
+            operation.perShareMetadataResultBlock = { _, result in
+                if case .success(let metadata) = result { fetched = metadata }
+            }
+            operation.fetchShareMetadataResultBlock = { result in
+                switch result {
+                case .success:
+                    if let fetched {
+                        continuation.resume(returning: fetched)
+                    } else {
+                        continuation.resume(throwing: CKError(.unknownItem))
+                    }
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+            container.add(operation)
+        }
+        await accept(metadata)
+    }
+
     func accept(_ metadata: CKShare.Metadata) async {
         do {
             _ = try await container.accept(metadata)

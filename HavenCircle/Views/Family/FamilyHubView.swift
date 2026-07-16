@@ -16,7 +16,7 @@ struct FamilyHubView: View {
             Group {
                 switch mode {
                 case .circles:
-                    FamilyListView(onInvite: { mode = .checkIn })
+                    FamilyListView()
                 case .checkIn:
                     SafetyCheckInView(myName: myName)
                 }
