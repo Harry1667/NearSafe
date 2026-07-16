@@ -17,3 +17,6 @@ xcuserdata/
 # 爬蟲執行產物（每次執行重新生成，不入庫）
 tools/news-crawler/latest.json
 tools/news-crawler/seen.json
+
+# APNs 私鑰絕不進 git（外洩＝任何人可對使用者發推播）
+*.p8

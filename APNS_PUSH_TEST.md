@@ -70,7 +70,46 @@ xcrun simctl push 58EB62E3-88E2-4827-B286-95382DD94AD7 com.gomiigo.CamMenuApp.Ha
 留時間鎖定螢幕展示鎖屏通知。標題帶【示範】字樣——對評審誠實標示這是本機示範，
 不冒充伺服器推播。
 
+## 方法四：伺服器主動推送（正式架構，2026-07-16 上線）
+
+整條鏈：App 啟動自動上傳權杖 → Oracle `/apns/register.php` 登記 →
+cron（每 5 分鐘）比對 NCDR `latest.json` 的警報 identifier → 有新警報就對
+所有裝置廣播「無聲喚醒」→ 裝置被叫醒後自己跑資料管線、比對生活圈、
+相關才發本機通知。
+
+**零追蹤設計**：伺服器只存權杖，不存位置／生活圈；喚醒是無差別廣播，
+「這則警報跟我家有沒有關係」永遠只在裝置上判斷。
+
+**產品鐵律**：cron 只看 NCDR 官方資料集；媒體報導（news）永遠不觸發推播。
+
+伺服器端檔案（`website/apns/`，部署於 havencircle.looptw.com/apns/）：
+
+| 檔案 | 用途 |
+|---|---|
+| `register.php` | App 上傳權杖（開放端點，格式驗證＋上限 500） |
+| `notify_all.php` | 手動廣播（需 `X-Admin-Key`；`mode=alert` 可發可見通知供 Demo） |
+| `cron_check.php` | cron 每 5 分鐘偵測新警報 → 自動廣播無聲喚醒 |
+| `data/` | 權杖清單、.p8 私鑰、log（nginx deny all，外部抓不到） |
+
+手動廣播測試（admin key 在伺服器 `_apns_config.php`）：
+
+```bash
+# 無聲喚醒（正式模式）
+curl -X POST https://havencircle.looptw.com/apns/notify_all.php \
+  -H "X-Admin-Key: <admin-key>" -d '{}'
+
+# 可見通知（Demo 用）
+curl -X POST https://havencircle.looptw.com/apns/notify_all.php \
+  -H "X-Admin-Key: <admin-key>" \
+  -d '{"mode":"alert","title":"安心圈","body":"這是伺服器推送測試"}'
+```
+
 ## 已知限制（下一步）
 
-- 權杖目前只存本機，尚未上傳伺服器；Oracle 端「權杖登記＋行政區比對＋自動發送」是階段 4 的後半
-- Development 權杖與 Production 權杖不同；上架後要用 Production 環境重測
+- **APNs 金鑰尚未安裝**：需到 developer.apple.com → Keys 生成 APNs Auth Key（.p8），
+  把檔案放到伺服器 `apns/data/AuthKey.p8`、Key ID 填入 `_apns_config.php` 後，
+  發送才會真正生效（在那之前 cron 會記錄「金鑰尚未安裝」並跳過）
+- Development（Xcode 直裝）走 sandbox 環境、TestFlight/上架走 production，
+  App 會依 build 型態自動帶對環境，伺服器據此選擇 APNs 主機
+- 無聲喚醒（content-available）受 iOS 節流：頻率上限大約每小時數次，
+  且低電量模式可能延遲——這是 Apple 的系統行為，所有 App 一視同仁

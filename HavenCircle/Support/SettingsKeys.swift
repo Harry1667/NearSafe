@@ -19,6 +19,8 @@ enum SettingsKeys {
     static let apnsDeviceToken = "apnsDeviceToken"
     /// 守護圈開場動效待播旗標：Onboarding 完成時種下，地圖首次出現時消耗（只演一次）
     static let guardianIntroPending = "guardianIntroPending"
+    /// 外觀模式（AppearanceMode 的 rawValue）：跟隨系統／淺色／深色
+    static let appearanceMode = "appearanceMode"
 }
 
 /// 資料時效：所有會刷新事件資料的路徑都應呼叫這裡

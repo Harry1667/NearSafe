@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import CloudKit
 import os // Swift 6.2 MemberImportVisibility：直接使用 os.Logger 插值的檔案必須自行 import
 
@@ -17,7 +18,32 @@ enum DeepLinkStore {
     @MainActor static var pending: URL?
 }
 
+/// AppDelegate 回呼（無聲推播喚醒）需要資料庫容器才能跑資料管線，
+/// 但容器由 HavenCircleApp.init 建立——這裡提供橋接（init 一定早於任何推播回呼）
+enum AppRuntime {
+    @MainActor static var container: ModelContainer?
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    /// 跟隨圈的監聽必須在這裡掛（而不是只在 SwiftUI .task）：
+    /// 顯著位置變更在背景重啟 App 時，scene 不一定會連接，.task 可能永遠不跑
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        if let container = AppRuntime.container {
+            LocationService.shared.onFollowLocationUpdate = { location in
+                Task { @MainActor in
+                    await FollowCircleService.handle(location: location, container: container)
+                }
+            }
+            LocationService.shared.syncFollowMonitoring(
+                hasFollowCircle: FollowCircleService.hasFollowCircle(context: container.mainContext)
+            )
+        }
+        return true
+    }
+
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
@@ -30,8 +56,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     // MARK: - APNs 裝置權杖
 
-    /// 拿到權杖就存本機：設定頁「示範與開發」區可複製，貼到 Apple Push Console 測試推播。
-    /// 之後接 Oracle 後端時，改成把權杖連同「關心的行政區」一起上傳。
+    /// 拿到權杖：存本機（Debug 版設定頁可複製，供 Push Console 測試）＋
+    /// 上傳中繼站登記（伺服器偵測到新官方警報時才知道要喚醒誰）
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -39,6 +65,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         UserDefaults.standard.set(token, forKey: SettingsKeys.apnsDeviceToken)
         AppLog.notifications.info("已取得 APNs 裝置權杖")
+        Task { await APNsRegistrar.upload(token: token) }
     }
 
     func application(
@@ -47,6 +74,28 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) {
         // 模擬器與未佈建的裝置會走到這裡，只記錄不打擾使用者
         AppLog.notifications.error("APNs 註冊失敗：\(error.localizedDescription)")
+    }
+
+    // MARK: - 無聲推播喚醒
+
+    /// 伺服器偵測到新官方警報 → 廣播 {content-available:1} → 系統在背景叫醒 App 走到這裡。
+    /// 喚醒後跑一次完整資料管線：抓最新警報、比對生活圈、相關才發本機通知——
+    /// 「推播喚醒是廣播、判斷在裝置」正是零追蹤架構的核心（伺服器不知道任何人的家在哪）。
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        guard let container = AppRuntime.container else {
+            completionHandler(.noData)
+            return
+        }
+        Task { @MainActor in
+            await EventPipeline.refresh(context: container.mainContext)
+            AppLog.notifications.info("無聲推播喚醒：資料管線刷新完成")
+            // 一律回 .newData：讓系統認為喚醒有價值，維持之後的背景喚醒額度
+            completionHandler(.newData)
+        }
     }
 }
 

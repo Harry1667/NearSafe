@@ -10,10 +10,14 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<!-- 無聲推播喚醒：伺服器偵測到新官方警報時叫醒 App 抓資料（比對仍在裝置上做） -->
+		<string>remote-notification</string>
 	</array>
-	<!-- 定位權限說明：只用於地圖顯示自己與回報平安時自願附上位置，無背景追蹤 -->
+	<!-- 定位權限說明：地圖藍點、平安回報自願附位置；「永遠允許」只給使用者主動開啟的跟隨圈 -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>用於在地圖上顯示你目前的位置，以及在你回報平安時（可選）附上當下位置讓家人安心。安心圈不會在背景持續追蹤位置。</string>
+	<string>用於在地圖上顯示你目前的位置，以及在你回報平安時（可選）附上當下位置讓家人安心。你的位置只留在這台手機。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>你開啟「跟著我移動」的警示圈後，需要此權限在你移動時（約每 500 公尺）更新圈的位置，走到哪守到哪。你的位置永遠只留在這台手機，不會上傳或分享給任何人。</string>
 	<!-- Widget deep link 用的自訂 URL scheme -->
 	<key>CFBundleURLTypes</key>
 	<array>

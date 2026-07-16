@@ -15,9 +15,13 @@ struct HavenCircleApp: App {
     @Environment(\.scenePhase) private var scenePhase
     private let modelContainer: ModelContainer
     @State private var familySync = FamilySyncService()
+    // 外觀模式：使用者可在設定頁強制淺色/深色（預設跟隨系統）
+    @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
 
     init() {
         modelContainer = Self.makeContainer()
+        // 無聲推播喚醒的回呼（AppDelegate）需要容器跑資料管線，橋接過去
+        AppRuntime.container = modelContainer
         // 導航標題套圓體，appearance 要在第一個視圖建立前設定才會生效
         HCAppearance.apply()
         // 前景也要顯示通知橫幅（演練模式必要）
@@ -67,6 +71,8 @@ struct HavenCircleApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                // nil（跟隨系統）時不強制，交還系統深淺設定
+                .preferredColorScheme(AppearanceMode(rawValue: appearanceMode)?.colorScheme)
                 .environment(familySync)
                 .task {
                     #if DEBUG

@@ -33,8 +33,9 @@ enum HCColor {
     static let brand = Color(light: 0x3657D6, dark: 0x89A0FF)
     /// 無需注意、回報平安、操作成功
     static let safe = Color(light: 0x18794E, dark: 0x5ED49A)
-    /// 確認中、需留意、時段外
-    static let attention = Color(light: 0xA96400, dark: 0xFFC56E)
+    /// 確認中、需留意、時段外。深色值刻意偏橘（0xFFAF52）：
+    /// 與 notice 的黃（0xF5D76E）拉開色相，深色模式下兩階才分得出來
+    static let attention = Color(light: 0xA96400, dark: 0xFFAF52)
     /// 明確危險、官方確認的警報
     static let danger = Color(light: 0xC83E3E, dark: 0xFF8A80)
     /// 區域警報最低層級（留意/提醒）的塗色——比 attention 再低一階
@@ -62,6 +63,31 @@ enum HCRadius {
     static let control: CGFloat = 16
     static let card: CGFloat = 16
     static let sheet: CGFloat = 28
+}
+
+/// 外觀模式：使用者可在設定頁強制淺色／深色，預設跟隨系統。
+/// rawValue 存在 UserDefaults（SettingsKeys.appearanceMode），根視圖以 preferredColorScheme 套用
+enum AppearanceMode: String, CaseIterable {
+    case system
+    case light
+    case dark
+
+    var label: String {
+        switch self {
+        case .system: "跟隨系統"
+        case .light: "淺色"
+        case .dark: "深色"
+        }
+    }
+
+    /// nil = 不強制，交還給系統設定
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
 }
 
 /// 全域外觀：導航標題改圓體（SF Rounded）——「沉著守護」的柔和感從標題字型貫穿全 App，

@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
     @AppStorage(SettingsKeys.apnsDeviceToken) private var apnsToken = ""
+    @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
     @State private var showTutorial = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -53,6 +54,21 @@ struct SettingsView: View {
                     settingsRow("提醒設定", subtitle: "本機提醒、可信度與每日摘要",
                                 icon: "bell.badge.fill", color: .red) {
                         AlertSettingsView()
+                    }
+                    Picker(selection: $appearanceMode) {
+                        ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
+                            Text(mode.label).tag(mode.rawValue)
+                        }
+                    } label: {
+                        Label {
+                            Text("外觀")
+                        } icon: {
+                            Image(systemName: "circle.lefthalf.filled")
+                                .font(.callout)
+                                .foregroundStyle(.white)
+                                .frame(width: 29, height: 29)
+                                .background(Color.indigo.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                        }
                     }
                 }
 
@@ -186,6 +202,9 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(HCColor.safe)
             }
+            // APNs 權杖只在 Debug build 顯示：權杖本身不足以發送推播（還需開發者私鑰），
+            // 但它能識別裝置，且對一般使用者只是一串困惑的亂碼——正式版不編譯這段
+            #if DEBUG
             if !apnsToken.isEmpty {
                 Button {
                     UIPasteboard.general.string = apnsToken
@@ -202,10 +221,15 @@ struct SettingsView: View {
                     }
                 }
             }
+            #endif
         } header: {
             Text("示範與開發")
         } footer: {
+            #if DEBUG
             Text("模擬通知為本機發送的示範內容（標題含【示範】字樣），非真實災害警報。歷史事件示範重播的是 NCDR 實際發布過的官方示警原文（標題含【歷史示範】，僅顯示效期經過調整）。權杖供 APNs 推播測試，操作步驟見專案 APNS_PUSH_TEST.md。")
+            #else
+            Text("模擬通知為本機發送的示範內容（標題含【示範】字樣），非真實災害警報。歷史事件示範重播的是 NCDR 實際發布過的官方示警原文（標題含【歷史示範】，僅顯示效期經過調整）。")
+            #endif
         }
     }
 
