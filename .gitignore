@@ -13,3 +13,7 @@ xcuserdata/
 
 # 編輯器工作區檔（含機器特定路徑）
 *.code-workspace
+
+# 爬蟲執行產物（每次執行重新生成，不入庫）
+tools/news-crawler/latest.json
+tools/news-crawler/seen.json
