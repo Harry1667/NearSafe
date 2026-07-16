@@ -3,10 +3,12 @@ import CoreLocation
 import Observation
 import os // Swift 6.2 MemberImportVisibility：用 os.Logger 插值的檔案必須自行 import
 
-/// 定位服務——產品鐵律：**不做背景追蹤**。
-/// 只有兩個用途：(1) 地圖顯示自己的藍點（when-in-use 權限）、
-/// (2) 安否回報時「自願」一次性取得位置附在回報裡。
-/// 沒有 startUpdatingLocation 的常駐更新，家人位置只來自他們主動回報的那一刻。
+/// 定位服務——產品守則：**位置永遠只留在這台手機，不上傳、不分享**。
+/// 三個用途：(1) 地圖顯示自己的藍點（when-in-use 權限）、
+/// (2) 安否回報時「自願」一次性取得位置附在回報裡、
+/// (3) 使用者明確開啟的「跟隨圈」：用系統「顯著位置變更」（約移動 500 公尺才喚醒，
+///     省電，需「永遠允許」權限）更新自己的警示圈圈心，只寫本機資料庫。
+/// 沒有 startUpdatingLocation 的常駐精確追蹤；家人位置只來自他們主動回報的那一刻。
 @Observable
 @MainActor
 final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate {
@@ -16,6 +18,8 @@ final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate
     private(set) var authorization: CLAuthorizationStatus = .notDetermined
     /// 一次性取位的等待者（同時間只允許一個，新請求會讓舊的以 nil 結束）
     private var oneShot: CheckedContinuation<CLLocation?, Never>?
+    /// 跟隨圈回呼：顯著位置變更到達時呼叫（由 AppDelegate 啟動時掛上）
+    var onFollowLocationUpdate: ((CLLocation) -> Void)?
 
     override private init() {
         super.init()
@@ -32,6 +36,23 @@ final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate
     func requestPermissionIfNeeded() {
         if authorization == .notDetermined {
             manager.requestWhenInUseAuthorization()
+        }
+    }
+
+    /// 跟隨圈用：要求「永遠允許」（顯著位置變更要在背景喚醒 App 必須是 Always）。
+    /// 從未問過會先出 when-in-use 對話框，之後系統會再問升級；已是 when-in-use 則直接問升級
+    func requestAlwaysPermission() {
+        manager.requestAlwaysAuthorization()
+    }
+
+    /// 依「是否存在跟隨圈」開關顯著位置變更監聽。
+    /// 呼叫時機：App 啟動（含背景被喚醒）、跟隨圈建立或刪除後。
+    /// 顯著位置變更不需要 UIBackgroundModes location，系統會在必要時自行重啟 App
+    func syncFollowMonitoring(hasFollowCircle: Bool) {
+        if hasFollowCircle {
+            manager.startMonitoringSignificantLocationChanges()
+        } else {
+            manager.stopMonitoringSignificantLocationChanges()
         }
     }
 
@@ -56,8 +77,11 @@ final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        oneShot?.resume(returning: locations.last)
+        guard let latest = locations.last else { return }
+        // 一次性取位與跟隨圈共用這個回呼：兩邊都要餵到
+        oneShot?.resume(returning: latest)
         oneShot = nil
+        onFollowLocationUpdate?(latest)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

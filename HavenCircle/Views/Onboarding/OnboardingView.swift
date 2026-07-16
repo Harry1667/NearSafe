@@ -129,7 +129,7 @@ struct OnboardingView: View {
             .padding(.horizontal, 24)
 
             Spacer()
-            Text("所有生活圈與事件資料只儲存在這支手機；不會在背景追蹤任何人的位置——家人的位置只來自他們自願附上的平安回報。")
+            Text("所有生活圈與事件資料只儲存在這支手機；你的位置永遠不會上傳或分享——家人的位置只來自他們自願附上的平安回報。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

@@ -6,6 +6,7 @@ struct FamilyListView: View {
     @Environment(\.modelContext) private var context
     @Query private var members: [LocalFamilyMember]
     @State private var adding = false
+    @State private var addingPlace = false
 
     var body: some View {
         List {
@@ -20,6 +21,7 @@ struct FamilyListView: View {
                 } actions: {
                     Button("新增家人", systemImage: "person.badge.plus") { adding = true }
                         .buttonStyle(.borderedProminent)
+                    Button("新增重要地點", systemImage: "mappin.and.ellipse") { addingPlace = true }
                 }
             }
             ForEach(members) { member in
@@ -27,10 +29,14 @@ struct FamilyListView: View {
                     MemberDetailView(member: member)
                 } label: {
                     HStack {
-                        Image(systemName: "person.fill").foregroundStyle(HCColor.brand)
+                        // 圖示區分家人與重要地點（老家、店面等不綁人的關注點）
+                        Image(systemName: member.isPlace ? "mappin.circle.fill" : "person.fill")
+                            .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
                         VStack(alignment: .leading) {
                             Text(member.name)
-                            Text("\(member.lifeCircles.count) 個生活圈 · \(member.relationship)")
+                            Text(member.isPlace
+                                 ? "\(member.lifeCircles.count) 個提醒範圍 · 重要地點"
+                                 : "\(member.lifeCircles.count) 個生活圈 · \(member.relationship)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -47,9 +53,15 @@ struct FamilyListView: View {
             }
         }
         .toolbar {
-            Button("新增本機家人資料", systemImage: "person.badge.plus") { adding = true }
+            Menu {
+                Button("新增家人", systemImage: "person.badge.plus") { adding = true }
+                Button("新增重要地點", systemImage: "mappin.and.ellipse") { addingPlace = true }
+            } label: {
+                Label("新增", systemImage: "plus")
+            }
         }
         .sheet(isPresented: $adding) { MemberEditorView() }
+        .sheet(isPresented: $addingPlace) { MemberEditorView(kind: "place") }
     }
 }
 

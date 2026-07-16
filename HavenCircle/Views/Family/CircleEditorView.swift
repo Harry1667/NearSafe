@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import MapKit
+import CoreLocation
 import os
 
 struct CircleEditorView: View {
@@ -17,22 +18,44 @@ struct CircleEditorView: View {
     @State private var weekdays: Set<Int> = [2, 3, 4, 5, 6]  // 預設週一到週五
     @State private var startHour = 8
     @State private var endHour = 19
+    // 目前位置與跟隨圈
+    @State private var picked: CLLocationCoordinate2D?
+    @State private var pickedLabel = ""
+    @State private var locating = false
+    @State private var locationHint = ""
+    @State private var isFollowMe = false
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("地點名稱", text: $name)
-                TextField("地址或地標", text: $address)
-                Button("使用 Apple Maps 搜尋") {
-                    Task { await search() }
+                if !isFollowMe {
+                    TextField("地址或地標", text: $address)
+                    Button("使用 Apple Maps 搜尋") {
+                        Task { await search() }
+                    }
+                    Button {
+                        Task { await useCurrentLocation() }
+                    } label: {
+                        HStack {
+                            Label("使用目前位置", systemImage: "location.fill")
+                            if locating { Spacer(); ProgressView() }
+                        }
+                    }
+                    if !pickedLabel.isEmpty {
+                        Text("已取得目前位置：\(pickedLabel)").foregroundStyle(HCColor.safe)
+                    } else if !locationHint.isEmpty {
+                        Text(locationHint).font(.caption).foregroundStyle(HCColor.attention)
+                    }
+                    if let found, picked == nil {
+                        Text("找到：\(found.name ?? address)").foregroundStyle(HCColor.safe)
+                    } else if searchFailed && picked == nil {
+                        Text("找不到這個地點，會改用預設座標（台北市中心）")
+                            .font(.caption)
+                            .foregroundStyle(HCColor.attention)
+                    }
                 }
-                if let found {
-                    Text("找到：\(found.name ?? address)").foregroundStyle(HCColor.safe)
-                } else if searchFailed {
-                    Text("找不到這個地點，會改用預設座標（台北市中心）")
-                        .font(.caption)
-                        .foregroundStyle(HCColor.attention)
-                }
+                followSection
                 Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 Picker("所在行政區", selection: $district) {
                     ForEach(Districts.all, id: \.self) { Text($0) }
@@ -54,6 +77,52 @@ struct CircleEditorView: View {
                     Button("取消") { dismiss() }
                 }
             }
+        }
+    }
+
+    /// 跟隨圈：圈心跟著這台手機移動。開啟後隱藏地址輸入（地址沒有意義），
+    /// 需要「永遠允許」定位權限；隱私邊界寫明在 footer，位置只留本機
+    private var followSection: some View {
+        Section {
+            Toggle("跟著我移動", isOn: $isFollowMe)
+                .onChange(of: isFollowMe) { _, on in
+                    if on {
+                        LocationService.shared.requestAlwaysPermission()
+                        // 順手抓一次目前位置當初始圈心，省得存檔後要等第一次顯著位置變更
+                        Task { await useCurrentLocation() }
+                    }
+                }
+        } footer: {
+            Text("開啟後這個圈會跟著這台手機移動（約每移動 500 公尺更新一次，走到哪守到哪）。需要定位權限設為「永遠允許」。你的位置只留在這台手機，不會上傳或分享給任何人。")
+        }
+    }
+
+    /// 一鍵帶入目前位置：反查地名與行政區，取代手動輸入地址
+    private func useCurrentLocation() async {
+        locating = true
+        defer { locating = false }
+        guard LocationService.shared.isAuthorized else {
+            LocationService.shared.requestPermissionIfNeeded()
+            locationHint = "請先允許定位權限，再點一次"
+            return
+        }
+        guard let location = await LocationService.shared.currentLocation() else {
+            locationHint = "取不到目前位置，請稍後再試或改用地址搜尋"
+            return
+        }
+        picked = location.coordinate
+        locationHint = ""
+        if let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first {
+            let label = [placemark.locality, placemark.subLocality].compactMap { $0 }.joined()
+            pickedLabel = label.isEmpty ? "座標已取得" : label
+            if district == Districts.unspecified {
+                let text = [placemark.subAdministrativeArea, placemark.locality,
+                            placemark.subLocality, placemark.name].compactMap { $0 }.joined(separator: " ")
+                district = OnboardingView.guessDistrict(from: text)
+            }
+            if address.isEmpty { address = pickedLabel }
+        } else {
+            pickedLabel = "座標已取得"
         }
     }
 
@@ -101,10 +170,12 @@ struct CircleEditorView: View {
     }
 
     private func save() {
-        let coordinate = found?.location.coordinate ?? .init(latitude: 25.035, longitude: 121.54)
+        // 座標優先序：目前位置 > 地圖搜尋結果 > 預設（台北市中心）。
+        // 跟隨圈存檔後 300 公尺內的第一次顯著位置變更就會把圈心校正到實際位置
+        let coordinate = picked ?? found?.location.coordinate ?? .init(latitude: 25.035, longitude: 121.54)
         let circle = LocalLifeCircle(
-            name: name.isEmpty ? "生活圈" : name,
-            encryptedAddress: found?.name ?? address,
+            name: name.isEmpty ? (isFollowMe ? "我的位置" : "生活圈") : name,
+            encryptedAddress: isFollowMe ? "跟著我移動" : (pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel),
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
             radiusMeters: radius,
@@ -116,8 +187,13 @@ struct CircleEditorView: View {
         circle.scheduleStartHour = startHour
         circle.scheduleEndHour = endHour
         circle.district = district
+        circle.isFollowMe = isFollowMe
         context.insert(circle)
         context.saveReporting()
+        // 跟隨圈的監聽開關要跟著圈的存亡走
+        LocationService.shared.syncFollowMonitoring(
+            hasFollowCircle: FollowCircleService.hasFollowCircle(context: context)
+        )
         dismiss()
     }
 }

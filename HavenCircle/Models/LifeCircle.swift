@@ -21,6 +21,9 @@ final class LocalLifeCircle {
     var scheduleEndHour: Int = 24
     /// 所在行政區（供區域型警報比對；「未指定」表示不參與區域警報）
     var district: String = "未指定"
+    /// 跟隨圈：圈心跟著這台手機移動（顯著位置變更時由 FollowCircleService 更新）。
+    /// 使用者明確開啟才成立；位置只寫本機資料庫，不上傳、不分享
+    var isFollowMe: Bool = false
     var member: LocalFamilyMember?
 
     init(

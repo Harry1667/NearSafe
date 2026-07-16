@@ -14,7 +14,17 @@ struct MemberDetailView: View {
             Section("生活圈") {
                 ForEach(member.lifeCircles) { circle in
                     VStack(alignment: .leading) {
-                        Text(circle.name).font(.headline)
+                        HStack(spacing: 6) {
+                            Text(circle.name).font(.headline)
+                            if circle.isFollowMe {
+                                Label("跟著我", systemImage: "location.fill")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(HCColor.brand)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(HCColor.brand.opacity(0.12), in: Capsule())
+                            }
+                        }
                         Text("\(circle.encryptedAddress) · 半徑 \(circle.radiusMeters) 公尺")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
