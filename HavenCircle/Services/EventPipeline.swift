@@ -45,13 +45,12 @@ protocol RegionAlertProvider {
 
 /// 資料管線：來源擷取 → 去重 → 可信度評分 → 生活圈比對 → 通知 → 封存。
 /// 區域警報（regionProviders）已接上 NCDR 民生示警平台真實資料（見 NCDRRegionAlertProvider）。
-/// 點狀事件（providers）還是 mock——NCDR CAP 幾乎不附精確經緯度，套不進「事件點＋半徑」模型，
-/// 之後要接消防局等有座標的即時來源時只替換 provider，不動管線本身。
+/// 點狀事件（providers）也是真實來源：NCDR 示警裡帶精確座標的（火災通報等）
+/// 由 NCDRPointEventProvider 轉成地圖點；沒座標的走區域警報那條路。
 @MainActor
 enum EventPipeline {
     static let providers: [any EventProvider] = [
-        MockFireDepartmentProvider(),
-        MockCommunityProvider(),
+        NCDRPointEventProvider(),
     ]
     static let regionProviders: [any RegionAlertProvider] = [
         NCDRRegionAlertProvider(),
@@ -214,64 +213,5 @@ enum EventPipeline {
         for alert in alerts where alert.status == EventStatus.active.rawValue && alert.expiresAt <= .now {
             alert.status = EventStatus.resolved.rawValue
         }
-    }
-}
-
-// MARK: - Mock 來源（點狀事件，等未來接上有座標的即時來源再替換）
-
-/// 模擬官方來源：消防與警廣
-struct MockFireDepartmentProvider: EventProvider {
-    let sourceName = "台北市政府消防局（模擬）"
-
-    func fetchReports() async throws -> [RawEventReport] {
-        [
-            RawEventReport(
-                title: "火警通報", eventType: EventCategory.fire,
-                approximateLocation: "信義區松仁路附近",
-                latitude: 25.0333, longitude: 121.5688, precisionMeters: 500,
-                sourceName: sourceName, sourceURL: "https://www.119.gov.taipei/",
-                isOfficial: true, occurredAt: .now.addingTimeInterval(-1_080), ttlSeconds: 86_400
-            ),
-            RawEventReport(
-                title: "重大交通事故", eventType: EventCategory.traffic,
-                approximateLocation: "南港區市民大道八段",
-                latitude: 25.0510, longitude: 121.6060, precisionMeters: 400,
-                sourceName: "警察廣播電台（模擬）", sourceURL: "https://www.pbs.gov.tw/",
-                isOfficial: true, occurredAt: .now.addingTimeInterval(-3_600), ttlSeconds: 43_200
-            ),
-        ]
-    }
-}
-
-/// 模擬社群來源：驗證「多來源交叉驗證」與「未驗證線索不推播」兩條路徑
-struct MockCommunityProvider: EventProvider {
-    let sourceName = "社群回報（模擬）"
-
-    func fetchReports() async throws -> [RawEventReport] {
-        [
-            // 兩個獨立來源回報同一地點 → 管線應升級為「多來源交叉驗證」
-            RawEventReport(
-                title: "大樓冒煙", eventType: EventCategory.fire,
-                approximateLocation: "大安區和平東路二段",
-                latitude: 25.0264, longitude: 121.5435, precisionMeters: 800,
-                sourceName: "市民回報平台 A（模擬）", sourceURL: "https://example.com/report-a",
-                isOfficial: false, occurredAt: .now.addingTimeInterval(-1_800), ttlSeconds: 21_600
-            ),
-            RawEventReport(
-                title: "疑似火警冒煙", eventType: EventCategory.fire,
-                approximateLocation: "大安區和平東路二段",
-                latitude: 25.0262, longitude: 121.5437, precisionMeters: 800,
-                sourceName: "地方社團 B（模擬）", sourceURL: "https://example.com/report-b",
-                isOfficial: false, occurredAt: .now.addingTimeInterval(-1_500), ttlSeconds: 21_600
-            ),
-            // 單一未驗證線索 → 持續確認中，僅 App 內顯示
-            RawEventReport(
-                title: "路口聚眾糾紛", eventType: EventCategory.publicSafety,
-                approximateLocation: "萬華區西門町",
-                latitude: 25.0421, longitude: 121.5079, precisionMeters: 600,
-                sourceName: "網路論壇（模擬）", sourceURL: "https://example.com/forum",
-                isOfficial: false, occurredAt: .now.addingTimeInterval(-900), ttlSeconds: 21_600
-            ),
-        ]
     }
 }

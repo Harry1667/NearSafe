@@ -12,6 +12,7 @@ struct SafetyMapView: View {
 
     // 圖層與過濾（顯示偏好，不影響通知決策）
     @State private var showCircles = true
+    @State private var showAlertAreas = true
     @State private var showShelters = false
     @State private var showHospitals = false
     @State private var enabledTypes: Set<String> = Set(EventCategory.all)
@@ -22,7 +23,8 @@ struct SafetyMapView: View {
 
     /// nil＝全家；對應產品規格「可切換媽媽、弟弟或全家」
     @State private var selectedMemberKey: String?
-    /// .automatic 讓鏡頭自動框住地圖內容（生活圈與事件）
+    /// 鏡頭明確框住生活圈（不能用 .automatic——它會框住所有內容，
+    /// 加了全台塗層後開圖會變成全台灣視角，失去「聚焦自家」的預設）
     @State private var cameraPosition: MapCameraPosition = .automatic
     // 用 @AppStorage 與設定頁共用同一旗標
     @AppStorage(SettingsKeys.alertsPaused) private var isPaused = false
@@ -67,9 +69,29 @@ struct SafetyMapView: View {
         }.count
     }
 
+    /// 框住目前顯示對象所有生活圈的鏡頭範圍
+    private var circlesRegion: MapCameraPosition {
+        let circles = visibleMembers.flatMap(\.lifeCircles)
+        guard !circles.isEmpty else { return .automatic }
+        let lats = circles.map(\.latitude)
+        let lons = circles.map(\.longitude)
+        // 邊界加緩衝：至少涵蓋最大半徑的兩倍，避免圈貼著螢幕邊
+        let maxRadiusDeg = Double(circles.map(\.radiusMeters).max() ?? 1000) / 111_000 * 2.5
+        let center = CLLocationCoordinate2D(
+            latitude: (lats.min()! + lats.max()!) / 2,
+            longitude: (lons.min()! + lons.max()!) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max(lats.max()! - lats.min()! + maxRadiusDeg, 0.02),
+            longitudeDelta: max(lons.max()! - lons.min()! + maxRadiusDeg, 0.02)
+        )
+        return .region(MKCoordinateRegion(center: center, span: span))
+    }
+
     var body: some View {
         NavigationStack {
             map
+                .onAppear { cameraPosition = circlesRegion }
                 .overlay(alignment: .top) {
                     if !isChromeHidden { topOverlays }
                 }
@@ -101,8 +123,62 @@ struct SafetyMapView: View {
 
     // MARK: - 地圖本體
 
+    /// 區域警報塗層：受影響行政區整片著色（依嚴重度取色，同區取最嚴重）。
+    /// 為什麼是塗層不是大頭針：強風/豪雨這類警報影響的是「一整個行政區」，
+    /// 釘一個點會錯誤暗示事件發生在該點。
+    private struct AlertArea: Identifiable {
+        let id: String
+        let ring: [CLLocationCoordinate2D]
+        let severityRank: Int
+    }
+
+    private var alertAreas: [AlertArea] {
+        // 同一區被多則警報涵蓋時取最嚴重的顏色
+        var severityByTown: [String: (rank: Int, severity: String)] = [:]
+        for alert in activeRegionAlerts {
+            let rank = Self.severityRank(alert.severity)
+            for town in alert.affectedDistricts where town != Districts.unspecified {
+                if rank > (severityByTown[town]?.rank ?? -1) {
+                    severityByTown[town] = (rank, alert.severity)
+                }
+            }
+        }
+        return severityByTown.flatMap { town, info in
+            DistrictBoundaries.shared.districts(named: town).flatMap { district in
+                district.rings.enumerated().map { index, ring in
+                    AlertArea(id: "\(district.county)-\(town)-\(index)", ring: ring, severityRank: info.rank)
+                }
+            }
+        }
+    }
+
+    private static func severityRank(_ severity: String) -> Int {
+        switch severity {
+        case "危急": 3
+        case "警戒": 2
+        case "注意": 1
+        default: 0 // 留意／提醒
+        }
+    }
+
+    private static func severityColor(_ rank: Int) -> Color {
+        switch rank {
+        case 3: .red
+        case 2: .red
+        case 1: .orange
+        default: .yellow
+        }
+    }
+
     private var map: some View {
         Map(position: $cameraPosition) {
+            if showAlertAreas {
+                ForEach(alertAreas) { area in
+                    MapPolygon(coordinates: area.ring)
+                        .foregroundStyle(Self.severityColor(area.severityRank).opacity(0.18))
+                        .stroke(Self.severityColor(area.severityRank).opacity(0.55), lineWidth: 1)
+                }
+            }
             if showCircles {
                 ForEach(visibleMembers.flatMap(\.lifeCircles)) { circle in
                     MapCircle(
@@ -168,7 +244,7 @@ struct SafetyMapView: View {
             )
         }
         .onChange(of: selectedMemberKey) {
-            cameraPosition = .automatic
+            cameraPosition = circlesRegion
         }
     }
 
@@ -177,6 +253,7 @@ struct SafetyMapView: View {
         Menu {
             Section("圖層") {
                 Toggle("生活圈範圍", isOn: $showCircles)
+                Toggle("區域警報範圍", isOn: $showAlertAreas)
                 Toggle("避難收容所", isOn: $showShelters)
                 Toggle("急救責任醫院", isOn: $showHospitals)
             }
