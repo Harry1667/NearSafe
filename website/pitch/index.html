@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="安心圈 HavenCircle 黑客松初賽提交：零位置追蹤的家人災害守護 App——真實政府示警資料、自建後端鏈路、有產品倫理的設計。" />
+    <title>安心圈 HavenCircle｜黑客松初賽提交</title>
+    <style>
+      :root {
+        --ink: #14232f;
+        --navy: #123048;
+        --muted: #5e6e79;
+        --cream: #f6f4ee;
+        --warm: #e9e4d9;
+        --lime: #c9e65e;
+        --lime-deep: #a9c840;
+        --line: #d7d9d3;
+        --orange: #ff7b57;
+        --card: #ffffff;
+        --card-soft: #fdfcf8;
+        --shadow: 0 18px 40px rgba(20, 35, 47, 0.10);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #eef0ea;
+          --navy: #d9e4ec;
+          --muted: #9aa8b2;
+          --cream: #101c26;
+          --warm: #16242f;
+          --lime: #c9e65e;
+          --lime-deep: #c9e65e;
+          --line: #24333e;
+          --orange: #ff8f6e;
+          --card: #16242f;
+          --card-soft: #14212b;
+          --shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+        }
+      }
+      * { box-sizing: border-box; margin: 0; }
+      html { scroll-behavior: smooth; }
+      body {
+        background: var(--cream);
+        color: var(--ink);
+        font-family: "Manrope", "Avenir Next", -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+        line-height: 1.75;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 1060px; margin: 0 auto; padding: 0 22px; }
+      .eyebrow {
+        font-family: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        letter-spacing: .55px;
+        color: var(--muted);
+        margin-bottom: 18px;
+      }
+      .eyebrow i {
+        display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+        background: var(--lime-deep); margin-right: 8px; vertical-align: 1px;
+      }
+      h1, h2 { letter-spacing: -1.5px; line-height: 1.12; font-weight: 800; }
+      h1 em, h2 em { font-style: normal; color: var(--lime-deep); }
+      section { padding: 64px 0; }
+
+      /* ── 頂欄 ─────────────────────────── */
+      header.top {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 20px 0;
+      }
+      .brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: var(--ink); font-weight: 800; font-size: 17px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 34px; height: 34px;
+        border-radius: 11px; background: var(--navy); color: var(--lime); font-size: 19px;
+      }
+      @media (prefers-color-scheme: dark) { .brand-mark { background: #23445e; } }
+      .brand small { display: block; font-size: 10px; font-weight: 600; letter-spacing: 1px; opacity: .62; }
+      .top-tag {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+        border: 1px solid var(--line); border-radius: 99px; padding: 8px 14px; color: var(--muted);
+      }
+
+      /* ── Hero ─────────────────────────── */
+      .hero { padding: 56px 0 48px; }
+      .hero h1 { font-size: clamp(38px, 6vw, 64px); max-width: 20ch; }
+      .hero-lede { max-width: 620px; color: var(--muted); font-size: 17px; margin: 24px 0 8px; }
+      .hero-lede strong { color: var(--ink); }
+      .trust-line { margin-top: 20px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .mini-shield {
+        display: grid; place-items: center; width: 17px; height: 17px;
+        background: var(--lime); border-radius: 5px; color: #3c4c14; font-size: 11px; font-weight: 800;
+      }
+      .stats {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+        margin-top: 40px;
+      }
+      .stat {
+        background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+        padding: 18px 18px 14px;
+      }
+      .stat b { display: block; font-size: 26px; letter-spacing: -1px; }
+      .stat b i { font-style: normal; color: var(--lime-deep); }
+      .stat span { font-size: 12px; color: var(--muted); }
+      @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+      /* ── 問題與解法 ───────────────────── */
+      .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 30px; }
+      @media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
+      .panel {
+        border-radius: 20px; padding: 28px; border: 1px solid var(--line);
+        background: var(--card);
+      }
+      .panel.problem { background: var(--warm); border-color: transparent; }
+      .panel.answer { background: var(--navy); color: #f2f4ef; border-color: transparent; }
+      @media (prefers-color-scheme: dark) { .panel.answer { background: #1d3a52; } }
+      .panel h3 { font-size: 20px; letter-spacing: -.5px; margin-bottom: 12px; }
+      .panel.answer h3 { color: #fff; }
+      .panel.answer h3 em { color: var(--lime); font-style: normal; }
+      .panel ul { padding-left: 0; list-style: none; display: grid; gap: 10px; font-size: 14.5px; }
+      .panel.problem ul { color: #4a5a64; }
+      @media (prefers-color-scheme: dark) { .panel.problem ul { color: #b9c4cc; } }
+      .panel.answer ul { color: #cfdae2; }
+      .panel li::before { content: "— "; opacity: .55; }
+      .panel.answer li b { color: #fff; }
+
+      /* ── 截圖 ─────────────────────────── */
+      .shots-note { font-size: 13px; color: var(--muted); margin-top: 8px; }
+      .shots {
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-top: 34px;
+      }
+      @media (max-width: 980px) { .shots { grid-template-columns: repeat(3, 1fr); } }
+      @media (max-width: 640px) { .shots { grid-template-columns: repeat(2, 1fr); } }
+      .shot { display: flex; flex-direction: column; gap: 10px; }
+      .shot .frame {
+        border: 1px solid var(--line); border-radius: 22px; overflow: hidden;
+        background: var(--card-soft); box-shadow: var(--shadow); aspect-ratio: 9 / 19.5;
+        display: grid; place-items: center;
+      }
+      .shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+      .shot .num {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: var(--lime-deep);
+      }
+      .shot p { font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+      .shot p b { color: var(--ink); display: block; margin-bottom: 2px; }
+
+      /* ── 架構圖 ───────────────────────── */
+      .arch { background: var(--warm); border-radius: 26px; padding: 44px 30px; margin-top: 30px; }
+      .pipeline { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; justify-content: center; margin-top: 26px; }
+      .node {
+        background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+        padding: 16px 18px; min-width: 190px; flex: 1; max-width: 250px;
+      }
+      .node .nk {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px;
+        color: var(--lime-deep); letter-spacing: .5px;
+      }
+      .node b { display: block; font-size: 15.5px; letter-spacing: -.3px; margin: 2px 0 4px; }
+      .node span { font-size: 12px; color: var(--muted); line-height: 1.55; display: block; }
+      .flow-arrow {
+        align-self: center; padding: 0 10px; font-size: 20px; color: var(--muted); font-weight: 700;
+      }
+      @media (max-width: 860px) {
+        .pipeline { flex-direction: column; align-items: stretch; }
+        .node { max-width: none; }
+        .flow-arrow { transform: rotate(90deg); text-align: center; padding: 4px 0; }
+      }
+      .arch-side { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+      @media (max-width: 720px) { .arch-side { grid-template-columns: 1fr; } }
+      .side-card {
+        border-radius: 14px; padding: 14px 18px; font-size: 13px; line-height: 1.6;
+        background: var(--card); border: 1px solid var(--line); color: var(--muted);
+      }
+      .side-card b { color: var(--ink); }
+      .side-card.pending { border-style: dashed; }
+      .side-card .badge {
+        display: inline-block; font-size: 10.5px; font-family: ui-monospace, Menlo, monospace;
+        background: var(--lime); color: #3c4c14; border-radius: 99px; padding: 2px 9px; margin-left: 6px; vertical-align: 1px;
+      }
+      .side-card.pending .badge { background: var(--warm); color: var(--muted); border: 1px solid var(--line); }
+
+      /* ── 產品倫理 ─────────────────────── */
+      .ethics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 30px; }
+      @media (max-width: 820px) { .ethics { grid-template-columns: 1fr; } }
+      .ethic {
+        border-top: 3px solid var(--lime-deep); background: var(--card);
+        border-radius: 0 0 18px 18px; padding: 22px; border-left: 1px solid var(--line);
+        border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      }
+      .ethic .no { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--lime-deep); }
+      .ethic h3 { font-size: 18px; letter-spacing: -.4px; margin: 6px 0 8px; }
+      .ethic p { font-size: 13.5px; color: var(--muted); }
+
+      /* ── 差異化一句 ───────────────────── */
+      .versus { text-align: center; padding: 70px 0; }
+      .versus p { font-size: clamp(24px, 4vw, 40px); font-weight: 800; letter-spacing: -1.5px; line-height: 1.3; }
+      .versus p em { font-style: normal; color: var(--lime-deep); }
+      .versus small { display: block; margin-top: 14px; color: var(--muted); font-size: 14px; }
+
+      /* ── 團隊與連結 ───────────────────── */
+      .links { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 22px; }
+      .button {
+        display: inline-flex; align-items: center; gap: 10px; text-decoration: none;
+        padding: 13px 22px; border-radius: 99px; font-size: 14px; font-weight: 700;
+      }
+      .button.primary { background: var(--navy); color: #fff; }
+      @media (prefers-color-scheme: dark) { .button.primary { background: #2a4d69; } }
+      .button.ghost { border: 1px solid var(--ink); color: var(--ink); }
+      .button.disabled { border: 1px dashed var(--line); color: var(--muted); cursor: default; }
+      .team-note { margin-top: 26px; font-size: 13.5px; color: var(--muted); max-width: 560px; }
+      .team-note b { color: var(--ink); }
+
+      footer {
+        border-top: 1px solid var(--line); padding: 28px 0 40px; margin-top: 30px;
+        font-size: 12.5px; color: var(--muted);
+      }
+      footer strong { color: var(--orange); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <a class="brand" href="https://havencircle.looptw.com"><span class="brand-mark">⌂</span><span>HavenCircle<small>安心圈</small></span></a>
+        <span class="top-tag">HACKATHON SUBMISSION · 2026</span>
+      </header>
+
+      <!-- Hero -->
+      <section class="hero">
+        <p class="eyebrow"><i></i> ZERO-TRACKING FAMILY DISASTER GUARD</p>
+        <h1>不追蹤家人的位置，<br /><em>只守護家人的生活圈。</em></h1>
+        <p class="hero-lede">
+          安心圈是一款<strong>零位置追蹤</strong>的家人災害守護 App：不看家人在哪裡，
+          只監看<strong>政府官方災害示警</strong>是否落在家人的生活圈——住家、長輩家——附近。
+          警報命中才提醒，家人一鍵回報平安。資料是真的，後端是自建的，界線是說清楚的。
+        </p>
+        <div class="trust-line">
+          <span class="mini-shield">✓</span>
+          <span>生活圈與住址只儲存在裝置本機，不追蹤、不上傳任何人的即時位置</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><b><i>43</i> 類</b><span>NCDR 政府民生示警全類別接入</span></div>
+          <div class="stat"><b>每 <i>5</i> 分鐘</b><span>自建爬蟲抓取官方示警更新</span></div>
+          <div class="stat"><b>近 <i>6,000</i> 筆</b><span>避難所＋急救醫院官方開放資料內嵌</span></div>
+          <div class="stat"><b><i>375</i> 個</b><span>全國鄉鎮市區行政區界內嵌比對</span></div>
+        </div>
+      </section>
+
+      <!-- 問題與解法 -->
+      <section>
+        <p class="eyebrow"><i></i> PROBLEM &amp; SOLUTION</p>
+        <h2>關心家人的安全，<br />為什麼一定要交出行蹤？</h2>
+        <div class="duo">
+          <div class="panel problem">
+            <h3>現有做法的兩難</h3>
+            <ul>
+              <li>Life360、尋找這類 App 用「即時定位」換安心——長輩覺得被監視，子女覺得像查勤，關心變成張力。</li>
+              <li>政府災防告警簡訊只看「你人在哪」，不看「你牽掛的人住哪」；爸媽住彰化，人在台北的你什麼都收不到。</li>
+              <li>官方警報管道一次轟炸全部類別，與自己無關的警報看多了，真正要緊的那一則反而被滑掉。</li>
+            </ul>
+          </div>
+          <div class="panel answer">
+            <h3>安心圈的答案：<em>守護範圍，而非追蹤人</em></h3>
+            <ul>
+              <li><b>設生活圈</b>——住家、長輩家，位置與半徑由你決定，只存本機。</li>
+              <li><b>比對官方示警</b>——NCDR 43 類政府示警即時進來，落在生活圈附近才提醒，並附上「為何收到」的理由。</li>
+              <li><b>一鍵報平安</b>——iCloud 家庭圈安否回報＋已讀回條，讓「我平安」這句話即時送達全家。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5 張敘事截圖 -->
+      <section>
+        <p class="eyebrow"><i></i> FIVE SCREENS, ONE STORY</p>
+        <h2>五個畫面，講完整個故事。</h2>
+        <p class="shots-note">畫面中的示範事件為 NCDR 實際發布過的官方示警原文，標題主動標示【歷史示範】——不冒充即時警報，是我們的誠實原則。</p>
+        <div class="shots">
+          <figure class="shot">
+            <div class="frame"><img src="img/01-onboarding.png" alt="新手教學：零位置追蹤承諾" /></div>
+            <figcaption>
+              <span class="num">01 / ONBOARDING</span>
+              <p><b>先說清楚界線</b>第一個畫面就承諾：不追蹤任何人的位置，資料只存在這支手機。</p>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="frame"><img src="img/02-alerts.png" alt="提醒中心：需要注意的官方事件" /></div>
+            <figcaption>
+              <span class="num">02 / ALERTS</span>
+              <p><b>只提醒要緊的</b>NCDR 真實示警自動分類——落在家人生活圈的才「需要注意」，其餘不打擾。</p>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="frame"><img src="img/03-map.png" alt="安全地圖：警報塗層、圖例與避難資源" /></div>
+            <figcaption>
+              <span class="num">03 / MAP</span>
+              <p><b>看得懂的地圖</b>區域警報用行政區塗層、不用誤導的大頭針；避難所與急救醫院是全國近 6,000 筆真實開放資料。</p>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="frame"><img src="img/04-event-detail.png" alt="事件詳情：為何收到的理由" /></div>
+            <figcaption>
+              <span class="num">04 / WHY</span>
+              <p><b>理由透明</b>每一則提醒都說得出「為何收到」——來源、可信度、跟哪個生活圈有關，一行講清楚。</p>
+            </figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="frame"><img src="img/05-family.png" alt="家人：安否回報與已讀回條" /></div>
+            <figcaption>
+              <span class="num">05 / FAMILY</span>
+              <p><b>平安有回音</b>長輩一鍵回報「我平安」，全家透過 iCloud 即時看到，已讀回條讓關心有了回音。</p>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- 真資料架構 -->
+      <section>
+        <p class="eyebrow"><i></i> REAL DATA, REAL BACKEND</p>
+        <h2>不是假 Demo：<em>自建的真資料鏈路。</em></h2>
+        <div class="arch">
+          <div class="pipeline">
+            <div class="node">
+              <span class="nk">SOURCE</span>
+              <b>NCDR 民生示警</b>
+              <span>政府災害示警平台，CAP 開放格式，43 類全接：天災／公共安全／民生／交通</span>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="node">
+              <span class="nk">CRAWLER · 每 5 分鐘</span>
+              <b>Mac Mini 爬蟲機</b>
+              <span>自建 Python 爬蟲無人值守輪詢：過濾家庭安全類別、identifier 去重、cron 排程</span>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="node">
+              <span class="nk">RELAY · ORACLE CLOUD</span>
+              <b>中繼站 API</b>
+              <span>整理成 JSON 供 App 拉取（havencircle.looptw.com），驗證機制防止假資料注入</span>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="node">
+              <span class="nk">CLIENT · SWIFTUI</span>
+              <b>安心圈 App</b>
+              <span>SwiftData 本地優先、AlertPolicy 單一決策點比對生活圈、斷網仍可用</span>
+            </div>
+          </div>
+          <div class="arch-side">
+            <div class="side-card">
+              <b>家庭共享：CloudKit CKShare</b><span class="badge">已實作</span><br />
+              安否回報與已讀回條走 iCloud 家庭圈，零自建帳號系統；避難所／醫院近 6,000 筆開放資料內嵌於 App，離線可查。
+            </div>
+            <div class="side-card pending">
+              <b>主動推播：APNs</b><span class="badge">App 端垂直切片已就緒・後端發送建置中</span><br />
+              App 已完成權杖註冊、通知 deep link 全鏈路（Apple Push Console 實測可達）；Oracle 端自動發送服務為下一步。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 產品倫理 -->
+      <section>
+        <p class="eyebrow"><i></i> PRODUCT ETHICS</p>
+        <h2>安全 App 的每一個像素，<br />都是倫理決策。</h2>
+        <div class="ethics">
+          <div class="ethic">
+            <span class="no">ETHIC 01</span>
+            <h3>未驗證，不推播</h3>
+            <p>未經官方確認的線索只在 App 內顯示，絕不推播打擾；每一則推出去的通知，都附上看得懂的「為何收到」理由。</p>
+          </div>
+          <div class="ethic">
+            <span class="no">ETHIC 02</span>
+            <h3>統計 ≠ 即時安全</h3>
+            <p>治安參考圖層主動標示「季度統計不等於即時安全程度」，只呈現高於全國中位數的分級——避免資料被誤讀成對社區的標籤。</p>
+          </div>
+          <div class="ethic">
+            <span class="no">ETHIC 03</span>
+            <h3>塗層，不是大頭針</h3>
+            <p>強風豪雨影響的是整個行政區，釘一根大頭針會誤導成單點事故——所以區域警報用行政區塗層呈現，準確傳達影響範圍。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 差異化一句 -->
+      <section class="versus">
+        <p>Life360 追蹤<em>人</em>。<br />安心圈守護<em>範圍</em>。</p>
+        <small>不看家人在哪裡，只看家人身邊安不安全——讓關心，剛剛好。</small>
+      </section>
+
+      <!-- 團隊與連結 -->
+      <section>
+        <p class="eyebrow"><i></i> TEAM &amp; LINKS</p>
+        <h2>看更多。</h2>
+        <div class="links">
+          <a class="button primary" href="https://havencircle.looptw.com">產品官網 →</a>
+          <span class="button disabled">Demo 影片（連結準備中）</span>
+        </div>
+        <p class="team-note">
+          <b>技術棧</b>：SwiftUI · SwiftData（本地優先）· CloudKit CKShare · MapKit · APNs（App 端垂直切片）·
+          自建 Python 爬蟲（Mac Mini）· Oracle Cloud 中繼 API · Nginx。<br />
+          資料來源：NCDR 民生示警公開資訊、內政部消防署避難收容處所、衛福部急救責任醫院名單、政府開放資料平台。
+        </p>
+      </section>
+
+      <footer>
+        安心圈是日常安全意識工具，並非緊急服務。若有立即危險或緊急情況，請直接撥打 <strong>110</strong> 或 <strong>119</strong>。
+        <br />© 2026 HAVENCIRCLE · 本頁為黑客松初賽提交物
+      </footer>
+    </div>
+  </body>
+</html>
