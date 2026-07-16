@@ -51,6 +51,15 @@ FETCH_TIMEOUT = 20
 # LLM（ProxyCLI）設定：token 由環境變數提供，沒有就走純規則路徑
 AI_PROXY_URL = "http://cli.twloop.com:8080/api/chat"
 AI_PROXY_TOKEN = os.environ.get("AI_PROXY_TOKEN", "").strip()
+AI_PROXY_PROJECT = os.environ.get("AI_PROXY_PROJECT", "harry-HavenCircle").strip()
+
+# ProxyCLI gRPC SDK（把 proxy.py＋aiproxy_pb2*.py 放進同目錄即自動啟用）。
+# 實測 REST 8080 從外部連不到（防火牆），gRPC 443/TLS 才是通的路；
+# SDK 缺檔或缺 grpcio 時自動退回 REST，再不行退規則分類，絕不 crash。
+try:
+    from proxy import ai as _sdk_ai
+except Exception:
+    _sdk_ai = None
 LLM_TIMEOUT = 30
 LLM_MIN_CONFIDENCE = 0.6  # LLM 信心低於此值 → 丟棄 LLM 結果、退回規則結果
 
@@ -286,9 +295,17 @@ LLM_PROMPT_TEMPLATE = """你是災害事故新聞分類器。判斷下面這則�
 
 def call_proxy_llm(prompt):
     """
-    呼叫 ProxyCLI REST API，回傳純文字回應。
+    呼叫 ProxyCLI 取得純文字回應：優先 gRPC SDK（443/TLS），沒有 SDK 才走 REST。
     任何錯誤都丟例外，由呼叫端 fallback 到規則結果（不 crash、不 silent fail）。
     """
+    if _sdk_ai is not None:
+        return _sdk_ai(
+            prompt,
+            provider="claude",
+            model="claude-haiku-4-5",
+            project=AI_PROXY_PROJECT,
+            group="news-crawler",  # ProxyCLI 必填欄位，儀表板依此分項統計用量
+        )
     body = json.dumps({
         "prompt": prompt,
         "provider": "claude",

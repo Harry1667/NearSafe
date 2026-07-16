@@ -59,33 +59,38 @@ python3 fetch_news.py            # 無 token → 純規則路徑
 rm -f seen.json                  # 想重測時清掉狀態檔
 ```
 
-## 部署到爬蟲機（Linux Mint）
+## 部署到爬蟲機（Linux Mint）——2026-07-16 已完成，以下是實際佈署紀錄
 
-1. 建目錄並複製腳本：
+> LLM 走 **ProxyCLI gRPC SDK（cli.twloop.com:443/TLS）**，不是 REST——
+> 實測 REST 8080 從外部連不到（防火牆）。REST 程式路徑保留作備援。
 
-   ```bash
-   mkdir -p ~/crawlers/havencircle/news
-   # 從 Mac 複製（在 Mac 上執行；路徑含空格要加引號）
-   scp "/Volumes/ADATA 256GB/0-Dev/person-work/3-AppDev/iosaicamp/HavenCircle/tools/news-crawler/fetch_news.py" \
-       user@crawler-host:~/crawlers/havencircle/news/
-   ```
+1. 檔案（`~/crawlers/havencircle/news/`）：`fetch_news.py` ＋ SDK 三件套
+   `proxy.py`、`aiproxy_pb2.py`、`aiproxy_pb2_grpc.py`（取自 use_proxycli/）。
 
-2. 設定 `AI_PROXY_TOKEN`（沒設也能跑，只是走純規則路徑、抽不出 district/place）：
+2. 依賴：pb2 檔需要 protobuf ≥ 5.27，apt 版太舊，用目錄內 venv：
 
    ```bash
-   echo 'export AI_PROXY_TOKEN=你的token' >> ~/.profile
+   sudo apt-get install -y python3-venv   # ensurepip
+   python3 -m venv .venv && .venv/bin/pip install grpcio protobuf
    ```
 
-   cron 不會讀 shell profile，建議直接寫進 crontab（見下）或用 env 檔。
+3. token 放 `.env`（chmod 600，內容 `export AI_PROXY_TOKEN=…` 與
+   `export AI_PROXY_PROJECT=harry-HavenCircle`）。沒 token 也能跑，
+   只是走純規則路徑、抽不出 district/place。
+   注意：ProxyCLI 的 `group` 為必填，程式內已固定送 `news-crawler`。
 
-3. cron 每 15 分鐘跑一次（`crontab -e`）：
+4. cron 每 15 分鐘（已掛）。`flock -n` 防止首輪全量 LLM 長跑（7 分鐘以上）
+   與下一輪重疊；穩態每輪只處理新增則數，數十秒內結束：
 
    ```cron
-   AI_PROXY_TOKEN=你的token
-   */15 * * * * cd ~/crawlers/havencircle/news && /usr/bin/python3 fetch_news.py >> cron.log 2>&1
+   */15 * * * * cd ~/crawlers/havencircle/news && flock -n .lock -c ". ./.env && .venv/bin/python3 fetch_news.py" >> ~/crawlers/havencircle/logs/news.log 2>&1
    ```
 
-4. 產出的 `latest.json` 交給後續上傳/合併流程（與 NCDR 爬蟲同機、同慣例）。exit code：全部 feed 都掛才回 1，可供監控。
+5. 產出的 `latest.json` 交給後續上傳/合併流程（與 NCDR 爬蟲同機、同慣例）。exit code：全部 feed 都掛才回 1，可供監控。
+
+首跑驗證（2026-07-16）：130 則 → 事故 30 則，其中 25 則 LLM 抽取
+（confidence 0.95+、含鄉鎮層級），county 空白由規則路徑的 11 降到 3，
+LLM 另補殺 1 則規則誤放。
 
 ## 已知限制
 
