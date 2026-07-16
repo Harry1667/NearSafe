@@ -125,11 +125,22 @@ struct SettingsView: View {
         isDeleting = true
         defer { isDeleting = false }
         await sync.leaveFamily()
+        // 逐筆刪除，不用 delete(model:)：批次刪除走 CoreData batch delete，
+        // 會撞上 LocalLifeCircle.member 強制反向關聯的約束（實機已踩到）；
+        // 逐筆刪除才會執行 cascade 與反向關聯清理。資料量小，效能無虞。
         do {
-            try context.delete(model: LocalSafetyEvent.self)
-            try context.delete(model: LocalLifeCircle.self)
-            try context.delete(model: LocalFamilyMember.self)
-            try context.delete(model: RegionAlert.self)
+            for member in try context.fetch(FetchDescriptor<LocalFamilyMember>()) {
+                context.delete(member) // cascade 會一併刪除生活圈
+            }
+            for circle in try context.fetch(FetchDescriptor<LocalLifeCircle>()) {
+                context.delete(circle) // 保險：清掉沒掛在成員下的孤兒生活圈
+            }
+            for event in try context.fetch(FetchDescriptor<LocalSafetyEvent>()) {
+                context.delete(event)
+            }
+            for alert in try context.fetch(FetchDescriptor<RegionAlert>()) {
+                context.delete(alert)
+            }
         } catch {
             AppLog.dataError("刪除本機資料失敗：\(error.localizedDescription)")
         }
@@ -211,6 +222,8 @@ private struct AppleAccountView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
     @State private var signInError: String?
+    @State private var showLogoutConfirm = false
+    @State private var showSignIn = false
 
     var body: some View {
         List {
@@ -264,10 +277,31 @@ private struct AppleAccountView: View {
                 Text("Apple 帳號只用於家人安否回報的 iCloud 同步。生活圈與事件資料仍保存在此裝置。")
                     .font(.footnote)
             }
+
+            Section {
+                Button("登出", role: .destructive) {
+                    showLogoutConfirm = true
+                }
+            } footer: {
+                Text("登出會清除此裝置顯示的名稱與 email，回到登入介面；生活圈與事件資料不受影響。iCloud 同步本身由系統設定管理。")
+            }
         }
         .navigationTitle("Apple 帳號")
         .navigationBarTitleDisplayMode(.inline)
         .task { await sync.refreshAccountStatus() }
+        .confirmationDialog("確定要登出嗎？", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
+            Button("登出", role: .destructive) {
+                appleEmail = ""
+                displayName = ""
+                showSignIn = true
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("只會清除本機顯示的帳號資訊，不會刪除任何資料。")
+        }
+        .fullScreenCover(isPresented: $showSignIn) {
+            AppleSignInSheet()
+        }
     }
 
     /// Sign in with Apple 只在「首次授權」提供姓名與 email，之後都是 nil——

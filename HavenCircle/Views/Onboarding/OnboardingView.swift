@@ -25,7 +25,7 @@ struct OnboardingView: View {
     @State private var notificationGranted: Bool?
 
     enum Step: Int, CaseIterable {
-        case welcome, name, circle, notification, done
+        case welcome, signIn, name, circle, notification, done
     }
 
     var body: some View {
@@ -34,6 +34,7 @@ struct OnboardingView: View {
                 progressBar
                 TabView(selection: $step) {
                     welcomePage.tag(Step.welcome)
+                    signInPage.tag(Step.signIn)
                     namePage.tag(Step.name)
                     circlePage.tag(Step.circle)
                     notificationPage.tag(Step.notification)
@@ -50,6 +51,12 @@ struct OnboardingView: View {
                         Button("返回", systemImage: "chevron.left") {
                             withAnimation { step = Step(rawValue: step.rawValue - 1) ?? .welcome }
                         }
+                    }
+                }
+                // 登入步驟右上角提供「跳過」（軟門檻：不登入也能用完整警報功能）
+                if step == .signIn {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("跳過") { withAnimation { step = .name } }
                     }
                 }
                 if isReplay {
@@ -112,9 +119,19 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            primaryButton("開始設定") { withAnimation { step = .name } }
+            primaryButton("開始設定") { withAnimation { step = .signIn } }
         }
         .padding(.bottom, 24)
+    }
+
+    // MARK: - 第 2 步：Apple 登入（右上角可跳過）
+
+    private var signInPage: some View {
+        AppleSignInPage(onSignedIn: {
+            // 登入成功：帶入的名稱直接預填下一步，少打一次字
+            if name.isEmpty { name = profileName }
+            withAnimation { step = .name }
+        })
     }
 
     private func valueCard(_ icon: String, _ color: Color, _ title: String, _ detail: String) -> some View {
