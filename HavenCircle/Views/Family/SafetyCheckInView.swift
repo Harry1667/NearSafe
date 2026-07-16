@@ -1,5 +1,6 @@
 import SwiftUI
 import CloudKit
+import CoreLocation
 
 /// 安否回報中心：雙向閉環的回報端。
 /// - 上半：我一鍵回報「我平安 / 需要協助」
@@ -13,6 +14,8 @@ struct SafetyCheckInView: View {
     @State private var shareSheet: ShareBundle?
     @State private var note = ""
     @State private var isWorking = false
+    /// 回報時附上目前位置（自願、一次性）。用 AppStorage 記住偏好，預設關（隱私優先）
+    @AppStorage("checkInAttachLocation") private var attachLocation = false
     /// 邀請失敗時的可見錯誤——只寫 log 的話，使用者看到的是「按了沒反應＝App 壞了」
     @State private var shareError: String?
 
@@ -91,8 +94,15 @@ struct SafetyCheckInView: View {
     }
 
     private var checkInSection: some View {
-        Section("回報我的狀態") {
+        Section {
             TextField("補充說明（選填）", text: $note)
+            Toggle(isOn: $attachLocation) {
+                Label("附上我的目前位置", systemImage: "location")
+            }
+            .onChange(of: attachLocation) { _, isOn in
+                // 開啟當下就要權限，別等到按回報才跳系統框打斷流程
+                if isOn { LocationService.shared.requestPermissionIfNeeded() }
+            }
             ForEach(SafetyStatus.allCases, id: \.self) { status in
                 Button {
                     Task { await report(status) }
@@ -102,6 +112,10 @@ struct SafetyCheckInView: View {
                 }
                 .disabled(isWorking)
             }
+        } header: {
+            Text("回報我的狀態")
+        } footer: {
+            Text("位置只在你按下回報的那一刻取得並分享一次，安心圈不會持續追蹤任何人的位置。")
         }
     }
 
@@ -132,6 +146,11 @@ struct SafetyCheckInView: View {
             if !ping.note.isEmpty {
                 Text(ping.note).font(.caption)
             }
+            if ping.hasLocation {
+                Label(ping.placeName ?? "已附上位置", systemImage: "mappin.and.ellipse")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             if !ping.readBy.isEmpty {
                 Text("已讀：\(ping.readBy.joined(separator: "、"))")
                     .font(.caption2).foregroundStyle(.tertiary)
@@ -160,7 +179,32 @@ struct SafetyCheckInView: View {
     private func report(_ status: SafetyStatus) async {
         isWorking = true
         defer { isWorking = false }
-        await sync.postPing(senderName: myName, status: status, note: note)
+        // 自願附位置：取不到（未授權/逾時）就照常回報，定位失敗不能擋「我平安」
+        var latitude: Double?
+        var longitude: Double?
+        var placeName: String?
+        if attachLocation, let location = await LocationService.shared.currentLocation() {
+            latitude = location.coordinate.latitude
+            longitude = location.coordinate.longitude
+            placeName = await Self.reverseGeocode(location)
+        }
+        await sync.postPing(
+            senderName: myName, status: status, note: note,
+            latitude: latitude, longitude: longitude, placeName: placeName
+        )
         note = ""
+    }
+
+    /// 回報端做一次反向地理編碼，家人看到的是「台北市信義區」而不是座標。
+    /// 失敗回 nil（回報列會退回顯示「已附上位置」），不重試不阻塞。
+    private static func reverseGeocode(_ location: CLLocation) async -> String? {
+        guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first else {
+            return nil
+        }
+        let parts = [placemark.administrativeArea, placemark.locality, placemark.subLocality]
+            .compactMap(\.self)
+        var seen = Set<String>()
+        let unique = parts.filter { seen.insert($0).inserted }
+        return unique.isEmpty ? nil : unique.joined()
     }
 }

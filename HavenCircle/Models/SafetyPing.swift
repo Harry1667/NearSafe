@@ -23,6 +23,14 @@ struct SafetyPing: Identifiable {
     let createdAt: Date
     /// 已讀這則回報的家人名稱（已讀回條）
     let readBy: [String]
+    /// 回報者「自願附上」的當下位置（nil＝沒附）。這不是追蹤——
+    /// 位置只在按下回報的那一刻取得一次，由回報者自己決定要不要附
+    let latitude: Double?
+    let longitude: Double?
+    /// 位置的可讀描述（回報端反向地理編碼一次，例「台北市信義區」），家人不用看座標
+    let placeName: String?
+
+    var hasLocation: Bool { latitude != nil && longitude != nil }
 
     /// CloudKit 記錄類型與欄位名（集中定義，避免字串散落）
     enum Field {
@@ -32,5 +40,8 @@ struct SafetyPing: Identifiable {
         static let note = "note"
         static let createdAt = "createdAt"
         static let readBy = "readBy"
+        static let latitude = "latitude"
+        static let longitude = "longitude"
+        static let placeName = "placeName"
     }
 }

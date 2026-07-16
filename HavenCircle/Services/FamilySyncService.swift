@@ -145,7 +145,17 @@ final class FamilySyncService {
     // MARK: - 安否回報
 
     /// 送出一則安否回報。寫入時掛在家庭圈根記錄下（parent），確保納入分享範圍。
-    func postPing(senderName: String, status: SafetyStatus, note: String = "") async {
+    /// - Parameters:
+    ///   - latitude/longitude/placeName: 回報者「自願附上」的一次性位置（nil＝沒附）。
+    ///     由呼叫端在回報當下取得並反向地理編碼，這裡只負責寫入。
+    func postPing(
+        senderName: String,
+        status: SafetyStatus,
+        note: String = "",
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        placeName: String? = nil
+    ) async {
         do {
             let (db, rootID) = try await resolveDatabaseAndRoot()
             let record = CKRecord(
@@ -157,6 +167,11 @@ final class FamilySyncService {
             record[SafetyPing.Field.note] = note
             record[SafetyPing.Field.createdAt] = Date.now
             record[SafetyPing.Field.readBy] = [String]()
+            if let latitude, let longitude {
+                record[SafetyPing.Field.latitude] = latitude
+                record[SafetyPing.Field.longitude] = longitude
+                record[SafetyPing.Field.placeName] = placeName ?? ""
+            }
             record.setParent(CKRecord.ID(recordName: Self.rootRecordName, zoneID: rootID.zoneID))
             _ = try await db.save(record)
             await fetchPings()
@@ -268,7 +283,10 @@ final class FamilySyncService {
             status: status,
             note: record[SafetyPing.Field.note] as? String ?? "",
             createdAt: createdAt,
-            readBy: record[SafetyPing.Field.readBy] as? [String] ?? []
+            readBy: record[SafetyPing.Field.readBy] as? [String] ?? [],
+            latitude: record[SafetyPing.Field.latitude] as? Double,
+            longitude: record[SafetyPing.Field.longitude] as? Double,
+            placeName: (record[SafetyPing.Field.placeName] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 }

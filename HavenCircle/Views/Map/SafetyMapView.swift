@@ -4,6 +4,7 @@ import MapKit
 
 /// 安全地圖：全螢幕地圖為主體，狀態橫幅、區域警報與附近更新以浮層呈現。
 struct SafetyMapView: View {
+    @Environment(FamilySyncService.self) private var sync
     @Query private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
     @Query private var regionAlerts: [RegionAlert]
@@ -86,6 +87,16 @@ struct SafetyMapView: View {
         }.count
     }
 
+    /// 家人最後回報位置：每人取「最新一筆有座標」的安否回報（沒附位置的回報不上圖）
+    private var familyPingAnnotations: [SafetyPing] {
+        var latest: [String: SafetyPing] = [:]
+        for ping in sync.pings where ping.hasLocation {
+            if let kept = latest[ping.senderName], kept.createdAt >= ping.createdAt { continue }
+            latest[ping.senderName] = ping
+        }
+        return Array(latest.values)
+    }
+
     /// 框住目前顯示對象所有生活圈的鏡頭範圍
     private var circlesRegion: MapCameraPosition {
         let circles = visibleMembers.flatMap(\.lifeCircles)
@@ -108,7 +119,13 @@ struct SafetyMapView: View {
     var body: some View {
         NavigationStack {
             map
-                .onAppear { playGuardianIntroIfNeeded() }
+                .onAppear {
+                    playGuardianIntroIfNeeded()
+                    // 地圖藍點需要定位權限；只在未決定時跳系統框，拒絕過就不再打擾
+                    LocationService.shared.requestPermissionIfNeeded()
+                }
+                // 家人回報位置來自 CloudKit：進地圖刷一次（未登入/未建圈時內部自行降級）
+                .task { await sync.fetchPings() }
                 .overlay(alignment: .top) {
                     if !isChromeHidden { topOverlays }
                 }
@@ -272,6 +289,30 @@ struct SafetyMapView: View {
                             .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
                     }
                     .accessibilityLabel("\(event.title)，\(event.trustStatus)，\(event.approximateLocation)")
+                }
+            }
+            // 自己的位置（藍點）：需要 when-in-use 權限，未授權時 MapKit 自動不畫
+            UserAnnotation()
+            // 家人「自願回報」的位置：每人只取最新一筆帶座標的安否回報。
+            // 這不是即時追蹤——資料只在家人按下回報的那一刻產生
+            ForEach(familyPingAnnotations, id: \.id) { ping in
+                Annotation(ping.senderName,
+                           coordinate: .init(latitude: ping.latitude ?? 0, longitude: ping.longitude ?? 0)) {
+                    VStack(spacing: 2) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(ping.status == .safe ? HCColor.safe : HCColor.danger, in: Circle())
+                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                        Text(ping.createdAt.formatted(.relative(presentation: .named)))
+                            .font(.system(size: 9))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+                    .accessibilityLabel("\(ping.senderName) \(ping.status.rawValue)，回報於\(ping.createdAt.formatted(date: .omitted, time: .shortened))，位置\(ping.placeName ?? "未知")")
                 }
             }
             if showAirQuality {
