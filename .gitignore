@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+._*
+
+# Xcode / Swift build 產物
+.build/
+DerivedData/
+xcuserdata/
+
+# 本機審查截圖（session 產物，不入庫）
+.audit/
