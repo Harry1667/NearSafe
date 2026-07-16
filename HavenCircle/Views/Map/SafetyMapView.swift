@@ -566,8 +566,52 @@ struct SafetyMapView: View {
         }
     }
 
-    /// 一張摘要卡先回答安全狀態，再提供各層級事件與區域警報的入口。
+    /// 摘要預設收成單行膠囊（把視野還給地圖），點開才展開完整卡。
+    /// 平時整個畫面只有地圖與低彩度膠囊；真危險時膠囊變紅——警示色的獨佔舞台
+    @ViewBuilder
     private var safetySummary: some View {
+        if isSummaryExpanded { summaryCard } else { summaryCapsule }
+    }
+
+    private var summaryCapsule: some View {
+        let hasAttention = attentionCount > 0
+        let statusColor = hasAttention ? HCColor.danger : HCColor.safe
+        return Button {
+            withAnimation { isSummaryExpanded = true }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(statusColor, in: Circle())
+                    .symbolEffect(.bounce, value: shieldConfirmPulse)
+                Text(hasAttention ? "\(attentionCount) 件需要注意" : "生活圈平安")
+                    .font(.subheadline.weight(.semibold))
+                if isPaused {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.caption)
+                        .foregroundStyle(HCColor.attention)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().stroke(statusColor.opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            hasAttention
+                ? "生活圈有 \(attentionCount) 件需要注意的事件，點擊展開摘要"
+                : "生活圈平安\(isPaused ? "，提醒已暫停" : "")，點擊展開摘要"
+        )
+    }
+
+    /// 展開版：完整安全狀態卡（各層級數字、區域警報入口、資料新鮮度）
+    private var summaryCard: some View {
         let hasAttention = attentionCount > 0
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
@@ -595,46 +639,37 @@ struct SafetyMapView: View {
                 Spacer(minLength: 0)
             }
 
-            if isSummaryExpanded {
-                HStack(spacing: 8) {
-                    summaryMetric("需要注意", count: attentionCount, emphasis: hasAttention)
-                    summaryMetric("確認中（不限生活圈）", count: confirmingCount, emphasis: false)
-                    summaryMetric("其他區域", count: elsewhereCount, emphasis: false)
-                }
+            HStack(spacing: 8) {
+                summaryMetric("需要注意", count: attentionCount, emphasis: hasAttention)
+                summaryMetric("確認中（不限生活圈）", count: confirmingCount, emphasis: false)
+                summaryMetric("其他區域", count: elsewhereCount, emphasis: false)
+            }
 
-                if let alert = activeRegionAlerts.first {
-                    Button {
-                        selectedAlert = alert
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: alert.iconName)
-                                .foregroundStyle(HCColor.attention)
-                                .accessibilityHidden(true)
-                            Text("區域警報：\(alert.kind)｜\(alert.title)")
-                                .font(.caption.bold())
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+            if let alert = activeRegionAlerts.first {
+                Button {
+                    selectedAlert = alert
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: alert.iconName)
+                            .foregroundStyle(HCColor.attention)
+                            .accessibilityHidden(true)
+                        Text("區域警報：\(alert.kind)｜\(alert.title)")
+                            .font(.caption.bold())
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("區域警報：\(alert.kind)，\(alert.title)")
                 }
-            } else {
-                Button("查看確認中 \(confirmingCount) 件、其他區域 \(elsewhereCount) 件與區域警報 \(activeRegionAlerts.count) 則") {
-                    withAnimation { isSummaryExpanded = true }
-                }
-                .font(.caption)
+                .buttonStyle(.plain)
+                .accessibilityLabel("區域警報：\(alert.kind)，\(alert.title)")
             }
 
-            if isSummaryExpanded {
-                Button("收合摘要") {
-                    withAnimation { isSummaryExpanded = false }
-                }
-                .font(.caption.bold())
+            Button("收合摘要") {
+                withAnimation { isSummaryExpanded = false }
             }
+            .font(.caption.bold())
 
             VStack(alignment: .leading, spacing: 2) {
                 if isPaused {

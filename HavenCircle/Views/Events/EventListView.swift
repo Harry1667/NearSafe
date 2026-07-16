@@ -9,6 +9,8 @@ struct EventListView: View {
     @Query private var members: [LocalFamilyMember]
     @Query private var regionAlerts: [RegionAlert]
     @State private var showDrill = false
+    /// 可收合分組的展開狀態（預設全部收合：未驗證與已結束的資訊不該搶版面）
+    @State private var expandedSections: Set<String> = []
     @State private var selected: LocalSafetyEvent?
     @State private var selectedAlert: RegionAlert?
 
@@ -76,11 +78,13 @@ struct EventListView: View {
                 }
             }
             regionAlertSection
+            // 顯示面積跟「可信度／急迫性」成正比：需要注意永遠攤開；
+            // 未驗證的確認中、離圈遠的附近動態、已結束——預設收合，點標題展開
             section(title: "需要注意", subtitle: "官方確認且位於生活圈提醒範圍內", items: attention)
-            section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming)
-            section(title: "附近動態", subtitle: "官方事件，離生活圈 30 公里內", items: elsewhere)
+            section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming, collapsible: true)
+            section(title: "附近動態", subtitle: "官方事件，離生活圈 30 公里內", items: elsewhere, collapsible: true)
             nationwideSection
-            section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended)
+            section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended, collapsible: true)
         }
         .navigationTitle("提醒中心")
         .toolbar {
@@ -196,22 +200,47 @@ struct EventListView: View {
     }
 
     @ViewBuilder
-    private func section(title: String, subtitle: String, items: [LocalSafetyEvent]) -> some View {
+    private func section(title: String, subtitle: String, items: [LocalSafetyEvent], collapsible: Bool = false) -> some View {
         if !items.isEmpty {
+            let isExpanded = !collapsible || expandedSections.contains(title)
             Section {
-                ForEach(items) { event in
+                if isExpanded {
+                    ForEach(items) { event in
+                        Button {
+                            selected = event
+                        } label: {
+                            EventRow(event: event, members: members)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .onDelete { delete(at: $0, in: items) }
+                }
+            } header: {
+                if collapsible {
                     Button {
-                        selected = event
+                        withAnimation {
+                            if isExpanded { expandedSections.remove(title) } else { expandedSections.insert(title) }
+                        }
                     } label: {
-                        EventRow(event: event, members: members)
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("\(title)（\(items.count)）")
+                                Text(subtitle).font(.caption2).textCase(nil)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                }
-                .onDelete { delete(at: $0, in: items) }
-            } header: {
-                VStack(alignment: .leading) {
-                    Text("\(title)（\(items.count)）")
-                    Text(subtitle).font(.caption2).textCase(nil)
+                    .accessibilityLabel("\(title) \(items.count) 件，點擊\(isExpanded ? "收合" : "展開")")
+                } else {
+                    VStack(alignment: .leading) {
+                        Text("\(title)（\(items.count)）")
+                        Text(subtitle).font(.caption2).textCase(nil)
+                    }
                 }
             }
         }

@@ -20,6 +20,7 @@ struct EventRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.isDrill ? "【演練】\(event.title)" : event.title)
+                    .lineLimit(2) // 卡片定高：超長標題（媒體事件偶有）截斷，不撐爆版面
                     .font(.subheadline.bold())
                 Text(event.approximateLocation)
                     .font(.caption)

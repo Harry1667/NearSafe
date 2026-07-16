@@ -301,6 +301,7 @@ struct OnboardingView: View {
                 .padding(.vertical, 6)
         }
         .buttonStyle(.borderedProminent)
+        .tint(HCColor.brand) // CTA 一律品牌群青：Onboarding 在 AppTabs 的 tint 範圍外，要自己指定
         .disabled(disabled)
         .padding(.horizontal, 24)
     }
