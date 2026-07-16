@@ -200,8 +200,9 @@
         display: inline-flex; align-items: center; gap: 10px; text-decoration: none;
         padding: 13px 22px; border-radius: 99px; font-size: 14px; font-weight: 700;
       }
-      .button.primary { background: var(--navy); color: #fff; }
-      @media (prefers-color-scheme: dark) { .button.primary { background: #2a4d69; } }
+      /* CTA 用 App 品牌群青（HCColor.brand 同值）：讓版面的藍與截圖裡的 App 藍互相呼應 */
+      .button.primary { background: #3657d6; color: #fff; }
+      @media (prefers-color-scheme: dark) { .button.primary { background: #89a0ff; color: #101c26; } }
       .button.ghost { border: 1px solid var(--ink); color: var(--ink); }
       .button.disabled { border: 1px dashed var(--line); color: var(--muted); cursor: default; }
       .team-note { margin-top: 26px; font-size: 13.5px; color: var(--muted); max-width: 560px; }
