@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import MapKit
+import CoreLocation
 import os
 
 /// 首次設定：五步分頁精靈（歡迎 → 名稱 → 生活圈 → 通知 → 完成）。
@@ -22,6 +23,13 @@ struct OnboardingView: View {
     @State private var found: MKMapItem?
     @State private var searchFailed = false
     @State private var showFallbackConfirmation = false
+    // 目前位置與跟隨圈（與家人分頁的圈編輯器同一套能力）
+    @State private var picked: CLLocationCoordinate2D?
+    @State private var pickedLabel = ""
+    @State private var pickedDistrict: String?
+    @State private var locating = false
+    @State private var locationHint = ""
+    @State private var isFollowMe = false
     @State private var notificationGranted: Bool?
 
     enum Step: Int, CaseIterable {
@@ -193,27 +201,58 @@ struct OnboardingView: View {
             Form {
                 Section {
                     TextField("地點名稱（例如：住家）", text: $placeName)
-                    TextField("城市或地址", text: $address)
-                    Button("使用 Apple Maps 搜尋位置", systemImage: "magnifyingglass") {
-                        Task { await search() }
-                    }
-                    if let found {
-                        Label("找到：\(found.name ?? address)", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(HCColor.safe)
-                    } else if searchFailed {
-                        Text("找不到這個地點，會先用台北市南港區的預設位置，之後可在「家人」頁修改。")
-                            .font(.caption)
-                            .foregroundStyle(HCColor.attention)
+                    if !isFollowMe {
+                        TextField("城市或地址", text: $address)
+                        Button("使用 Apple Maps 搜尋位置", systemImage: "magnifyingglass") {
+                            Task { await search() }
+                        }
+                        Button {
+                            Task { await useCurrentLocation() }
+                        } label: {
+                            HStack {
+                                Label("使用目前位置", systemImage: "location.fill")
+                                if locating { Spacer(); ProgressView() }
+                            }
+                        }
+                        if !pickedLabel.isEmpty {
+                            Label("已取得目前位置：\(pickedLabel)", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(HCColor.safe)
+                        } else if !locationHint.isEmpty {
+                            Text(locationHint)
+                                .font(.caption)
+                                .foregroundStyle(HCColor.attention)
+                        }
+                        if let found, picked == nil {
+                            Label("找到：\(found.name ?? address)", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(HCColor.safe)
+                        } else if searchFailed && picked == nil {
+                            Text("找不到這個地點，會先用台北市南港區的預設位置，之後可在「家人」頁修改。")
+                                .font(.caption)
+                                .foregroundStyle(HCColor.attention)
+                        }
                     }
                     Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 } footer: {
                     // 服務範圍誠實告知（行政區已擴至全國 375 鄉鎮市區，文案同步更新）
                     Text("颱風、豪雨等區域型警報依行政區自動比對，已支援全國鄉鎮市區；地址判斷不到行政區時，可稍後在生活圈編輯裡手動指定。")
                 }
+                Section {
+                    Toggle("跟著我移動", isOn: $isFollowMe)
+                        .onChange(of: isFollowMe) { _, on in
+                            if on {
+                                LocationService.shared.requestAlwaysPermission()
+                                // 順手抓一次目前位置當初始圈心
+                                Task { await useCurrentLocation() }
+                            }
+                        }
+                } footer: {
+                    Text("開啟後這個圈會跟著這台手機移動（約每移動 500 公尺更新一次，走到哪守到哪）。需要定位權限設為「永遠允許」。你的位置只留在這台手機，不會上傳或分享給任何人。")
+                }
             }
             .scrollContentBackground(.hidden)
             primaryButton("下一步") {
-                if found == nil && !isReplay {
+                // 有搜尋結果、有目前位置、或開了跟隨圈（首次位置更新會校正圈心）都算已定位
+                if found == nil && picked == nil && !isFollowMe && !isReplay {
                     showFallbackConfirmation = true
                 } else {
                     advanceFromCircle()
@@ -323,6 +362,34 @@ struct OnboardingView: View {
         }
     }
 
+    /// 一鍵帶入目前位置（與家人分頁圈編輯器同一套行為）：反查地名與行政區
+    private func useCurrentLocation() async {
+        locating = true
+        defer { locating = false }
+        guard LocationService.shared.isAuthorized else {
+            LocationService.shared.requestPermissionIfNeeded()
+            locationHint = "請先允許定位權限，再點一次"
+            return
+        }
+        guard let location = await LocationService.shared.currentLocation() else {
+            locationHint = "取不到目前位置，請稍後再試或改用地址搜尋"
+            return
+        }
+        picked = location.coordinate
+        locationHint = ""
+        if let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first {
+            let label = [placemark.locality, placemark.subLocality].compactMap { $0 }.joined()
+            pickedLabel = label.isEmpty ? "座標已取得" : label
+            let text = [placemark.subAdministrativeArea, placemark.locality,
+                        placemark.subLocality, placemark.name].compactMap { $0 }.joined(separator: " ")
+            let district = Self.guessDistrict(from: text)
+            if district != Districts.unspecified { pickedDistrict = district }
+            if address.isEmpty || address == "台北市南港區" { address = pickedLabel }
+        } else {
+            pickedLabel = "座標已取得"
+        }
+    }
+
     private func finishSetup() {
         let displayName = name.trimmingCharacters(in: .whitespaces)
         // 重播模式只是導覽：不建立資料、不動旗標，關掉就好
@@ -332,20 +399,26 @@ struct OnboardingView: View {
         }
         let me = LocalFamilyMember(name: displayName.isEmpty ? "我" : displayName, relationship: "擁有者")
         context.insert(me)
-        // 有搜尋結果用實際座標；沒有就退回南港區預設位置
-        let coordinate = found?.location.coordinate ?? .init(latitude: 25.0525, longitude: 121.6072)
+        // 座標優先序：目前位置 > 搜尋結果 > 南港區預設；
+        // 跟隨圈就算暫用預設座標，第一次顯著位置變更也會把圈心校正到實際位置
+        let coordinate = picked ?? found?.location.coordinate ?? .init(latitude: 25.0525, longitude: 121.6072)
         let circle = LocalLifeCircle(
             name: placeName.isEmpty ? "住家" : placeName,
-            encryptedAddress: found?.name ?? address,
+            encryptedAddress: isFollowMe ? "跟著我移動" : (pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel),
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
             radiusMeters: radius,
             alertTypes: EventCategory.defaultSelection,
             member: me
         )
-        circle.district = Self.guessDistrict(from: "\(found?.name ?? "") \(address)")
+        circle.district = pickedDistrict ?? Self.guessDistrict(from: "\(found?.name ?? "") \(address)")
+        circle.isFollowMe = isFollowMe
         context.insert(circle)
         context.saveReporting()
+        // 跟隨圈監聽開關跟著圈的存在與否走
+        LocationService.shared.syncFollowMonitoring(
+            hasFollowCircle: FollowCircleService.hasFollowCircle(context: context)
+        )
         // 名稱同步進個人資訊（安否回報署名用），使用者不必到設定頁再填一次
         if !displayName.isEmpty { profileName = displayName }
         // 完成旗標與家人資料脫鉤：之後就算刪光家人資料也不會被打回新手流程
