@@ -1,16 +1,23 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import AuthenticationServices
+import UserNotifications
 
 /// 設定頁：仿 Apple 系統設定的結構——頂部大帳號卡，下方彩色圖示分組列。
 struct SettingsView: View {
     @Environment(FamilySyncService.self) private var sync
+    @Environment(\.modelContext) private var context
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
+    @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
+    @State private var showTutorial = false
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
 
     var body: some View {
         NavigationStack {
             List {
-                // 頂部帳號卡：名稱＋iCloud 狀態，點入帳號詳情
+                // 頂部帳號卡：名稱＋email（Sign in with Apple 授權後）＋iCloud 狀態
                 Section {
                     NavigationLink {
                         AppleAccountView()
@@ -20,9 +27,14 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(displayName.isEmpty ? "設定你的名稱" : displayName)
                                     .font(.title3.weight(.semibold))
+                                if !appleEmail.isEmpty {
+                                    Text(appleEmail)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
                                 Text(accountStatusText)
                                     .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(appleEmail.isEmpty ? .secondary : .tertiary)
                             }
                         }
                         .padding(.vertical, 6)
@@ -41,6 +53,51 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    settingsRow("資料來源", subtitle: "政府示警來源與資料新鮮度",
+                                icon: "antenna.radiowaves.left.and.right", color: .teal) {
+                        DataSourceView()
+                    }
+                    settingsRow("關於安心圈", subtitle: "版本、官網與隱私原則",
+                                icon: "info.circle.fill", color: .gray) {
+                        AboutView()
+                    }
+                    Button {
+                        showTutorial = true
+                    } label: {
+                        Label {
+                            Text("重看新手教學")
+                                .foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "book.fill")
+                                .font(.callout)
+                                .foregroundStyle(.white)
+                                .frame(width: 29, height: 29)
+                                .background(Color.green.gradient, in: RoundedRectangle(cornerRadius: 7))
+                        }
+                    }
+                }
+
+                // App Store 審查指南 5.1.1(v)：提供帳號/資料刪除
+                Section {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label {
+                            Text("刪除帳號與所有資料")
+                        } icon: {
+                            Image(systemName: "trash.fill")
+                                .font(.callout)
+                                .foregroundStyle(.white)
+                                .frame(width: 29, height: 29)
+                                .background(Color.red.gradient, in: RoundedRectangle(cornerRadius: 7))
+                        }
+                    }
+                    .disabled(isDeleting)
+                } footer: {
+                    Text("清除這支手機上的所有家人、生活圈與事件資料，並退出（擁有者則刪除）iCloud 家庭圈。此動作無法復原。")
+                }
+
+                Section {
                     Label("安心圈不是緊急服務。遇立即危險請直接撥打 110 或 119。", systemImage: "phone.fill")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -48,7 +105,45 @@ struct SettingsView: View {
             }
             .navigationTitle("設定")
             .task { await sync.refreshAccountStatus() }
+            .fullScreenCover(isPresented: $showTutorial) {
+                OnboardingView(isReplay: true)
+            }
+            .confirmationDialog("確定要刪除所有資料嗎？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("刪除所有資料", role: .destructive) {
+                    Task { await deleteEverything() }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("本機資料與 iCloud 家庭圈都會被清除，無法復原。")
+            }
         }
+    }
+
+    /// 刪除帳號與資料：雲端家庭圈 → 本機資料庫 → 偏好設定 → 待發通知。
+    /// 完成後 ContentView 會因旗標與資料清空自動回到新手設定。
+    private func deleteEverything() async {
+        isDeleting = true
+        defer { isDeleting = false }
+        await sync.leaveFamily()
+        do {
+            try context.delete(model: LocalSafetyEvent.self)
+            try context.delete(model: LocalLifeCircle.self)
+            try context.delete(model: LocalFamilyMember.self)
+            try context.delete(model: RegionAlert.self)
+        } catch {
+            AppLog.dataError("刪除本機資料失敗：\(error.localizedDescription)")
+        }
+        context.saveReporting()
+        for key in [SettingsKeys.profileDisplayName, SettingsKeys.profileContactNote,
+                    SettingsKeys.appleAccountEmail, SettingsKeys.onboardingCompleted,
+                    SettingsKeys.lastDataRefresh, SettingsKeys.alertsEnabled,
+                    SettingsKeys.alertsPaused, SettingsKeys.highConfidenceOnly,
+                    SettingsKeys.digestEnabled, SettingsKeys.digestHour] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        EventVisibility.reset()
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     }
 
     /// 頭像：取顯示名稱第一個字，沒設名稱用預設盾牌
@@ -113,9 +208,34 @@ struct SettingsView: View {
 
 private struct AppleAccountView: View {
     @Environment(FamilySyncService.self) private var sync
+    @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
+    @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
+    @State private var signInError: String?
 
     var body: some View {
         List {
+            Section("Apple 帳號資訊") {
+                if !appleEmail.isEmpty {
+                    LabeledContent("Email", value: appleEmail)
+                }
+                // CloudKit 依隱私政策拿不到帳號 email；用 Sign in with Apple 授權一次帶入
+                SignInWithAppleButton(.continue) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    handleSignIn(result)
+                }
+                .frame(height: 44)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                if let signInError {
+                    Text(signInError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                Text("授權一次即可把名稱與 email 帶入設定頁。Apple 只在首次授權時提供這些資料，資料只存在這支手機。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("iCloud 同步狀態") {
                 LabeledContent("目前狀態", value: statusTitle)
                 Text(statusDescription)
@@ -148,6 +268,34 @@ private struct AppleAccountView: View {
         .navigationTitle("Apple 帳號")
         .navigationBarTitleDisplayMode(.inline)
         .task { await sync.refreshAccountStatus() }
+    }
+
+    /// Sign in with Apple 只在「首次授權」提供姓名與 email，之後都是 nil——
+    /// 所以只在拿到非空值時覆寫，重按不會把已存的資料洗掉。
+    private func handleSignIn(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let auth):
+            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else { return }
+            signInError = nil
+            if let email = credential.email, !email.isEmpty {
+                appleEmail = email
+            }
+            if let components = credential.fullName {
+                let formatted = PersonNameComponentsFormatter().string(from: components)
+                // 名稱只在使用者還沒自己設定時帶入，不覆蓋現有稱呼
+                if !formatted.isEmpty && displayName.isEmpty {
+                    displayName = formatted
+                }
+            }
+            if appleEmail.isEmpty {
+                signInError = "Apple 只在首次授權時提供 email。若要重新帶入：iPhone 設定 → Apple 帳號 → 登入與安全性 → 使用 Apple 登入的 App → 移除安心圈後再授權一次。"
+            }
+        case .failure(let error):
+            // 使用者按取消也會走到這裡，不當成錯誤吵他
+            if (error as? ASAuthorizationError)?.code != .canceled {
+                signInError = "授權失敗：\(error.localizedDescription)"
+            }
+        }
     }
 
     private var statusTitle: String {

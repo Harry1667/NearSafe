@@ -6,7 +6,11 @@ import os
 /// 首次設定：五步分頁精靈（歡迎 → 名稱 → 生活圈 → 通知 → 完成）。
 /// 設計原則：一步只問一件事、先講理由再要權限、家人邀請可略過（軟門檻）。
 struct OnboardingView: View {
+    /// 重播模式（從設定頁「重看新手教學」進入）：只導覽，不建立任何資料
+    var isReplay = false
+
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsKeys.profileDisplayName) private var profileName = ""
     @AppStorage(SettingsKeys.onboardingCompleted) private var onboardingCompleted = false
 
@@ -46,6 +50,11 @@ struct OnboardingView: View {
                         Button("返回", systemImage: "chevron.left") {
                             withAnimation { step = Step(rawValue: step.rawValue - 1) ?? .welcome }
                         }
+                    }
+                }
+                if isReplay {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("關閉") { dismiss() }
                     }
                 }
             }
@@ -136,7 +145,7 @@ struct OnboardingView: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal, 48)
             Spacer()
-            primaryButton("下一步", disabled: name.trimmingCharacters(in: .whitespaces).isEmpty) {
+            primaryButton("下一步", disabled: !isReplay && name.trimmingCharacters(in: .whitespaces).isEmpty) {
                 withAnimation { step = .circle }
             }
         }
@@ -169,7 +178,7 @@ struct OnboardingView: View {
             }
             .scrollContentBackground(.hidden)
             primaryButton("下一步") {
-                if found == nil {
+                if found == nil && !isReplay {
                     showFallbackConfirmation = true
                 } else {
                     advanceFromCircle()
@@ -229,7 +238,7 @@ struct OnboardingView: View {
                       "到「家人」分頁邀請家人加入，支援 QR code 或 8 位邀請碼；需要登入 iCloud。")
                 .padding(.horizontal, 24)
             Spacer()
-            primaryButton("開始使用") { finishSetup() }
+            primaryButton(isReplay ? "完成" : "開始使用") { finishSetup() }
         }
         .padding(.bottom, 24)
     }
@@ -280,6 +289,11 @@ struct OnboardingView: View {
 
     private func finishSetup() {
         let displayName = name.trimmingCharacters(in: .whitespaces)
+        // 重播模式只是導覽：不建立資料、不動旗標，關掉就好
+        if isReplay {
+            dismiss()
+            return
+        }
         let me = LocalFamilyMember(name: displayName.isEmpty ? "我" : displayName, relationship: "擁有者")
         context.insert(me)
         // 有搜尋結果用實際座標；沒有就退回南港區預設位置

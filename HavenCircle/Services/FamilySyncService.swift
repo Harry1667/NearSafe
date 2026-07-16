@@ -213,6 +213,32 @@ final class FamilySyncService {
         }
     }
 
+    // MARK: - 退出／刪除家庭圈（帳號刪除流程用）
+
+    /// 清掉這個帳號在 CloudKit 上的家庭圈足跡：
+    /// 擁有者＝刪整個自訂 zone（分享與所有回報一併消失）；
+    /// 成員＝刪 shared database 裡的 zone（等於退出分享）。
+    /// 兩邊都是「有就刪、沒有就算了」，錯誤記 log 不中斷——刪除流程不能卡在雲端清理上。
+    func leaveFamily() async {
+        do {
+            try await container.privateCloudDatabase.deleteRecordZone(withID: zoneID)
+        } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
+            // 本來就沒建過家庭圈，屬正常
+        } catch {
+            AppLog.cloud.error("刪除家庭圈 zone 失敗：\(error.localizedDescription)")
+        }
+        do {
+            let sharedDB = container.sharedCloudDatabase
+            for zone in try await sharedDB.allRecordZones() where zone.zoneID.zoneName == Self.zoneName {
+                try await sharedDB.deleteRecordZone(withID: zone.zoneID)
+            }
+        } catch {
+            AppLog.cloud.error("退出共享家庭圈失敗：\(error.localizedDescription)")
+        }
+        pings = []
+        await refreshAccountStatus()
+    }
+
     private func resolveDatabaseAndRoot() async throws -> (CKDatabase, CKRecord.ID) {
         // 擁有者：private database 有根記錄；成員：shared database
         let privateDB = container.privateCloudDatabase

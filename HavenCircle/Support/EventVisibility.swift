@@ -18,4 +18,9 @@ enum EventVisibility {
     private static var suppressedGroups: Set<String> {
         Set(UserDefaults.standard.stringArray(forKey: suppressedGroupsKey) ?? [])
     }
+
+    /// 清空略過紀錄（刪除帳號與資料流程用）
+    static func reset() {
+        UserDefaults.standard.removeObject(forKey: suppressedGroupsKey)
+    }
 }
