@@ -12,6 +12,7 @@ import os
 @main
 struct HavenCircleApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     private let modelContainer: ModelContainer
     @State private var familySync = FamilySyncService()
 
@@ -19,6 +20,8 @@ struct HavenCircleApp: App {
         modelContainer = Self.makeContainer()
         // 前景也要顯示通知橫幅（演練模式必要）
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        // 背景任務處理器必須在啟動完成前登記（Apple 規定），所以放 init 不放 .task
+        BackgroundRefresh.register(container: modelContainer)
     }
 
     /// 建立本機資料庫。取代舊版 try!：schema 變動導致遷移失敗時，
@@ -78,5 +81,9 @@ struct HavenCircleApp: App {
                 }
         }
         .modelContainer(modelContainer)
+        // App 進背景時排一次背景刷新（BGTaskScheduler 的請求要在背景前送出才有效）
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { BackgroundRefresh.schedule() }
+        }
     }
 }
