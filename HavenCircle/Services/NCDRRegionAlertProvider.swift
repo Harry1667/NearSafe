@@ -23,7 +23,9 @@ struct NCDRRegionAlertProvider: RegionAlertProvider {
             let ttl = expires.timeIntervalSinceNow
             guard ttl > 0 else { return nil } // 已過期的示警不再收錄，避免一開啟就顯示過期通知
 
-            let guidance = (event.description?.isEmpty == false ? event.description : nil)
+            // 應變建議優先採官方 instruction（官方 API 才有），其次事件描述
+            let guidance = (event.instruction?.isEmpty == false ? event.instruction : nil)
+                ?? (event.description?.isEmpty == false ? event.description : nil)
                 ?? event.headline ?? event.event ?? "請留意官方後續資訊"
 
             return RawRegionAlert(
@@ -111,6 +113,7 @@ private struct NCDRCapEvent: Decodable {
     let senderName: String?
     let headline: String?
     let description: String?
+    let instruction: String?
     let areaDesc: String?
     let circle: String?
     let polygon: String?
