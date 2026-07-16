@@ -95,3 +95,40 @@
 - 之後：等 NCDR 會員審核通過，視需要換成官方 API Key 或加訂閱推播（非必要，公開 feed 已經夠用）
 - 有新專案要用 Mac Mini 跑爬蟲時，照 `~/crawlers/README.md` 的慣例開新資料夾，不要跟 havencircle 的混在一起
 - 回頭處理 App 端那批還沒 commit 的本機修改（SettingsView 重寫等），先確認能編譯過再決定要不要收進版本控制
+
+## 2026-07-16 深夜 〜 07-17（同一個 session）
+
+### 完成事項
+
+**APNs 伺服器推播全鏈（`99838f6`）**
+- Oracle `/apns/`：register.php（權杖登記）、notify_all.php（X-Admin-Key 廣播，admin key 在伺服器 `_apns_config.php`）、cron_check.php（每 5 分鐘比對 NCDR identifier，新警報→無聲喚醒廣播）；資料在 `apns/data/`（nginx deny）
+- .p8 金鑰（Key ID B7F7W3Q973）已裝伺服器；本機備份在 `~/Documents/important file/apns-havencircle/`（Apple 不能重下載！）
+- App：權杖自動上傳、無聲推播喚醒跑管線；實測 Apple 回 200 sent=1；模擬器收無聲推播不可靠（Apple 限制），實機待測
+- nginx：站是「逐目錄開 PHP」，新目錄要加 extension conf（apns.conf 已建）
+- 零追蹤架構：伺服器只存權杖、廣播喚醒，比對永遠在裝置上
+
+**功能批（`0b309ad`、`9adb0ba`、`fe5cb74`）**
+- 跟隨圈（顯著位置變更、Always 權限、FollowCircleService）、獨立重要地點（member.kind="place"）、圈編輯器與 Onboarding 都有「使用目前位置」
+- 新聞 LLM 短摘要 ≤20 字（fetch_news.py summary 欄位＋OpenCC 簡轉繁兜底——LLM 會無視「禁簡體」指令）；App NewsEventProvider 優先顯示 summary；EventPipeline 對既有事件同步新標題
+
+**介面重構「合成案」（C1-C4，`5cfd840`/`d066398`/`e8bc1ed`）**
+- 設計流程照 70-deep-planning：3 平行 agent 真分歧提案→premortem→收斂→fresh-context 對抗驗收（抓出 5 個問題）→使用者選定
+- 安心頁（HomeStatusView）為啟動頁：大字狀態/家人列/背景看守/回報平安；SafetyOverview 共用聚合（防假性安心，注意：專案已有 enum SafetyStatus 在 SafetyPing.swift，命名撞過一次）
+- 分頁五減三（安心/地圖/家人）；提醒中心與回顧降二級（router.homePath push）；設定變全域 sheet（router.showSettings）
+- 提醒中心按可信度收合；地圖摘要膠囊化；深淺色/XXXL 字級回歸通過
+
+**其他**
+- 功能導覽 coach marks（`3b334aa`）：黑幕聚光燈 6 步；DEBUG `--tour` 參數強制播放；設定頁可重看
+- 外觀設定三檔（跟隨系統/淺/深）；APNs 權杖只在 DEBUG 顯示
+- 主題：守護綠改 teal 0x0F8A6B/0x4AD6B8＋安心頁狀態色漸層底（`9edebc6`）
+- Pitch 頁 https://havencircle.looptw.com/pitch/ 已上線（五畫面，WHY 段註解待實機截圖）
+
+### 未完成／下次起點
+1. **系統碟又爆了（清理到一半被中斷）**：已清 DerivedData（騰 1.8G）＋simctl delete unavailable。掃描結果待處理：~/Library/Caches 9.6G（Google 3.2G、VSCode ShipIt 1.3G、Homebrew 1.3G、ms-playwright 1.0G 都可清）、iOS DeviceSupport 5.5G（舊版可刪）、其他模擬器 19G（iPhone 14 Pro Max 6.4G 等；**58EB62E3=iPhone 17 Pro 是 demo 機有資料，勿刪**）
+2. 實機測試清單：APNs 無聲喚醒＋可見橫幅、通知權限、跟隨圈背景更新、CKShare 雙機、提醒中心收合手感、04-event-detail 截圖
+3. Pitch 頁缺：04 實機截圖（補後取消 index.html 註解、改回六畫面）、家人頁實機重拍、demo 影片連結、隊名
+4. 使用者放了 App icon 概念稿在 design/icon-concepts/（獎盃 v1/v2）；若做正式 AppIcon 注意品牌群青 #3657D6 與新 teal
+5. 模擬器 demo 資料曾被誤刪，`--smoke-onboard` 可一鍵重建（測試者＋信義區住家圈）
+
+### 踩坑（詳見 LESSONS）
+- `xcrun simctl spawn booted defaults write` 會蓋掉 App 沙盒偏好設定的其他 key（onboardingCompleted 等全丟）；且寫入的位置 App 不一定讀得到——改用 DEBUG 啟動參數傳旗標
