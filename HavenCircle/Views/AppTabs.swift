@@ -24,7 +24,7 @@ struct AppTabs: View {
         if let flagIndex = args.firstIndex(of: "--start-tab"),
            flagIndex + 1 < args.count,
            let tab = Int(args[flagIndex + 1]) {
-            return min(max(tab, 0), 5)
+            return min(max(tab, 0), 3)
         }
         #endif
         return TabRouter.homeTab  // 打開就是安心頁：3 秒讀完「家人都平安嗎」
@@ -35,24 +35,17 @@ struct AppTabs: View {
             HomeStatusView(myName: myName)
                 .tabItem { Label("安心", systemImage: "checkmark.shield.fill") }
                 .tag(TabRouter.homeTab)
-            EventListView()
-                .tabItem { Label("提醒中心", systemImage: "bell.badge.fill") }
-                .tag(TabRouter.eventsTab)
-            NavigationStack { HistoryView() }
-                .tabItem { Label("回顧", systemImage: "clock.arrow.circlepath") }
-                .tag(TabRouter.historyTab)
             SafetyMapView()
                 .tabItem { Label("安全地圖", systemImage: "map.fill") }
                 .tag(TabRouter.mapTab)
             FamilyHubView(myName: myName)
                 .tabItem { Label("家人", systemImage: "person.2.fill") }
                 .tag(TabRouter.familyTab)
-            SettingsView()
-                .tabItem { Label("設定", systemImage: "slider.horizontal.3") }
-                .tag(TabRouter.settingsTab)
         }
         .tint(HCColor.brand)
         .environment(router)
+        // 設定改為全域 sheet：任何頁面（含家人頁的「查看 Apple 帳號狀態」）都能打開
+        .sheet(isPresented: Bindable(router).showSettings) { SettingsView() }
         // App 每次回到前景重跑資料管線（含每日摘要重算）。
         // 原型限制：沒有背景更新，用前景時機讓資料與摘要盡量新鮮。
         .onChange(of: scenePhase) { _, phase in
@@ -73,14 +66,15 @@ struct AppTabs: View {
     }
 
     /// havencircle://alerts｜map｜family｜refresh
+    /// 分頁減編後 alerts/refresh 改為「安心頁＋push 提醒中心」，widget 與通知不用改 URL
     private func route(_ url: URL) {
         guard url.scheme == "havencircle" else { return }
         switch url.host {
-        case "alerts": router.selection = TabRouter.eventsTab
+        case "alerts": router.openHome(.events)
         case "map": router.selection = TabRouter.mapTab
         case "family": router.selection = TabRouter.familyTab
         case "refresh":
-            router.selection = TabRouter.eventsTab
+            router.openHome(.events)
             Task { await EventPipeline.refresh(context: context) }
         default: break
         }

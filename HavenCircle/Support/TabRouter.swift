@@ -1,22 +1,37 @@
 import Foundation
 import Observation
 
-/// 跨分頁導航：讓任何畫面能切換主分頁（例如家人頁的「邀請家人」跳到安否分頁）
+/// 跨分頁導航：讓任何畫面能切換主分頁、推入安心頁的二級頁、或打開設定 sheet。
+/// 分頁減編（合成案 C2）後只剩三個一級分頁：安心・安全地圖・家人；
+/// 提醒中心與回顧變成安心頁 push 的二級頁，設定變成全域 sheet。
 @Observable
 @MainActor
 final class TabRouter {
-    /// 分頁順序：地圖置中，開 App 直接看到完整地圖
-    static let eventsTab = 0
-    static let historyTab = 1
-    static let mapTab = 2
+    static let homeTab = 0
+    static let mapTab = 2      // 保留原 tag 值：widget/通知的 map deep link 不受影響
     static let familyTab = 3
-    static let settingsTab = 4
-    /// 安心頁（狀態優先的新啟動頁）。tag 值沿用遞增避免動到既有 deep link 對應
-    static let homeTab = 5
+
+    /// 安心頁的二級頁（提醒中心／回顧由此 push）
+    enum HomeDestination: Hashable {
+        case events
+        case history
+    }
 
     var selection: Int
+    /// 安心頁的導航堆疊：deep link「alerts」把 .events 推上來
+    var homePath: [HomeDestination] = []
+    /// 設定改為全域 sheet（掛在 AppTabs 層，任何頁面都能打開）
+    var showSettings = false
 
-    init(selection: Int = TabRouter.mapTab) {
+    init(selection: Int = TabRouter.homeTab) {
         self.selection = selection
+    }
+
+    /// 跳到安心頁並推入指定二級頁（deep link 與看守摘要行共用）
+    func openHome(_ destination: HomeDestination) {
+        selection = Self.homeTab
+        if homePath.last != destination {
+            homePath.append(destination)
+        }
     }
 }

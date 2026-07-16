@@ -27,7 +27,7 @@ struct InviteFamilySection: View {
                 Label("邀請家人需要先登入 iCloud", systemImage: "icloud.slash")
                     .foregroundStyle(HCColor.attention)
                 Button("查看 Apple 帳號狀態", systemImage: "gearshape") {
-                    router.selection = TabRouter.settingsTab
+                    router.showSettings = true
                 }
             default:
                 Button {

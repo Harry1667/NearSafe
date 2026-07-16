@@ -23,17 +23,28 @@ struct HomeStatusView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // 導航堆疊綁在 router 上：deep link（widget/通知的 alerts）能直接推入提醒中心
+        NavigationStack(path: Bindable(router).homePath) {
             ScrollView {
                 VStack(spacing: HCSpacing.x6) {
                     statusHero
                     if !members.isEmpty { familySection }
                     watchSummaryRow
+                    historyRow
                 }
                 .padding(.horizontal, HCSpacing.x4)
                 .padding(.top, HCSpacing.x4)
             }
             .navigationTitle("安心圈")
+            .toolbar {
+                Button("設定", systemImage: "gearshape") { router.showSettings = true }
+            }
+            .navigationDestination(for: TabRouter.HomeDestination.self) { destination in
+                switch destination {
+                case .events: EventListView()
+                case .history: HistoryView()
+                }
+            }
             .safeAreaInset(edge: .bottom) { checkInButton }
             .sheet(isPresented: $showCheckIn) {
                 NavigationStack { SafetyCheckInView(myName: myName) }
@@ -179,8 +190,7 @@ struct HomeStatusView: View {
 
     private var watchSummaryRow: some View {
         Button {
-            // C1 階段先跳到提醒中心分頁；C2 分頁減編後改為本頁 push
-            router.selection = TabRouter.eventsTab
+            router.openHome(.events)
         } label: {
             HStack {
                 Image(systemName: "eye.fill")
@@ -189,6 +199,27 @@ struct HomeStatusView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .hcCard()
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 回顧入口：低頻查閱不配一級分頁，降為安心頁的一列
+    private var historyRow: some View {
+        Button {
+            router.openHome(.history)
+        } label: {
+            HStack {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(HCColor.brand)
+                Text("回顧過去 7 天")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption)

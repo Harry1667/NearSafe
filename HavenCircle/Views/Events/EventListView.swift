@@ -64,34 +64,33 @@ struct EventListView: View {
         return newest.values.sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    // 分頁減編（合成案 C2）後本頁由安心頁 push，導航堆疊由上層提供，
+    // 自己不再包 NavigationStack（巢狀堆疊會讓 push/pop 行為錯亂）
     var body: some View {
-        NavigationStack {
-            List {
-                miniMapSection
-                if visibleEvents.isEmpty && activeRegionAlerts.isEmpty {
-                    Section {
-                        safeStateHero
-                            .listRowBackground(Color.clear)
-                    }
+        List {
+            miniMapSection
+            if visibleEvents.isEmpty && activeRegionAlerts.isEmpty {
+                Section {
+                    safeStateHero
+                        .listRowBackground(Color.clear)
                 }
-                regionAlertSection
-                section(title: "需要注意", subtitle: "官方確認且位於生活圈提醒範圍內", items: attention)
-                section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming)
-                section(title: "附近動態", subtitle: "官方事件，離生活圈 30 公里內", items: elsewhere)
-                nationwideSection
-                section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended)
             }
-            .navigationTitle("提醒中心")
-            .toolbar {
-                // 「回顧」已升級為獨立分頁，這裡只留演練
-                Button("演練", systemImage: "bell.and.waves.left.and.right") { showDrill = true }
-            }
-            // 手動下拉刷新：重跑一次資料管線
-            .refreshable { await EventPipeline.refresh(context: context) }
-            .sheet(isPresented: $showDrill) { DrillView() }
-            .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
-            .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
+            regionAlertSection
+            section(title: "需要注意", subtitle: "官方確認且位於生活圈提醒範圍內", items: attention)
+            section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming)
+            section(title: "附近動態", subtitle: "官方事件，離生活圈 30 公里內", items: elsewhere)
+            nationwideSection
+            section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended)
         }
+        .navigationTitle("提醒中心")
+        .toolbar {
+            Button("演練", systemImage: "bell.and.waves.left.and.right") { showDrill = true }
+        }
+        // 手動下拉刷新：重跑一次資料管線
+        .refreshable { await EventPipeline.refresh(context: context) }
+        .sheet(isPresented: $showDrill) { DrillView() }
+        .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
+        .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
     }
 
     /// 品牌簽名：平安不是「沒有內容」，是產品最想傳達的一刻——同心圓環＝守護圈完好。

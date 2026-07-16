@@ -73,7 +73,7 @@ struct SafetyCheckInView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("前往設定查看 Apple 帳號", systemImage: "gearshape") {
-                    router.selection = TabRouter.settingsTab
+                    router.showSettings = true
                 }
             }
         case .error(let message):
