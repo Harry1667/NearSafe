@@ -35,6 +35,7 @@ if (count($existing) >= 500) {
 
 $record = [
     'received_at'  => gmdate('Y-m-d\TH:i:s\Z'),
+    'channel'      => $_GET['ch'] ?? 'unknown', // 註冊時 HTTPS 用 ch=https、Atom 用 ch=atom 區分管道
     'content_type' => $_SERVER['CONTENT_TYPE'] ?? '',
     'headers'      => array_filter($_SERVER, fn($k) => str_starts_with($k, 'HTTP_'), ARRAY_FILTER_USE_KEY),
     'body'         => file_get_contents('php://input'),
