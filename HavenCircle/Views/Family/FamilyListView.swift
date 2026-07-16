@@ -19,9 +19,13 @@ struct FamilyListView: View {
                 } description: {
                     Text("新增家人並設定他的生活圈（例如爸媽的住家），有事件靠近時就會提醒你。")
                 } actions: {
-                    Button("新增家人", systemImage: "person.badge.plus") { adding = true }
-                        .buttonStyle(.borderedProminent)
-                    Button("新增重要地點", systemImage: "mappin.and.ellipse") { addingPlace = true }
+                    // 兩顆按鈕要自己排 VStack：直接並列會被 actions 容器壓縮成直排文字
+                    VStack(spacing: HCSpacing.x2) {
+                        Button("新增家人", systemImage: "person.badge.plus") { adding = true }
+                            .buttonStyle(.borderedProminent)
+                        Button("新增重要地點", systemImage: "mappin.and.ellipse") { addingPlace = true }
+                            .buttonStyle(.bordered)
+                    }
                 }
             }
             ForEach(members) { member in

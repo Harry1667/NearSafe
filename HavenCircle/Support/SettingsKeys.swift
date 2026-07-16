@@ -21,6 +21,8 @@ enum SettingsKeys {
     static let guardianIntroPending = "guardianIntroPending"
     /// 外觀模式（AppearanceMode 的 rawValue）：跟隨系統／淺色／深色
     static let appearanceMode = "appearanceMode"
+    /// 功能導覽待播旗標：Onboarding 完成時種下，首次進安心頁消耗；設定頁可重新種下
+    static let homeTourPending = "homeTourPending"
 }
 
 /// 資料時效：所有會刷新事件資料的路徑都應呼叫這裡

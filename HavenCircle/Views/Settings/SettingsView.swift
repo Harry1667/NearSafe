@@ -8,6 +8,7 @@ import UserNotifications
 struct SettingsView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss // 設定現在是 sheet：重看導覽等動作要先把自己收起來
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
     @AppStorage(SettingsKeys.apnsDeviceToken) private var apnsToken = ""
@@ -93,6 +94,22 @@ struct SettingsView: View {
                                 .foregroundStyle(.white)
                                 .frame(width: 29, height: 29)
                                 .background(HCColor.safe.gradient, in: RoundedRectangle(cornerRadius: 7))
+                        }
+                    }
+                    Button {
+                        // 種旗標＋關掉設定 sheet，AppTabs 觀察到旗標會切回安心頁開始導覽
+                        UserDefaults.standard.set(true, forKey: SettingsKeys.homeTourPending)
+                        dismiss()
+                    } label: {
+                        Label {
+                            Text("重看功能導覽")
+                                .foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "sparkles.rectangle.stack.fill")
+                                .font(.callout)
+                                .foregroundStyle(.white)
+                                .frame(width: 29, height: 29)
+                                .background(HCColor.brand.gradient, in: RoundedRectangle(cornerRadius: 7))
                         }
                     }
                 }

@@ -28,9 +28,15 @@ struct HomeStatusView: View {
             ScrollView {
                 VStack(spacing: HCSpacing.x6) {
                     statusHero
-                    if !members.isEmpty { familySection }
+                        .tourAnchor(.statusHero)
+                    if !members.isEmpty {
+                        familySection
+                            .tourAnchor(.familyList)
+                    }
                     watchSummaryRow
+                        .tourAnchor(.watchRow)
                     historyRow
+                        .tourAnchor(.historyRow)
                 }
                 .padding(.horizontal, HCSpacing.x4)
                 .padding(.top, HCSpacing.x4)
@@ -243,6 +249,7 @@ struct HomeStatusView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(HCColor.brand)
+        .tourAnchor(.checkInButton)
         .padding(.horizontal, HCSpacing.x4)
         .padding(.bottom, HCSpacing.x2)
         .background(.bar)

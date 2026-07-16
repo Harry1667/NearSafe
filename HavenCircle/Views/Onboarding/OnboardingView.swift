@@ -425,6 +425,8 @@ struct OnboardingView: View {
         onboardingCompleted = true
         // 種下守護圈開場動效旗標：首次進地圖時演「鏡頭飛向生活圈」的確認儀式
         UserDefaults.standard.set(true, forKey: SettingsKeys.guardianIntroPending)
+        // 種下功能導覽旗標：首次進安心頁時黑幕聚光燈逐步介紹
+        UserDefaults.standard.set(true, forKey: SettingsKeys.homeTourPending)
     }
 
     /// 從地址文字比對全國鄉鎮市區（供區域型警報使用）；找不到就標「未指定」
