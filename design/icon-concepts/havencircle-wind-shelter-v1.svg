@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="126" y1="78" x2="912" y2="946" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#253E72"/>
+      <stop offset="0.5" stop-color="#192B52"/>
+      <stop offset="1" stop-color="#101C35"/>
+    </linearGradient>
+    <radialGradient id="shelterGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(540 600) rotate(90) scale(330)">
+      <stop stop-color="#F2C778" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#F2C778" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="roof" x1="248" y1="578" x2="782" y2="578" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BCEAD3"/>
+      <stop offset="0.52" stop-color="#F8F1DD"/>
+      <stop offset="1" stop-color="#EBCFA5"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#070E22" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#shelterGlow)"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M114 350 C212 330 286 342 354 388" stroke="#74D5BF" stroke-width="34" opacity="0.82"/>
+    <path d="M94 458 C212 444 292 466 354 516" stroke="#91E0C5" stroke-width="44" opacity="0.94"/>
+    <path d="M122 574 C218 590 282 576 338 538" stroke="#74D5BF" stroke-width="30" opacity="0.7"/>
+  </g>
+  <path d="M250 588 L468 358 Q512 316 556 358 L782 588" fill="none" stroke="url(#roof)" stroke-width="102" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+  <rect x="422" y="624" width="180" height="52" rx="26" fill="#F3C576" filter="url(#shadow)"/>
+  <rect x="458" y="641" width="108" height="18" rx="9" fill="#FFF2CD" opacity="0.9"/>
+</svg>

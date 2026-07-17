@@ -23,15 +23,71 @@ struct WidgetEventSummary: Codable {
     let title: String
     let isOfficial: Bool
     let approximateDistanceMeters: Int?
+    let approximateLocation: String?
+    let latitude: Double?
+    let longitude: Double?
+
+    init(
+        title: String,
+        isOfficial: Bool,
+        approximateDistanceMeters: Int?,
+        approximateLocation: String? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil
+    ) {
+        self.title = title
+        self.isOfficial = isOfficial
+        self.approximateDistanceMeters = approximateDistanceMeters
+        self.approximateLocation = approximateLocation
+        self.latitude = latitude
+        self.longitude = longitude
+    }
 }
 
 struct WidgetSnapshot: Codable {
     let generatedAt: Date
-    /// 主要生活圈名稱與提醒半徑（規格 01 的表頭：「住家 · 1 km」）
+    /// 主要警戒圈名稱、類型與提醒半徑
     let circleName: String
     let radiusMeters: Int
-    /// 生活圈提醒範圍內、官方確認的進行中事件數
+    /// Optional 以相容尚未寫入圈類型的舊版快照；nil 視為固定地點。
+    let circleKind: String?
+    let circleUpdatedAt: Date?
+    /// 僅供 Widget 概略地圖定位；不包含住址文字。
+    let circleLatitude: Double?
+    let circleLongitude: Double?
+    /// 警戒圈提醒範圍內、官方確認的進行中事件數
     let attentionCount: Int
     /// 最需要留意的一件（依距離排序取最近）
     let topEvent: WidgetEventSummary?
+    /// 大型 Widget 最多顯示三件。Optional 讓舊版 App Group 快照仍可解碼。
+    let events: [WidgetEventSummary]?
+
+    init(
+        generatedAt: Date,
+        circleName: String,
+        radiusMeters: Int,
+        circleKind: String?,
+        circleUpdatedAt: Date?,
+        circleLatitude: Double? = nil,
+        circleLongitude: Double? = nil,
+        attentionCount: Int,
+        topEvent: WidgetEventSummary?,
+        events: [WidgetEventSummary]? = nil
+    ) {
+        self.generatedAt = generatedAt
+        self.circleName = circleName
+        self.radiusMeters = radiusMeters
+        self.circleKind = circleKind
+        self.circleUpdatedAt = circleUpdatedAt
+        self.circleLatitude = circleLatitude
+        self.circleLongitude = circleLongitude
+        self.attentionCount = attentionCount
+        self.topEvent = topEvent
+        self.events = events
+    }
+
+    var eventSummaries: [WidgetEventSummary] {
+        if let events, !events.isEmpty { return events }
+        return topEvent.map { [$0] } ?? []
+    }
 }

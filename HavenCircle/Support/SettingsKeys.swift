@@ -8,6 +8,12 @@ enum SettingsKeys {
     static let digestEnabled = "digestEnabled"
     static let digestHour = "digestHour"
     static let profileDisplayName = "profileDisplayName"
+    static let liveLocationSharingEnabled = "liveLocationSharingEnabled"
+    static let liveCircleRadiusMeters = "liveCircleRadiusMeters"
+    static let liveLocationDeviceID = "liveLocationDeviceID"
+    /// 接受 CKShare 後目前選用的家庭圈 zone；避免本機曾建立過空白家庭圈時又切回 private zone。
+    static let activeFamilyZoneName = "activeFamilyZoneName"
+    static let activeFamilyOwnerName = "activeFamilyOwnerName"
     static let profileContactNote = "profileContactNote"
     /// 最後一次資料更新時間（timeIntervalSince1970；0 表示尚未更新過）
     static let lastDataRefresh = "lastDataRefresh"
@@ -21,8 +27,10 @@ enum SettingsKeys {
     static let guardianIntroPending = "guardianIntroPending"
     /// 外觀模式（AppearanceMode 的 rawValue）：跟隨系統／淺色／深色
     static let appearanceMode = "appearanceMode"
-    /// 功能導覽待播旗標：Onboarding 完成時種下，首次進安心頁消耗；設定頁可重新種下
+    /// 功能導覽待播旗標：Onboarding 完成時種下，首次進主畫面消耗；設定頁可重新種下
     static let homeTourPending = "homeTourPending"
+    /// 首次設定時明確同意的法律文件版本；條款重大更新時改版號即可重新取得同意
+    static let legalAcceptanceVersion = "legalAcceptanceVersion"
 }
 
 /// 資料時效：所有會刷新事件資料的路徑都應呼叫這裡

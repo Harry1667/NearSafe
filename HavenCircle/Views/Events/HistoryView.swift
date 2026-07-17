@@ -66,7 +66,9 @@ struct HistoryView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     NavigationStack { HistoryView() }
         .modelContainer(PreviewSupport.container())
 }
+#endif

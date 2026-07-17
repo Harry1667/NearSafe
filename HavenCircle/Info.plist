@@ -12,12 +12,14 @@
 		<string>fetch</string>
 		<!-- 無聲推播喚醒：伺服器偵測到新官方警報時叫醒 App 抓資料（比對仍在裝置上做） -->
 		<string>remote-notification</string>
+		<!-- 使用者主動開啟即時圈後，讓位置變動可在背景更新並同步到家庭 CKShare -->
+		<string>location</string>
 	</array>
-	<!-- 定位權限說明：地圖藍點、平安回報自願附位置；「永遠允許」只給使用者主動開啟的跟隨圈 -->
+	<!-- 定位權限說明：地圖藍點、平安回報與使用者主動開啟的即時圈 -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>用於在地圖上顯示你目前的位置，以及在你回報平安時（可選）附上當下位置讓家人安心。你的位置只留在這台手機。</string>
+	<string>用於在地圖上顯示你目前的位置、建立即時警戒圈，以及在你選擇時與家庭圈共享位置。</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>你開啟「跟著我移動」的警示圈後，需要此權限在你移動時（約每 500 公尺）更新圈的位置，走到哪守到哪。你的位置永遠只留在這台手機，不會上傳或分享給任何人。</string>
+	<string>你主動開啟「即時圈」後，需要此權限在背景更新警戒圈，並透過家庭 iCloud 分享給已加入的家人；你可隨時停止分享。</string>
 	<!-- Widget deep link 用的自訂 URL scheme -->
 	<key>CFBundleURLTypes</key>
 	<array>

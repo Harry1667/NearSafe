@@ -14,12 +14,24 @@ struct HomeStatusView: View {
     @Query private var events: [LocalSafetyEvent]
     @Query private var regionAlerts: [RegionAlert]
     @State private var showCheckIn = false
+    @State private var selectedEvent: LocalSafetyEvent?
     @State private var breathing = false
 
     /// 與地圖頁共用同一個聚合（SafetyStatus）：兩頁對「平安與否」的說法永遠一致，
     /// 且一律以未過濾事件計算——假性安心是這頁最不可犯的錯
     private var status: SafetyOverview {
         SafetyOverview.compute(events: events, regionAlerts: regionAlerts, members: members)
+    }
+
+    private var staleLiveCircleCount: Int {
+        members.flatMap(\.lifeCircles).filter {
+            $0.kind == .live && !$0.isActiveForAlerts
+        }.count
+    }
+
+    private var pageStatusColor: Color {
+        if !status.isAllClear { return HCColor.danger }
+        return staleLiveCircleCount > 0 ? HCColor.attention : HCColor.safe
     }
 
     var body: some View {
@@ -47,7 +59,7 @@ struct HomeStatusView: View {
             .background(alignment: .top) {
                 LinearGradient(
                     colors: [
-                        (status.isAllClear ? HCColor.safe : HCColor.danger).opacity(0.12),
+                        pageStatusColor.opacity(0.12),
                         .clear,
                     ],
                     startPoint: .top,
@@ -69,6 +81,9 @@ struct HomeStatusView: View {
             .sheet(isPresented: $showCheckIn) {
                 NavigationStack { SafetyCheckInView(myName: myName) }
             }
+            .sheet(item: $selectedEvent) {
+                EventDetailView(event: $0, members: members)
+            }
         }
     }
 
@@ -77,16 +92,18 @@ struct HomeStatusView: View {
     @ViewBuilder
     private var statusHero: some View {
         if status.isAllClear {
+            let needsLocationUpdate = staleLiveCircleCount > 0
+            let clearColor = needsLocationUpdate ? HCColor.attention : HCColor.safe
             VStack(spacing: HCSpacing.x4) {
                 ZStack {
                     // 守護圈環：同心圓 motif（與地圖盾牌、Onboarding 同一簽名語言）
-                    Circle().stroke(HCColor.safe.opacity(0.10), lineWidth: 2).frame(width: 168, height: 168)
-                    Circle().stroke(HCColor.safe.opacity(0.22), lineWidth: 2).frame(width: 132, height: 132)
+                    Circle().stroke(clearColor.opacity(0.10), lineWidth: 2).frame(width: 168, height: 168)
+                    Circle().stroke(clearColor.opacity(0.22), lineWidth: 2).frame(width: 132, height: 132)
                     Circle()
-                        .fill(HCColor.safe.gradient)
+                        .fill(clearColor.gradient)
                         .frame(width: 96, height: 96)
-                        .shadow(color: HCColor.safe.opacity(0.35), radius: 18, y: 6)
-                    Image(systemName: "checkmark.shield.fill")
+                        .shadow(color: clearColor.opacity(0.35), radius: 18, y: 6)
+                    Image(systemName: needsLocationUpdate ? "location.slash.fill" : "checkmark.shield.fill")
                         .font(.system(size: 44))
                         .foregroundStyle(.white)
                 }
@@ -99,9 +116,11 @@ struct HomeStatusView: View {
                 .onAppear { breathing = true }
                 .accessibilityHidden(true)
 
-                Text("生活圈一切平安")
+                Text(needsLocationUpdate ? "部分即時圈待更新" : "警戒圈一切平安")
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                Text("目前沒有需要注意的事件，安心圈持續看守中。")
+                Text(needsLocationUpdate
+                     ? "\(staleLiveCircleCount) 個即時圈超過 15 分鐘未更新，舊位置不會用來判斷警報。"
+                     : "目前沒有需要注意的事件，安心圈持續看守中。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -123,7 +142,7 @@ struct HomeStatusView: View {
                 }
                 .accessibilityHidden(true)
 
-                Text("\(status.attentionCount) 件事件靠近生活圈")
+                Text("\(status.attentionCount) 件事件靠近警戒圈")
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     .foregroundStyle(HCColor.danger)
                     .multilineTextAlignment(.center)
@@ -153,40 +172,71 @@ struct HomeStatusView: View {
             ForEach(members) { member in
                 memberRow(member)
             }
+            Divider()
+            Text("未收到安否回報不代表發生危險；請一併查看最後回報與即時位置更新時間。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .hcCard()
     }
 
     private func memberRow(_ member: LocalFamilyMember) -> some View {
-        let hasNearbyEvent = memberHasNearbyEvent(member)
-        let ping = latestPing(for: member)
-        return HStack(spacing: HCSpacing.x3) {
-            Image(systemName: member.isPlace ? "mappin.circle.fill" : "person.crop.circle.fill")
-                .font(.title2)
-                .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(member.name).font(.body.weight(.medium))
-                Text(memberStatusText(member, hasNearbyEvent: hasNearbyEvent, ping: ping))
-                    .font(.caption)
-                    .foregroundStyle(hasNearbyEvent ? HCColor.danger : .secondary)
-            }
-            Spacer()
-            // 狀態點：文字＋顏色雙通道（色弱可辨靠文字，不只靠這顆點）
-            Circle()
-                .fill(hasNearbyEvent ? HCColor.danger : HCColor.safe)
-                .frame(width: 10, height: 10)
-                .accessibilityHidden(true)
+        let nearbyEvent = nearestNearbyEvent(for: member)
+        let hasNearbyEvent = nearbyEvent != nil
+        let hasStaleLiveCircle = member.lifeCircles.contains {
+            $0.kind == .live && !$0.isActiveForAlerts
         }
+        let ping = latestPing(for: member)
+        let rowColor = hasNearbyEvent
+            ? HCColor.danger
+            : (hasStaleLiveCircle ? HCColor.attention : HCColor.safe)
+        return Button {
+            selectedEvent = nearbyEvent
+        } label: {
+            HStack(spacing: HCSpacing.x3) {
+                Image(systemName: member.isPlace ? "mappin.circle.fill" : "person.crop.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(member.name).font(.body.weight(.medium))
+                    Text(memberStatusText(member, hasNearbyEvent: hasNearbyEvent, ping: ping))
+                        .font(.caption)
+                        .foregroundStyle(hasNearbyEvent || hasStaleLiveCircle ? rowColor : .secondary)
+                }
+                Spacer()
+                // 狀態點：文字＋顏色雙通道（色弱可辨靠文字，不只靠這顆點）
+                Circle()
+                    .fill(rowColor)
+                    .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+                if hasNearbyEvent {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(HCColor.danger)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!hasNearbyEvent)
         .padding(.vertical, HCSpacing.x1)
         .frame(minHeight: 44) // 觸控與可讀性下限
         .accessibilityElement(children: .combine)
+        .accessibilityHint(hasNearbyEvent ? "點兩下查看圈內最近的事件詳情" : "")
     }
 
-    private func memberHasNearbyEvent(_ member: LocalFamilyMember) -> Bool {
-        SafetyOverview.activeEvents(events).contains { event in
-            event.isOfficiallyConfirmed
-                && !AlertPolicy.evaluate(event: event, members: [member]).matches.isEmpty
-        }
+    /// 同一個圈內可能同時有多件事件；首頁先打開離該成員警戒圈最近的一件，
+    /// 完整清單仍可從「背景看守」或地圖查看。
+    private func nearestNearbyEvent(for member: LocalFamilyMember) -> LocalSafetyEvent? {
+        SafetyOverview.activeEvents(events)
+            .filter { event in
+                event.isOfficiallyConfirmed
+                    && !AlertPolicy.evaluate(event: event, members: [member]).matches.isEmpty
+            }
+            .min {
+                nearestCircleDistance($0, [member]) < nearestCircleDistance($1, [member])
+            }
     }
 
     /// 這位家人最新的安否回報（比對署名；地點類成員不會有回報）
@@ -199,6 +249,9 @@ struct HomeStatusView: View {
     private func memberStatusText(_ member: LocalFamilyMember, hasNearbyEvent: Bool, ping: SafetyPing?) -> String {
         var parts: [String] = []
         parts.append(hasNearbyEvent ? "圈內有事件" : (member.isPlace ? "範圍內無事件" : "圈內無事件"))
+        if let liveCircle = member.lifeCircles.first(where: { $0.kind == .live }) {
+            parts.append(liveCircle.locationFreshnessText)
+        }
         if !member.isPlace, let ping {
             let ago = ping.createdAt.formatted(.relative(presentation: .named))
             parts.append("\(ago)回報平安")
@@ -215,7 +268,7 @@ struct HomeStatusView: View {
             HStack {
                 Image(systemName: "eye.fill")
                     .foregroundStyle(HCColor.brand)
-                Text("背景看守中：確認中 \(status.confirmingCount)・其他區域 \(status.elsewhereCount)・區域警報 \(status.regionAlertCount)")
+                Text("背景看守中：未驗證線索 \(status.confirmingCount)・其他區域 \(status.elsewhereCount)・區域警報 \(status.regionAlertCount)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
@@ -270,9 +323,11 @@ struct HomeStatusView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     HomeStatusView(myName: "測試者")
         .modelContainer(PreviewSupport.container())
         .environment(FamilySyncService())
         .environment(TabRouter())
 }
+#endif

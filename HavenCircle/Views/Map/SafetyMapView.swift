@@ -5,6 +5,7 @@ import MapKit
 /// 安全地圖：全螢幕地圖為主體，狀態橫幅、區域警報與附近更新以浮層呈現。
 struct SafetyMapView: View {
     @Environment(FamilySyncService.self) private var sync
+    @Environment(\.modelContext) private var modelContext
     @Query private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
     @Query private var regionAlerts: [RegionAlert]
@@ -78,10 +79,15 @@ struct SafetyMapView: View {
         regionAlerts.filter { !$0.isEnded }
     }
 
-    /// 家人最後回報位置：每人取「最新一筆有座標」的安否回報（沒附位置的回報不上圖）
+    private var visibleCircles: [LocalLifeCircle] {
+        visibleMembers.flatMap(\.lifeCircles)
+    }
+
+    /// 尚未開啟即時圈的家人，仍可顯示最近一次主動安否回報的位置。
     private var familyPingAnnotations: [SafetyPing] {
+        let liveNames = Set(sync.liveLocations.filter(\.isSharing).map(\.displayName))
         var latest: [String: SafetyPing] = [:]
-        for ping in sync.pings where ping.hasLocation {
+        for ping in sync.pings where ping.hasLocation && !liveNames.contains(ping.senderName) {
             if let kept = latest[ping.senderName], kept.createdAt >= ping.createdAt { continue }
             latest[ping.senderName] = ping
         }
@@ -110,13 +116,17 @@ struct SafetyMapView: View {
     var body: some View {
         NavigationStack {
             map
+                // 功能導覽直接讀取地圖實際版面，不再用機型相關的安全區域常數猜位置。
+                .tourAnchor(.mapCanvas)
                 .onAppear {
                     playGuardianIntroIfNeeded()
                     // 地圖藍點需要定位權限；只在未決定時跳系統框，拒絕過就不再打擾
                     LocationService.shared.requestPermissionIfNeeded()
                 }
-                // 家人回報位置來自 CloudKit：進地圖刷一次（未登入/未建圈時內部自行降級）
-                .task { await sync.fetchPings() }
+                .task {
+                    await sync.fetchPings()
+                    await sync.fetchLiveLocations(context: modelContext)
+                }
                 .overlay(alignment: .top) {
                     if !isChromeHidden { topOverlays }
                 }
@@ -241,13 +251,42 @@ struct SafetyMapView: View {
                 }
             }
             if showCircles {
-                ForEach(visibleMembers.flatMap(\.lifeCircles)) { circle in
+                ForEach(visibleCircles) { circle in
+                    let circleColor: Color = circle.kind == .live ? HCColor.safe : HCColor.brand
+                    let renderedColor = circle.isActiveForAlerts ? circleColor : Color.gray
                     MapCircle(
                         center: .init(latitude: circle.latitude, longitude: circle.longitude),
                         radius: CLLocationDistance(circle.radiusMeters)
                     )
-                    .foregroundStyle(HCColor.brand.opacity(0.08))
-                    .stroke(HCColor.brand.opacity(0.4), lineWidth: 1.5)
+                    .foregroundStyle(renderedColor.opacity(0.08))
+                    .stroke(renderedColor.opacity(0.5), lineWidth: 1.5)
+                    Annotation(
+                        circle.name,
+                        coordinate: .init(latitude: circle.latitude, longitude: circle.longitude)
+                    ) {
+                        VStack(spacing: 2) {
+                            Image(systemName: circle.kind.iconName)
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                                .frame(width: 28, height: 28)
+                                .background(renderedColor, in: Circle())
+                                .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                            Text(circle.kind.title)
+                                .font(.system(size: 9, weight: .semibold))
+                            if circle.kind == .live {
+                                Text(circle.locationFreshnessText)
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(circle.isActiveForAlerts ? .secondary : HCColor.attention)
+                            }
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(circle.name)，\(circle.kind.title)，警戒半徑 \(circle.radiusMeters) 公尺，\(circle.locationFreshnessText)"
+                        )
+                    }
                 }
             }
             // 資源點放在事件標記之前宣告，讓事件永遠蓋在資源點上層
@@ -284,8 +323,7 @@ struct SafetyMapView: View {
             }
             // 自己的位置（藍點）：需要 when-in-use 權限，未授權時 MapKit 自動不畫
             UserAnnotation()
-            // 家人「自願回報」的位置：每人只取最新一筆帶座標的安否回報。
-            // 這不是即時追蹤——資料只在家人按下回報的那一刻產生
+            // 沒有即時圈時，以最近一次自願安否回報位置作為降級資訊。
             ForEach(familyPingAnnotations, id: \.id) { ping in
                 Annotation(ping.senderName,
                            coordinate: .init(latitude: ping.latitude ?? 0, longitude: ping.longitude ?? 0)) {
@@ -408,7 +446,7 @@ struct SafetyMapView: View {
     private var filterMenu: some View {
         Menu {
             Section("圖層") {
-                Toggle("生活圈範圍", isOn: $showCircles)
+                Toggle("警戒圈範圍", isOn: $showCircles)
                 Toggle("區域警報範圍", isOn: $showAlertAreas)
                 Toggle("避難收容所", isOn: $showShelters)
                 Toggle("急救責任醫院", isOn: $showHospitals)
@@ -527,8 +565,14 @@ struct SafetyMapView: View {
         let showsSeverity = showAlertAreas && !alertAreas.isEmpty
         // 資源圖層開著但鏡頭太遠時，要說明「為什麼看不到點」——不說會像壞掉
         let resourceHint = (showShelters || showHospitals) && resourceRegion == nil
-        if showsSeverity || showCrimeLayer || resourceHint {
+        if showsSeverity || showCrimeLayer || resourceHint || showCircles {
             VStack(alignment: .leading, spacing: 5) {
+                if showCircles {
+                    Text("警戒圈").font(.caption2.bold())
+                    legendRow(HCColor.safe.opacity(0.8), "即時圈（跟隨家人手機）")
+                    legendRow(HCColor.brand.opacity(0.8), "固定圈（住家／資產）")
+                    legendRow(Color.gray.opacity(0.8), "即時位置已過期")
+                }
                 if showsSeverity {
                     Text("警報區").font(.caption2.bold())
                     legendRow(RegionAlert.severityColor(rank: 3), "警戒／危急")
@@ -586,7 +630,7 @@ struct SafetyMapView: View {
                     .frame(width: 26, height: 26)
                     .background(statusColor, in: Circle())
                     .symbolEffect(.bounce, value: shieldConfirmPulse)
-                Text(hasAttention ? "\(attentionCount) 件需要注意" : "生活圈平安")
+                Text(hasAttention ? "\(attentionCount) 件需要注意" : "警戒圈平安")
                     .font(.subheadline.weight(.semibold))
                 if isPaused {
                     Image(systemName: "bell.slash.fill")
@@ -605,8 +649,8 @@ struct SafetyMapView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(
             hasAttention
-                ? "生活圈有 \(attentionCount) 件需要注意的事件，點擊展開摘要"
-                : "生活圈平安\(isPaused ? "，提醒已暫停" : "")，點擊展開摘要"
+                ? "警戒圈有 \(attentionCount) 件需要注意的事件，點擊展開摘要"
+                : "警戒圈平安\(isPaused ? "，提醒已暫停" : "")，點擊展開摘要"
         )
     }
 
@@ -630,7 +674,7 @@ struct SafetyMapView: View {
                     .symbolEffect(.bounce, value: shieldConfirmPulse)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(hasAttention ? "生活圈有需要注意的事件" : "生活圈目前沒有需要注意的事件")
+                    Text(hasAttention ? "警戒圈有需要注意的事件" : "警戒圈目前沒有需要注意的事件")
                         .font(.subheadline.bold())
                     Text(hasAttention ? "已確認且位於提醒範圍內：\(attentionCount) 件" : "持續留意資料更新即可")
                         .font(.caption)
@@ -641,7 +685,7 @@ struct SafetyMapView: View {
 
             HStack(spacing: 8) {
                 summaryMetric("需要注意", count: attentionCount, emphasis: hasAttention)
-                summaryMetric("確認中（不限生活圈）", count: confirmingCount, emphasis: false)
+                summaryMetric("未驗證線索（不限警戒圈）", count: confirmingCount, emphasis: false)
                 summaryMetric("其他區域", count: elsewhereCount, emphasis: false)
             }
 
@@ -735,7 +779,9 @@ struct SafetyMapView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     SafetyMapView()
         .modelContainer(PreviewSupport.container())
 }
+#endif

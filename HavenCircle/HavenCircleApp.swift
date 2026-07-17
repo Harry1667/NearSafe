@@ -17,11 +17,15 @@ struct HavenCircleApp: App {
     @State private var familySync = FamilySyncService()
     // 外觀模式：使用者可在設定頁強制淺色/深色（預設跟隨系統）
     @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
+    @AppStorage(SettingsKeys.profileDisplayName) private var profileDisplayName = ""
+    @AppStorage(SettingsKeys.liveLocationSharingEnabled) private var liveLocationSharingEnabled = false
+    @AppStorage(SettingsKeys.liveCircleRadiusMeters) private var liveCircleRadiusMeters = 1_000
 
     init() {
         modelContainer = Self.makeContainer()
         // 無聲推播喚醒的回呼（AppDelegate）需要容器跑資料管線，橋接過去
         AppRuntime.container = modelContainer
+        AppRuntime.familySync = familySync
         // 導航標題套圓體，appearance 要在第一個視圖建立前設定才會生效
         HCAppearance.apply()
         // 前景也要顯示通知橫幅（演練模式必要）
@@ -75,15 +79,45 @@ struct HavenCircleApp: App {
                 .preferredColorScheme(AppearanceMode(rawValue: appearanceMode)?.colorScheme)
                 .environment(familySync)
                 .task {
-                    #if DEBUG
-                    SmokeTest.runIfNeeded(context: modelContainer.mainContext)
-                    #endif
+                    Self.markCurrentUser(
+                        context: modelContainer.mainContext,
+                        displayName: profileDisplayName
+                    )
                     // 註冊 APNs：權杖與通知權限互相獨立，先拿權杖存著（AppDelegate 回呼），
-                    // 之後伺服器推播只差「上傳權杖＋後端發送」這一段
+                    // AppDelegate 取得權杖後會上傳到中繼站；伺服器偵測新官方警報後用 APNs 喚醒。
                     UIApplication.shared.registerForRemoteNotifications()
                     // 啟動即跑一次資料管線（mock 來源；階段 4 換成真實來源）
                     await EventPipeline.refresh(context: modelContainer.mainContext)
                     await familySync.refreshAccountStatus()
+                    LocationService.shared.syncLiveLocationSharing(
+                        isEnabled: liveLocationSharingEnabled
+                    )
+                    if liveLocationSharingEnabled {
+                        LocationService.shared.requestAlwaysPermission()
+                        if let location = await LocationService.shared.currentLocation() {
+                            await familySync.publishLiveLocation(
+                                location,
+                                displayName: profileDisplayName,
+                                radiusMeters: liveCircleRadiusMeters,
+                                context: modelContainer.mainContext
+                            )
+                        }
+                    } else if UserDefaults.standard.string(
+                        forKey: SettingsKeys.liveLocationDeviceID
+                    ) != nil {
+                        await familySync.stopLiveLocationSharing(
+                            context: modelContainer.mainContext
+                        )
+                    }
+                    await familySync.fetchLiveLocations(context: modelContainer.mainContext)
+                    while !Task.isCancelled {
+                        do {
+                            try await Task.sleep(for: .seconds(30))
+                        } catch {
+                            return
+                        }
+                        await familySync.fetchLiveLocations(context: modelContainer.mainContext)
+                    }
                 }
                 // 家人接受 CKShare 邀請後，由 scene delegate 經 NotificationCenter 轉交處理
                 .onReceive(NotificationCenter.default.publisher(for: .didAcceptFamilyShare)) { note in
@@ -94,7 +128,25 @@ struct HavenCircleApp: App {
         .modelContainer(modelContainer)
         // App 進背景時排一次背景刷新（BGTaskScheduler 的請求要在背景前送出才有效）
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { BackgroundRefresh.schedule() }
+            if phase == .background {
+                BackgroundRefresh.schedule()
+            } else if phase == .active {
+                Task {
+                    await familySync.fetchLiveLocations(context: modelContainer.mainContext)
+                }
+            }
+        }
+    }
+
+    private static func markCurrentUser(context: ModelContext, displayName: String) {
+        let members = (try? context.fetch(FetchDescriptor<LocalFamilyMember>())) ?? []
+        guard !members.contains(where: \.isCurrentUser) else { return }
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let owner = members.first(where: {
+            $0.relationship == "擁有者" || (!trimmedName.isEmpty && $0.name == trimmedName)
+        }) {
+            owner.isCurrentUser = true
+            context.saveReporting()
         }
     }
 }

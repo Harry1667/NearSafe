@@ -10,7 +10,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        return [.banner, .sound]
     }
 
     /// 點擊通知 → 打開提醒中心。冷啟動時視圖可能尚未訂閱 NotificationCenter，

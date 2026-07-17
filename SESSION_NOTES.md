@@ -132,3 +132,105 @@
 
 ### 踩坑（詳見 LESSONS）
 - `xcrun simctl spawn booted defaults write` 會蓋掉 App 沙盒偏好設定的其他 key（onboardingCompleted 等全丟）；且寫入的位置 App 不一定讀得到——改用 DEBUG 啟動參數傳旗標
+
+## 2026-07-17 即時圈／固定圈產品轉向
+
+> 本節記錄使用者最新、明確的產品決策，取代本文件較早的「零追蹤／不分享家人位置」敘述。舊段落保留作為歷史背景，不再代表目前規格。
+
+### 已完成
+
+- 警戒圈拆成兩類：**即時圈**代表每位家庭成員自行開啟的位置分享，隨其手機移動；**固定圈**代表住家、倉庫、家人的家等固定資產，可自訂名稱與警戒半徑。
+- 每台手機只能替自己開啟／停止即時圈。位置透過既有家庭 `CKShare` 儲存，不送到 HavenCircle 的事件／推播伺服器；只有已加入家庭分享的人可讀取。
+- 即時圈以約 100 公尺位移與 30 秒內寫入合併控制更新量；App 活躍時約每 30 秒刷新家庭位置，背景更新仍由 iOS 定位與執行排程決定，因此產品文案定位為「近即時」而非保證秒級追蹤。
+- 每個即時圈都有 300–3,000 公尺的警戒半徑與最後更新時間。超過 15 分鐘未更新會顯示「位置已過期」，並排除警報比對，避免把舊位置誤當成現在位置。
+- 家人頁、地圖、安心頁、Widget、Onboarding、設定與網站文案都已區分即時圈／固定圈；風險狀態不只靠顏色，會同步顯示文字標籤。
+- 未登入 iCloud 時會顯示明確提示並禁止新開啟分享；若先前已開啟，仍可在本機關閉。
+
+### 上線前仍需驗證
+
+1. 在 CloudKit Development 建立／驗證 `FamilyLiveLocation` record type 與欄位，確認後部署到 Production。
+2. 使用兩台登入不同 iCloud 帳號的實機，驗證 CKShare 邀請、雙向位置更新、停止分享與重新加入。
+3. 實機驗證 Always 定位、前景／背景／鎖屏更新頻率、耗電、斷網後的過期狀態，以及系統終止 App 後的行為；不得對外承諾固定秒數更新。
+
+## 2026-07-17 黑客松一等獎差距審查
+
+### 核心結論
+
+- 依 `111` 正式評分表審查後，App 本體的安心頁、提醒中心、真實資料鏈與產品倫理已具決賽競爭力；主要差距不是功能數量，而是**提交敘事與可驗證完成度落後於程式本體**。
+- 線上 Pitch 仍混用「零位置追蹤／不看家人在哪」與新即時圈功能，截圖也仍是舊版生活圈／五分頁 UI；另外還標示 APNs 後端建置中、Demo 影片準備中，會直接傷害初賽的價值、潛力與完成度評分。
+- 技術面的最大證據缺口是 CloudKit schema 與雙機 CKShare、即時圈、背景定位、安否回報／已讀回條尚未實機端到端驗證；`markRead` shared-zone owner 疑點仍需修正。
+- 新增 `submission/COMPETITION_READINESS.md` 作為主張、證據、禁用舊文案、Demo 路徑與人工驗證紀錄的單一事實來源。
+- 新增 `submission/verify_submission.sh` 作為自動提交閘門，檢查舊敘事、APNs 過期說法、六張截圖、AppIcon、隊名與 Demo 影片連結；可另用 `--online` 驗證 NCDR API，或 `--build` 驗證模擬器建置。
+
+### 封版優先級
+
+1. 先同步 Pitch／影片／截圖的產品敘事並部署，不再宣稱零位置追蹤；改講「不保存位置軌跡，只在官方風險命中警戒圈時提醒」。
+2. 裝入正式 AppIcon，用同一個 release build 重拍三分頁、事件詳情、即時圈／固定圈與雙機安否畫面，補隊名與 Demo 影片。
+3. 兩台不同 iCloud 帳號實機跑通 CKShare，修正 `markRead` zone，完成即時圈移動／停止／過期與背景定位證據。
+4. 移除固定圈搜尋失敗後落到台北市中心的預設座標，並增加固定圈編輯。
+5. 建立測試 target，至少覆蓋 AlertPolicy、即時圈過期、行政區解析、事件去重與家庭已讀流程；最後以乾淨 release commit 封版。
+
+## 2026-07-17 競賽封版與法律基線落地
+
+### 本輪已完成
+
+- App 設定加入可離線閱讀的「法律與隱私」中心，含隱私權政策、用戶協議與使用條款；首次設定完成前需明確勾選同意。網站首頁與 Pitch 頁尾也加入三份同版公開文件。
+- 「刪除帳號與所有資料」新增 APNs 權杖撤銷：App 會先呼叫 `website/apns/unregister.php`，再清除本機權杖、家庭圈、本機資料與通知。
+- 固定圈搜尋失敗不再落到台北市中心預設座標；未確認位置時禁止儲存。固定圈可點入編輯並可滑動刪除。
+- `markRead` 改用實際解析出的 shared zone ID；共享成員不再錯用 `CKCurrentUserDefaultName`，並針對多人同時已讀加入 CloudKit 衝突重試。
+- 正式 AppIcon 已採用 1024×1024、無透明通道的避風港版本並連結 asset catalog。
+- 修正功能導覽說明卡因外層 `ScrollView` 撐滿高度造成的大黑邊；已在 iPhone 17 Pro 模擬器重現並以修正後截圖驗證。
+- Pitch 與影片腳本已移除「零位置追蹤／不看家人在哪」及「APNs 後端建置中」舊敘事，改為本人同意的最新位置、不建立移動軌跡、實機閉環驗證中的可證明主張。
+
+### 仍需真人／外部條件
+
+1. 正式隊名已確認為「山形」並寫入 Pitch；Demo 影片待介面封版後錄製、上傳並補入網址。
+2. 兩台不同 iCloud 帳號實機完成 CKShare、即時圈、安否回報／已讀與背景定位錄影。
+3. 正式部署網站與 `unregister.php` 後，核對三份法律頁公開 URL 與客服信箱確實可用；公開營運前交由法律專業人員審閱營運者資料與條款。
+
+## 2026-07-17 Debug 實機診斷與證據流程
+
+### 已完成
+
+- 新增只存在於 Debug build 的「實機診斷金手指」：App 啟動自動記錄裝置、Background Modes、通知／定位權限、APNs token 是否存在與 iCloud 狀態；設定頁可一鍵測試定位回呼、APNs 註冊、NCDR API 與 5 秒本機通知。
+- APNs 註冊／上傳、遠端通知 callback、通知點擊、前景／背景定位、CloudKit 最新位置上傳與 App scene phase 都加入無敏感資料 Log；不記錄精確座標、完整 token、住址或家人姓名。
+- 診斷 Log 最多保留 300 筆，可在 App 內複製或分享；Release／TestFlight 不含診斷頁與診斷程式碼，不需封版前人工移除。
+- 更新 `APNS_PUSH_TEST.md`，移除「後端／金鑰未完成」舊說法，明確區分本機通知、Development APNs 與 Production APNs。
+- 新增 `submission/DEVICE_EVIDENCE_PLAN.md`，定義 APNs、背景定位、位置過期、CKShare 與安否閉環的拍攝順序、通過條件及證據檔名。
+- 修正十個 `#Preview` 在 Release 仍引用 Debug-only `PreviewSupport` 的問題；Debug simulator、Debug iphoneos、Release iphoneos 都已無簽名編譯通過。
+- Xcode 已偵測「華柏翰的 iPhone12」，並針對該裝置完成 Development Team 簽名建置；Push Notifications、CloudKit、Sign in with Apple 與 App Group entitlement 均存在，可直接由 Xcode Run 安裝測試。
+
+### 實機驗證順序
+
+1. 先以 Xcode Debug 直裝 iPhone，執行診斷金手指並把報告回傳；不需先經 TestFlight。
+2. 使用兩台不同 iCloud 帳號裝置完成 Development APNs、鎖屏定位、停止分享、過期與安否回報證據。
+3. 介面封版後才錄 Demo，並以 TestFlight 再驗證一次 production APNs 與正式安裝流程。
+
+### 第一輪實機發現與修正
+
+- iPhone 首次開啟即時圈時，手動取位與 `CLLocationManager` 連續回呼同時新增相同 CloudKit record；第一筆成功後，後到寫入收到 `record to insert already exists`，並把 UI 覆蓋成「即時位置同步失敗」。
+- `FamilySyncService` 已將即時圈上傳序列化；在途期間的重複回呼會合併，CloudKit duplicate insert 也會抓回 server record 後重試。修正版覆蓋安裝實機後，三個同時回呼只產生一筆成功，沒有再出現 duplicate error。
+- 實機重啟另觀察到 Core Location 先回傳 91 分鐘前、精度約 2 公里的快取，再回傳 5 公尺新位置；新增資料品質閘門，超過 2 分鐘或精度差於 500 公尺的位置不得同步，避免陳舊位置冒充最新位置。
+- 已保存遮蔽識別碼的 pre/post 診斷快照於 `test/fixtures/ios-fix/`。
+- 第二台 iPhone 實測定位寫入成功後，CloudKit query 回 `CKError 12: Field 'recordName' is not marked queryable`；原因是 `TRUEPREDICATE` 依賴未設 Queryable 的 system field。即時圈改以必填 `participantID` 查詢，自己的固定 record ID 另走直接 fetch；安否回報也同步改成必填 `createdAt` predicate，且 shared database 明確指定分享 zone。
+- 查詢修正版已覆蓋安裝到 iPhone 16 實測：低精度舊位置被擋、準確位置單次寫入成功、再讀回 1 筆家庭最新位置，且沒有 duplicate insert、CKError 12 或同步失敗。這證明單機 CloudKit 寫入／讀回閉環；仍需另一台不同 iCloud 帳號接受 CKShare，才能把跨帳號列改為已驗證。
+
+## 2026-07-17 官網即時圈敘事與產品海報上線
+
+### 已完成
+
+- 正式官網首頁已從「固定警戒圈為主」同步到目前產品規格：即時圈由本人在自己的手機上開啟／停止，只透過家庭 CKShare 分享最新位置，不建立移動軌跡；超過 15 分鐘未更新會標示過期並排除警報判斷。
+- 核心功能改成四張卡：本人同意的即時圈、固定警戒圈、有理由的真警報、家人安否閉環；介面展示新增家人頁的即時圈控制畫面。
+- 技術證據區新增私人位置資料路徑，清楚區分「家庭最新位置 → 家庭 iCloud → 裝置端判斷」與 NCDR／APNs 公開事件中繼；家庭位置不送到 HavenCircle 事件／推播伺服器。
+- 驗證狀態依實際證據更新：CloudKit 最新位置單機寫入／讀回列為已驗證；雙帳號 CKShare、停止分享、位置過期與鎖屏推播仍維持驗證中。
+- 三張產品海報已放入 `website/assets/posters/` 並上線：安心總覽、即時圈隱私控制、附近事件提醒。網站使用 830×1800 JPEG 輕量預覽，點擊可開啟 1290×2796 原始 PNG。
+- `website/`、`assets/`、`pitch/` 與三份法律頁已選擇性同步到 <https://havencircle.looptw.com>；部署未覆蓋 `apns/`、`crawler/`、`join/`，檔案權限為 `www:www`。
+- 正式站驗證：HTTPS 200、HTTP 301 轉址、三份法律頁與 Pitch 200、桌面 1440 與手機 390 無橫向溢出、手機選單正常、瀏覽器 console 無錯誤。三張原始海報線上 SHA-256 與本機一致。
+- Pitch 已同步目前即時圈規格並重新上線：新增本人同意／家庭 iCloud／只留最新一筆／15 分鐘過期四條界線、三張產品海報與 CloudKit 單機已驗證狀態；六張 App 畫面從 5＋1 改為桌面 3×2、手機 2 欄。正式 `/pitch/` 已驗證 HTTP 200、海報完整載入且 console 無錯誤。
+
+### 仍需外部條件
+
+1. Demo 影片仍需錄製、上傳並把可點擊網址補進 Pitch，這是 `submission/verify_submission.sh` 唯一未通過項目。
+2. 即時圈仍需兩台不同 iCloud 帳號的實機完成 CKShare 跨帳號、停止分享、過期與背景／鎖屏更新證據；對外不得承諾固定秒數更新。
+- 雙機第一次掃描 QR 出現系統「Item Unavailable」：根因是 App 把 `publicPermission = .none` 的一般 `share.url` 直接編成 QR，未被圈主預先加入的 Apple 帳號依法無權開啟。已改為 iOS 26 的一次性私人參與者網址，加入並驗證 `InProcessOneTimeLinks` entitlement／自動簽章 profile；舊 QR 不會自動修復，必須由新版重新產生。
+- 接受家庭邀請時會記住該 shared zone 並優先讀寫；修掉「成員手機加入前曾建立自己的 private 家庭圈，接受後仍把定位寫回自己圈」的跨帳號路由問題。成員端也不再能誤產生自己空圈的邀請，會明示僅圈主可邀請。

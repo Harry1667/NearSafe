@@ -2,9 +2,10 @@ import SwiftUI
 import SwiftData
 import MapKit
 import CoreLocation
+import UIKit
 import os
 
-/// 首次設定：五步分頁精靈（歡迎 → 名稱 → 生活圈 → 通知 → 完成）。
+/// 首次設定：六步分頁精靈（歡迎 → Apple 登入 → 名稱 → 警戒圈 → 通知 → 完成）。
 /// 設計原則：一步只問一件事、先講理由再要權限、家人邀請可略過（軟門檻）。
 struct OnboardingView: View {
     /// 重播模式（從設定頁「重看新手教學」進入）：只導覽，不建立任何資料
@@ -12,18 +13,22 @@ struct OnboardingView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Environment(FamilySyncService.self) private var familySync
     @AppStorage(SettingsKeys.profileDisplayName) private var profileName = ""
     @AppStorage(SettingsKeys.onboardingCompleted) private var onboardingCompleted = false
+    @AppStorage(SettingsKeys.liveLocationSharingEnabled) private var liveLocationSharingEnabled = false
+    @AppStorage(SettingsKeys.liveCircleRadiusMeters) private var liveCircleRadiusMeters = 1_000
+    @AppStorage(SettingsKeys.legalAcceptanceVersion) private var legalAcceptanceVersion = ""
 
     @State private var step: Step = .welcome
     @State private var name = ""
     @State private var placeName = "住家"
-    @State private var address = "台北市南港區"
+    @State private var address = ""
     @State private var radius = 1000
     @State private var found: MKMapItem?
     @State private var searchFailed = false
-    @State private var showFallbackConfirmation = false
-    // 目前位置與跟隨圈（與家人分頁的圈編輯器同一套能力）
+    // 第一個警戒圈可選固定圈或本人即時圈
     @State private var picked: CLLocationCoordinate2D?
     @State private var pickedLabel = ""
     @State private var pickedDistrict: String?
@@ -31,6 +36,7 @@ struct OnboardingView: View {
     @State private var locationHint = ""
     @State private var isFollowMe = false
     @State private var notificationGranted: Bool?
+    @State private var legalAccepted = false
 
     enum Step: Int, CaseIterable {
         case welcome, signIn, name, circle, notification, done
@@ -40,6 +46,15 @@ struct OnboardingView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 progressBar
+                if isReplay {
+                    Label("教學模式：不會儲存變更或要求系統權限", systemImage: "eye.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(HCColor.brand)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(HCColor.brand.opacity(0.08))
+                }
                 TabView(selection: $step) {
                     welcomePage.tag(Step.welcome)
                     signInPage.tag(Step.signIn)
@@ -62,7 +77,7 @@ struct OnboardingView: View {
                     }
                 }
                 // 登入步驟右上角提供「跳過」（軟門檻：不登入也能用完整警報功能）
-                if step == .signIn {
+                if step == .signIn && !isReplay {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("跳過") { withAnimation { step = .name } }
                     }
@@ -72,12 +87,6 @@ struct OnboardingView: View {
                         Button("關閉") { dismiss() }
                     }
                 }
-            }
-            .confirmationDialog("尚未確認生活圈位置", isPresented: $showFallbackConfirmation) {
-                Button("使用台北市南港區預設位置") { advanceFromCircle() }
-                Button("返回確認地址", role: .cancel) {}
-            } message: {
-                Text("建議先用 Apple Maps 搜尋並確認位置，避免提醒範圍設在錯誤地點。")
             }
         }
     }
@@ -130,16 +139,21 @@ struct OnboardingView: View {
                 valueCard("checkmark.seal.fill", HCColor.brand,
                           "官方示警來源", "災害警報來自 NCDR 民生示警等政府公開資料")
                 valueCard("mappin.and.ellipse", HCColor.brand,
-                          "只提醒重要的", "事件落在家人生活圈內且可信度足夠，才會通知你")
+                          "兩種警戒圈", "即時圈跟著家人手機；固定圈守護住家、倉庫等地點")
                 valueCard("person.2.fill", HCColor.brand,
                           "家人互報平安", "一鍵回報「我平安」，家人立刻知道")
             }
             .padding(.horizontal, 24)
 
             Spacer()
-            Text("所有生活圈與事件資料只儲存在這支手機；你的位置永遠不會上傳或分享——家人的位置只來自他們自願附上的平安回報。")
+            Text("即時圈只有本人在自己的手機上主動開啟後才會分享，並可隨時停止；固定圈與事件資料保存在這支手機。家庭位置透過你的 iCloud 家庭圈同步。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Label("安心圈不是緊急服務；遇立即危險請撥打 110 或 119。", systemImage: "phone.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(HCColor.danger)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
             primaryButton("開始設定") { withAnimation { step = .signIn } }
@@ -149,12 +163,26 @@ struct OnboardingView: View {
 
     // MARK: - 第 2 步：Apple 登入（右上角可跳過）
 
+    @ViewBuilder
     private var signInPage: some View {
-        AppleSignInPage(onSignedIn: {
-            // 登入成功：帶入的名稱直接預填下一步，少打一次字
-            if name.isEmpty { name = profileName }
-            withAnimation { step = .name }
-        })
+        if isReplay {
+            VStack(spacing: 20) {
+                Spacer()
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 56))
+                    .foregroundStyle(HCColor.brand)
+                stepHeader("用 Apple 帳號登入", "正式設定時可帶入名稱與 email，並使用 iCloud 家庭圈；這次重看不會開啟登入視窗。")
+                Spacer()
+                primaryButton("下一步") { withAnimation { step = .name } }
+            }
+            .padding(.bottom, 24)
+        } else {
+            AppleSignInPage(onSignedIn: {
+                // 登入成功：帶入的名稱直接預填下一步，少打一次字
+                if name.isEmpty { name = profileName }
+                withAnimation { step = .name }
+            })
+        }
     }
 
     private func valueCard(_ icon: String, _ color: Color, _ title: String, _ detail: String) -> some View {
@@ -196,37 +224,30 @@ struct OnboardingView: View {
 
     private var circlePage: some View {
         VStack(spacing: 0) {
-            stepHeader("設定第一個生活圈", "生活圈是你想守護的範圍，例如住家或長輩家。只有圈內的事件才會提醒。")
+            stepHeader("設定第一個警戒圈", "即時圈跟著這支手機移動；固定圈適合住家、倉庫或家人的家。只有圈內的事件才會提醒。")
                 .padding(.bottom, 8)
             Form {
                 Section {
-                    TextField("地點名稱（例如：住家）", text: $placeName)
-                    if !isFollowMe {
+                    if isFollowMe {
+                        LabeledContent("圈名稱", value: "我的即時圈")
+                        currentLocationPicker
+                    } else {
+                        TextField("地點名稱（例如：住家）", text: $placeName)
                         TextField("城市或地址", text: $address)
+                            .onChange(of: address) {
+                                found = nil
+                                searchFailed = false
+                            }
                         Button("使用 Apple Maps 搜尋位置", systemImage: "magnifyingglass") {
                             Task { await search() }
                         }
-                        Button {
-                            Task { await useCurrentLocation() }
-                        } label: {
-                            HStack {
-                                Label("使用目前位置", systemImage: "location.fill")
-                                if locating { Spacer(); ProgressView() }
-                            }
-                        }
-                        if !pickedLabel.isEmpty {
-                            Label("已取得目前位置：\(pickedLabel)", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(HCColor.safe)
-                        } else if !locationHint.isEmpty {
-                            Text(locationHint)
-                                .font(.caption)
-                                .foregroundStyle(HCColor.attention)
-                        }
+                        .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        currentLocationPicker
                         if let found, picked == nil {
                             Label("找到：\(found.name ?? address)", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(HCColor.safe)
                         } else if searchFailed && picked == nil {
-                            Text("找不到這個地點，會先用台北市南港區的預設位置，之後可在「家人」頁修改。")
+                            Text("找不到這個地點，請修改地址或改用目前位置；未確認位置前不會建立警戒圈。")
                                 .font(.caption)
                                 .foregroundStyle(HCColor.attention)
                         }
@@ -234,29 +255,28 @@ struct OnboardingView: View {
                     Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 } footer: {
                     // 服務範圍誠實告知（行政區已擴至全國 375 鄉鎮市區，文案同步更新）
-                    Text("颱風、豪雨等區域型警報依行政區自動比對，已支援全國鄉鎮市區；地址判斷不到行政區時，可稍後在生活圈編輯裡手動指定。")
+                    Text("颱風、豪雨等區域型警報依行政區自動比對，已支援全國鄉鎮市區；地址判斷不到行政區時，可稍後在固定圈編輯裡手動指定。")
                 }
                 Section {
-                    Toggle("跟著我移動", isOn: $isFollowMe)
+                    Toggle("建立我的即時圈", isOn: $isFollowMe)
                         .onChange(of: isFollowMe) { _, on in
-                            if on {
-                                LocationService.shared.requestAlwaysPermission()
-                                // 順手抓一次目前位置當初始圈心
-                                Task { await useCurrentLocation() }
+                            locationHint = ""
+                            if on && !isReplay && LocationService.shared.authorization == .notDetermined {
+                                LocationService.shared.requestPermissionIfNeeded()
+                                locationHint = "允許使用位置後，請點「取得目前位置作為起點」。"
                             }
                         }
                 } footer: {
-                    Text("開啟後這個圈會跟著這台手機移動（約每移動 500 公尺更新一次，走到哪守到哪）。需要定位權限設為「永遠允許」。你的位置只留在這台手機，不會上傳或分享給任何人。")
+                    Text("開啟後，警戒圈會跟著這支手機移動，並在加入家庭 iCloud 後分享給家人。按下一步時才會要求升級為「永遠允許」定位；可隨時在家人頁停止，畫面會標示最後更新時間。")
                 }
             }
             .scrollContentBackground(.hidden)
-            primaryButton("下一步") {
-                // 有搜尋結果、有目前位置、或開了跟隨圈（首次位置更新會校正圈心）都算已定位
-                if found == nil && picked == nil && !isFollowMe && !isReplay {
-                    showFallbackConfirmation = true
-                } else {
-                    advanceFromCircle()
+            primaryButton("下一步", disabled: !circleCanAdvance) {
+                if isFollowMe && !isReplay {
+                    // 使用者已看過用途並確認起點後，才要求背景即時圈所需的 Always 權限。
+                    LocationService.shared.requestAlwaysPermission()
                 }
+                advanceFromCircle()
             }
         }
         .padding(.bottom, 24)
@@ -271,21 +291,34 @@ struct OnboardingView: View {
                 .font(.system(size: 56))
                 .foregroundStyle(HCColor.brand)
             stepHeader("打開通知，關鍵時刻才收得到",
-                       "只有「落在生活圈內、且可信度足夠」的事件才會推播；確認中的線索只在 App 內顯示，不會吵你。")
+                       "只有「落在有效警戒圈內、且可信度足夠」的事件才會推播；未驗證線索只在 App 內顯示，不會吵你。")
             if notificationGranted == true {
                 Label("通知已允許", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(HCColor.safe)
             } else if notificationGranted == false {
-                Text("你選擇了不允許。之後可以在設定 App 裡隨時打開。")
-                    .font(.caption)
-                    .foregroundStyle(HCColor.attention)
+                VStack(spacing: 8) {
+                    Label("通知尚未開啟，安心圈無法主動提醒你。", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(HCColor.attention)
+                    Button("前往系統設定", systemImage: "gearshape") { openSystemSettings() }
+                        .font(.subheadline.weight(.semibold))
+                }
             }
+            Text("安心圈不是緊急服務；遇立即危險請撥打 110 或 119。")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(HCColor.danger)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
             Spacer()
-            if notificationGranted == nil {
+            if isReplay {
+                Text("教學模式不會顯示系統通知權限視窗。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                primaryButton("下一步") { withAnimation { step = .done } }
+            } else if notificationGranted == nil {
                 primaryButton("允許通知") {
                     Task {
                         notificationGranted = await NotificationScheduler.requestPermission()
-                        withAnimation { step = .done }
                     }
                 }
                 Button("稍後再說") { withAnimation { step = .done } }
@@ -296,25 +329,191 @@ struct OnboardingView: View {
             }
         }
         .padding(.bottom, 24)
+        .task {
+            guard !isReplay, notificationGranted == nil else { return }
+            switch await NotificationScheduler.authorizationStatus() {
+            case .authorized, .provisional, .ephemeral:
+                notificationGranted = true
+            case .denied:
+                notificationGranted = false
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - 第 5 步：完成
 
     private var donePage: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(HCColor.safe)
-            stepHeader("設定完成！", "地圖上已經可以看到你的生活圈與最新的安全動態。")
-            valueCard("person.crop.circle.badge.plus", HCColor.brand,
-                      "下一步：邀請家人（可略過）",
-                      "到「家人」分頁邀請家人加入，支援 QR code 或 8 位邀請碼；需要登入 iCloud。")
-                .padding(.horizontal, 24)
-            Spacer()
-            primaryButton(isReplay ? "完成" : "開始使用") { finishSetup() }
+        ScrollView {
+            VStack(spacing: 20) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(HCColor.safe)
+                    .accessibilityHidden(true)
+                stepHeader("設定完成！", isReplay
+                           ? "以下是教學示範摘要，關閉後不會變更目前設定。"
+                           : "接下來會先打開安全地圖，確認剛建立的警戒圈與提醒半徑。")
+                setupSummaryCard
+                if !isReplay, isFollowMe, LocationService.shared.authorization != .authorizedAlways {
+                    VStack(spacing: 8) {
+                        Label("即時圈尚未取得「永遠允許」定位，離開 App 後的位置更新可能中斷。", systemImage: "location.slash.fill")
+                            .font(.caption)
+                            .foregroundStyle(HCColor.attention)
+                            .multilineTextAlignment(.center)
+                        Button("前往系統設定完成定位", systemImage: "gearshape") { openSystemSettings() }
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 32)
+                }
+                valueCard("person.crop.circle.badge.plus", HCColor.brand,
+                          "下一步：邀請家人（可略過）",
+                          "到「家人」分頁邀請家人加入，支援 QR code 或 8 位邀請碼；需要登入 iCloud。")
+                    .padding(.horizontal, 24)
+                Label("安心圈不是緊急服務；遇立即危險請撥打 110 或 119。", systemImage: "phone.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(HCColor.danger)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                if !isReplay {
+                    legalAgreementBlock
+                        .padding(.horizontal, 24)
+                }
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 12)
         }
-        .padding(.bottom, 24)
+        .safeAreaInset(edge: .bottom) {
+            primaryButton(
+                isReplay ? "完成" : "同意並前往地圖確認",
+                disabled: !isReplay && !legalAccepted
+            ) { finishSetup() }
+                .padding(.vertical, 8)
+                .background(.bar)
+        }
+    }
+
+    private var legalAgreementBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $legalAccepted) {
+                Text("我已閱讀並同意用戶協議與使用條款，且了解隱私權政策")
+                    .font(.footnote.weight(.semibold))
+            }
+            HStack(spacing: 16) {
+                Link("隱私權政策", destination: LegalDocumentKind.privacy.webURL)
+                Link("用戶協議", destination: LegalDocumentKind.userAgreement.webURL)
+                Link("使用條款", destination: LegalDocumentKind.terms.webURL)
+            }
+            .font(.caption.weight(.semibold))
+            Text("即時圈只有本人在自己的手機上主動開啟後才會分享最新位置；可隨時停止。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var currentLocationPicker: some View {
+        Button {
+            guard !isReplay else {
+                pickedLabel = "教學示範位置"
+                picked = CLLocationCoordinate2D(latitude: 25.0330, longitude: 121.5654)
+                return
+            }
+            Task { await useCurrentLocation() }
+        } label: {
+            HStack {
+                Label(isFollowMe ? "取得目前位置作為起點" : "使用目前位置", systemImage: "location.fill")
+                if locating { Spacer(); ProgressView() }
+            }
+        }
+        if !pickedLabel.isEmpty {
+            Label("已確認位置：\(pickedLabel)", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(HCColor.safe)
+        } else if !locationHint.isEmpty {
+            Text(locationHint)
+                .font(.caption)
+                .foregroundStyle(HCColor.attention)
+        }
+        if !isReplay,
+           LocationService.shared.authorization == .denied ||
+           LocationService.shared.authorization == .restricted {
+            Button("前往系統設定開啟定位", systemImage: "gearshape") { openSystemSettings() }
+        }
+    }
+
+    private var circleCanAdvance: Bool {
+        if isReplay { return true }
+        if isFollowMe { return picked != nil }
+        return picked != nil || found != nil
+    }
+
+    private var setupSummaryCard: some View {
+        VStack(spacing: 12) {
+            setupSummaryRow("警戒圈", value: isFollowMe ? "我的即時圈" : (placeName.isEmpty ? "住家" : placeName), icon: "mappin.and.ellipse")
+            Divider()
+            setupSummaryRow("確認位置", value: circleLocationSummary, icon: "location.fill")
+            Divider()
+            setupSummaryRow("提醒半徑", value: "\(radius) 公尺", icon: "scope")
+            Divider()
+            setupSummaryRow("通知", value: notificationSummary, icon: "bell.fill")
+            Divider()
+            setupSummaryRow("iCloud", value: iCloudSummary, icon: "icloud.fill")
+            Divider()
+            setupSummaryRow("定位權限", value: locationAuthorizationSummary, icon: "hand.raised.fill")
+        }
+        .padding(16)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+        .padding(.horizontal, 24)
+    }
+
+    private func setupSummaryRow(_ title: String, value: String, icon: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var circleLocationSummary: String {
+        if !pickedLabel.isEmpty { return pickedLabel }
+        if let found { return found.name ?? address }
+        return isReplay ? "教學示範" : "尚未確認"
+    }
+
+    private var notificationSummary: String {
+        switch notificationGranted {
+        case true: "已允許"
+        case false: "未允許，可前往系統設定"
+        case nil: "稍後決定"
+        }
+    }
+
+    private var iCloudSummary: String {
+        switch familySync.state {
+        case .ready: "已登入，可建立家庭圈"
+        case .sharing: "家庭圈同步中"
+        case .noAccount: "尚未登入 iCloud"
+        case .error: "暫時無法使用"
+        case .unknown: "正在確認狀態"
+        }
+    }
+
+    private var locationAuthorizationSummary: String {
+        guard isFollowMe else { return "固定圈不需背景定位" }
+        return switch LocationService.shared.authorization {
+        case .authorizedAlways: "永遠允許，可背景更新"
+        case .authorizedWhenInUse: "使用 App 期間；背景更新待開啟"
+        case .denied, .restricted: "未允許，需前往系統設定"
+        case .notDetermined: "尚未決定"
+        @unknown default: "狀態未知"
+        }
     }
 
     // MARK: - 共用元件與邏輯
@@ -350,8 +549,17 @@ struct OnboardingView: View {
     }
 
     private func search() async {
+        let query = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            found = nil
+            searchFailed = false
+            return
+        }
+        picked = nil
+        pickedLabel = ""
+        locationHint = ""
         let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = address
+        request.naturalLanguageQuery = query
         do {
             found = try await MKLocalSearch(request: request).start().mapItems.first
             searchFailed = (found == nil)
@@ -367,8 +575,13 @@ struct OnboardingView: View {
         locating = true
         defer { locating = false }
         guard LocationService.shared.isAuthorized else {
-            LocationService.shared.requestPermissionIfNeeded()
-            locationHint = "請先允許定位權限，再點一次"
+            switch LocationService.shared.authorization {
+            case .denied, .restricted:
+                locationHint = "定位權限未開啟，請前往系統設定，或改用地址搜尋固定圈。"
+            default:
+                LocationService.shared.requestPermissionIfNeeded()
+                locationHint = "允許定位權限後，請再點一次取得位置。"
+            }
             return
         }
         guard let location = await LocationService.shared.currentLocation() else {
@@ -377,14 +590,11 @@ struct OnboardingView: View {
         }
         picked = location.coordinate
         locationHint = ""
-        if let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first {
-            let label = [placemark.locality, placemark.subLocality].compactMap { $0 }.joined()
-            pickedLabel = label.isEmpty ? "座標已取得" : label
-            let text = [placemark.subAdministrativeArea, placemark.locality,
-                        placemark.subLocality, placemark.name].compactMap { $0 }.joined(separator: " ")
-            let district = Self.guessDistrict(from: text)
+        if let place = await MapReverseGeocoder.lookup(location) {
+            let district = Self.guessDistrict(from: place.searchableText)
+            pickedLabel = place.approximateLabel(district: district) ?? "座標已取得"
             if district != Districts.unspecified { pickedDistrict = district }
-            if address.isEmpty || address == "台北市南港區" { address = pickedLabel }
+            if address.isEmpty { address = pickedLabel }
         } else {
             pickedLabel = "座標已取得"
         }
@@ -398,13 +608,20 @@ struct OnboardingView: View {
             return
         }
         let me = LocalFamilyMember(name: displayName.isEmpty ? "我" : displayName, relationship: "擁有者")
+        me.isCurrentUser = true
         context.insert(me)
-        // 座標優先序：目前位置 > 搜尋結果 > 南港區預設；
-        // 跟隨圈就算暫用預設座標，第一次顯著位置變更也會把圈心校正到實際位置
-        let coordinate = picked ?? found?.location.coordinate ?? .init(latitude: 25.0525, longitude: 121.6072)
+        // 固定圈與即時圈都必須先確認位置；不可用任意預設座標造成錯誤安心。
+        guard let coordinate = picked ?? found?.location.coordinate else {
+            context.delete(me)
+            locationHint = "請先確認警戒圈位置。"
+            withAnimation { step = .circle }
+            return
+        }
         let circle = LocalLifeCircle(
-            name: placeName.isEmpty ? "住家" : placeName,
-            encryptedAddress: isFollowMe ? "跟著我移動" : (pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel),
+            name: isFollowMe ? "我的即時圈" : (placeName.isEmpty ? "住家" : placeName),
+            encryptedAddress: isFollowMe
+                ? "位置由這支手機分享"
+                : (pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel),
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
             radiusMeters: radius,
@@ -413,6 +630,12 @@ struct OnboardingView: View {
         )
         circle.district = pickedDistrict ?? Self.guessDistrict(from: "\(found?.name ?? "") \(address)")
         circle.isFollowMe = isFollowMe
+        circle.kind = isFollowMe ? .live : .fixed
+        circle.locationUpdatedAt = isFollowMe && picked != nil ? .now : nil
+        if isFollowMe {
+            liveLocationSharingEnabled = true
+            liveCircleRadiusMeters = radius
+        }
         context.insert(circle)
         context.saveReporting()
         // 跟隨圈監聽開關跟著圈的存在與否走
@@ -421,12 +644,30 @@ struct OnboardingView: View {
         )
         // 名稱同步進個人資訊（安否回報署名用），使用者不必到設定頁再填一次
         if !displayName.isEmpty { profileName = displayName }
+        legalAcceptanceVersion = LegalDocumentKind.revision
+        if isFollowMe {
+            LocationService.shared.syncLiveLocationSharing(isEnabled: true)
+            Task {
+                guard let location = await LocationService.shared.currentLocation() else { return }
+                await familySync.publishLiveLocation(
+                    location,
+                    displayName: displayName.isEmpty ? "我" : displayName,
+                    radiusMeters: radius,
+                    context: context
+                )
+            }
+        }
         // 完成旗標與家人資料脫鉤：之後就算刪光家人資料也不會被打回新手流程
         onboardingCompleted = true
         // 種下守護圈開場動效旗標：首次進地圖時演「鏡頭飛向生活圈」的確認儀式
         UserDefaults.standard.set(true, forKey: SettingsKeys.guardianIntroPending)
-        // 種下功能導覽旗標：首次進安心頁時黑幕聚光燈逐步介紹
+        // 種下功能導覽旗標：首次進主畫面時黑幕聚光燈跨分頁逐步介紹
         UserDefaults.standard.set(true, forKey: SettingsKeys.homeTourPending)
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     /// 從地址文字比對全國鄉鎮市區（供區域型警報使用）；找不到就標「未指定」
@@ -435,7 +676,9 @@ struct OnboardingView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     OnboardingView()
         .modelContainer(PreviewSupport.container())
 }
+#endif

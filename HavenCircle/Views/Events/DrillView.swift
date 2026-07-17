@@ -13,7 +13,6 @@ struct DrillView: View {
     @AppStorage(SettingsKeys.alertsPaused) private var paused = false
     @State private var permission: UNAuthorizationStatus?
     @State private var lastDecision: AlertDecision?
-    @State private var showManualEditor = false
 
     private var activeDrill: LocalSafetyEvent? {
         drillEvents.first { !$0.isEnded }
@@ -24,7 +23,6 @@ struct DrillView: View {
             List {
                 checklistSection
                 drillSection
-                advancedSection
             }
             .navigationTitle("通知演練")
             .toolbar {
@@ -33,7 +31,6 @@ struct DrillView: View {
                 }
             }
             .task { permission = await NotificationScheduler.authorizationStatus() }
-            .sheet(isPresented: $showManualEditor) { EventEditorView() }
         }
     }
 
@@ -56,8 +53,8 @@ struct DrillView: View {
             ChecklistRow(ok: !paused, okText: "提醒未暫停", problemText: "提醒暫停中——演練通知不會發出")
             ChecklistRow(
                 ok: !members.flatMap(\.lifeCircles).isEmpty,
-                okText: "已設定 \(members.flatMap(\.lifeCircles).count) 個生活圈",
-                problemText: "尚未設定任何生活圈"
+                okText: "已設定 \(members.flatMap(\.lifeCircles).count) 個警戒圈",
+                problemText: "尚未設定任何警戒圈"
             )
         }
     }
@@ -82,7 +79,7 @@ struct DrillView: View {
                 Button("開始演練", systemImage: "bell.and.waves.left.and.right") {
                     Task { await startDrill() }
                 }
-                Text("會在你的第一個生活圈附近產生一個模擬事件，走完整的「判斷 → 推播 → 解除」流程。")
+                Text("會在你的第一個警戒圈附近產生一個模擬事件，走完整的「判斷 → 推播 → 解除」流程。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let lastDecision {
@@ -100,15 +97,6 @@ struct DrillView: View {
                     lastDecision = nil
                 }
             }
-        }
-    }
-
-    private var advancedSection: some View {
-        Section("進階") {
-            Button("手動新增測試事件") { showManualEditor = true }
-            Text("手動事件可自訂類型與可信度，用來測試提醒決策的各種情境。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -158,7 +146,9 @@ private struct ChecklistRow: View {
     }
 }
 
+#if DEBUG
 #Preview {
     DrillView()
         .modelContainer(PreviewSupport.container())
 }
+#endif

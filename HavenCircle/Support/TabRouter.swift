@@ -7,9 +7,9 @@ import Observation
 @Observable
 @MainActor
 final class TabRouter {
-    static let homeTab = 0
-    static let mapTab = 2      // 保留原 tag 值：widget/通知的 map deep link 不受影響
-    static let familyTab = 3
+    nonisolated static let homeTab = 0
+    nonisolated static let mapTab = 2      // 保留原 tag 值：widget/通知的 map deep link 不受影響
+    nonisolated static let familyTab = 3
 
     /// 安心頁的二級頁（提醒中心／回顧由此 push）
     enum HomeDestination: Hashable {

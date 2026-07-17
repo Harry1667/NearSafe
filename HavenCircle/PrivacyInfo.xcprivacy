@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 本 App 不做跨 App/網站的使用者追蹤，未整合任何廣告或分析 SDK -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<!--
+	  資料蒐集：家庭最新位置只寫入使用者自己的 iCloud（CKShare），開發者伺服器不留存；
+	  APNs 中繼伺服器僅保存無聲推播用的裝置權杖，不含位置、住址或姓名。
+	  依 Apple 定義，寫入使用者自有 iCloud 不算「開發者蒐集」，故此處留空；
+	  App Store Connect 隱私問卷才是對外揭露的權威來源（見交付說明）。
+	-->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<!-- 必要理由 API：僅使用 UserDefaults 儲存 App 自身設定與 App Group 共享狀態 -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<!-- CA92.1：僅存取本 App（含同 App Group 的 Widget）所寫入的資訊 -->
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

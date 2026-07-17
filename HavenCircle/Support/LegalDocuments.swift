@@ -1,0 +1,175 @@
+import Foundation
+
+struct LegalDocumentSection: Identifiable {
+    let title: String
+    let paragraphs: [String]
+
+    var id: String { title }
+}
+
+enum LegalDocumentKind: String, CaseIterable, Identifiable {
+    case privacy
+    case userAgreement
+    case terms
+
+    static let revision = "2026-07-17"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .privacy: "隱私權政策"
+        case .userAgreement: "用戶協議"
+        case .terms: "使用條款"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .privacy: "我們處理哪些資料，以及你如何控制它們"
+        case .userAgreement: "家庭共享、同意與安全使用規則"
+        case .terms: "服務範圍、授權與責任界線"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .privacy: "hand.raised.fill"
+        case .userAgreement: "person.2.badge.gearshape.fill"
+        case .terms: "doc.text.fill"
+        }
+    }
+
+    var webURL: URL {
+        let path = switch self {
+        case .privacy: "privacy.html"
+        case .userAgreement: "user-agreement.html"
+        case .terms: "terms.html"
+        }
+        return URL(string: "https://havencircle.looptw.com/\(path)")!
+    }
+
+    var introduction: String {
+        switch self {
+        case .privacy:
+            "安心圈以資料最少化為原則。固定圈與事件偏好主要留在你的裝置；本人主動開啟的即時圈只透過家庭 iCloud 分享最新位置，不建立移動軌跡。"
+        case .userAgreement:
+            "本協議說明你與家人如何在知情、同意且尊重彼此界線的前提下使用安心圈。"
+        case .terms:
+            "安心圈是日常安全意識工具，不是 110、119、醫療、保全或其他緊急救援服務。"
+        }
+    }
+
+    var sections: [LegalDocumentSection] {
+        switch self {
+        case .privacy: privacySections
+        case .userAgreement: agreementSections
+        case .terms: termsSections
+        }
+    }
+
+    private var privacySections: [LegalDocumentSection] {
+        [
+            .init(title: "一、適用範圍與聯絡方式", paragraphs: [
+                "本政策適用於安心圈 HavenCircle App、官方網站及為其提供的邀請碼、公開警報與推播中繼服務。服務提供者為安心圈 HavenCircle 開發團隊；隱私問題或資料權利請寄至 hello@havencircle.app。",
+                "本文件是目前原型與黑客松版本的實際資料處理說明；正式公開營運前仍應由具資格的法律專業人員審閱，並補齊法定營運者名稱、地址及適用的客服資訊。"
+            ]),
+            .init(title: "二、我們處理的資料", paragraphs: [
+                "裝置本機資料：你輸入的顯示名稱、Apple 登入首次提供的電子郵件、聯絡備註、固定圈名稱、地址或座標、半徑、事件紀錄、提醒偏好與小工具快照。這些資料主要保存在你的裝置或 App Group。",
+                "家庭 iCloud 資料：只有本人主動開啟即時圈後，才會把該裝置最新一筆精確位置、顯示名稱、警戒半徑、行政區、更新時間與分享狀態寫入家庭 CKShare。安否回報可能包含狀態、備註及你另行選擇附上的一次性位置。家庭成員也可能看見已讀狀態。",
+                "安心圈中繼站資料：為提供推播，只登記 APNs 裝置權杖與 sandbox／production 環境；為兌換家庭邀請碼，暫存 CloudKit 分享連結與隨機邀請碼。中繼站不接收你的固定圈、姓名或即時位置。",
+                "網站與網路資訊：造訪網站或呼叫 API 時，主機、網路服務商與網站目前使用的 Google Fonts 可能依一般技術運作處理 IP 位址、請求時間、瀏覽器或裝置資訊與錯誤紀錄。本站目前不放置廣告追蹤器或行銷分析工具。"
+            ]),
+            .init(title: "三、處理目的與必要性", paragraphs: [
+                "我們僅為建立警戒圈、比對官方風險、發送通知、家庭共享、安否回報、邀請兌換、資安防護、除錯與改善可靠性而處理必要資料。",
+                "定位、通知與家庭共享並非所有功能的必要條件。你可以拒絕定位或通知，但即時圈、附近事件或主動提醒等相應功能將無法運作；不登入 Apple 帳號仍可使用本機地圖、固定圈與警報功能。"
+            ]),
+            .init(title: "四、位置、同意與家庭共享", paragraphs: [
+                "即時圈只能由裝置持有人在自己的手機上主動開啟，並可隨時停止。家庭成員只取得最新位置與更新時間；安心圈不設計移動軌跡、到訪歷史或隱形追蹤。超過 15 分鐘未更新會標示為過期，不冒充目前位置。",
+                "請勿替他人開啟位置分享，或在未取得本人或其法定代理人適當同意時，將他人的裝置加入即時圈。固定圈應優先使用約略地點，避免輸入不必要的門牌或個人資訊。"
+            ]),
+            .init(title: "五、第三方服務與資料來源", paragraphs: [
+                "App 使用 Apple 的 Sign in with Apple、iCloud／CloudKit、APNs、MapKit 與 Core Location；網站目前使用 Google Fonts。這些服務由各供應者依其條款與隱私政策處理資料。",
+                "政府示警、新聞、空氣品質、避難所與醫療資源來自 NCDR 及政府公開資料或其整理中繼。請求公開資訊時不會附上你的警戒圈或精確位置，但網路供應者仍可能看到一般連線資訊。"
+            ]),
+            .init(title: "六、保存、刪除與撤回", paragraphs: [
+                "本機資料保存至你在 App 內刪除、刪除 App 或裝置系統清除為止。家庭 CKShare 資料保存至家庭圈擁有者刪除分享區域；停止即時圈後會標示停止共享，不再持續更新。",
+                "家庭邀請碼與分享連結預計在建立後 72 小時失效。APNs 權杖保存至你使用「刪除帳號與所有資料」撤銷、權杖失效或服務清理為止。必要的主機安全與錯誤紀錄僅於達成資安、除錯或法定目的所需期間保存，之後刪除或去識別。",
+                "你可在「設定 → 刪除帳號與所有資料」清除本機資料、停止即時位置分享、退出或刪除 iCloud 家庭圈，並要求中繼站移除目前裝置的推播權杖。你也可在 iOS 系統設定撤回定位、通知與 Apple 登入授權。"
+            ]),
+            .init(title: "七、你的資料權利", paragraphs: [
+                "在適用法律範圍內，你可請求查詢或閱覽、製給複製本、補充或更正、停止蒐集處理利用，以及刪除你的個人資料。請從註冊裝置使用 App 內控制項，或寄信至 hello@havencircle.app；我們可能在不額外蒐集資料的前提下，要求合理資訊確認請求來源。",
+                "若資料只存在你的裝置或個人 iCloud，安心圈伺服器無法直接讀取或代你匯出；我們會提供可行的裝置端操作指引。"
+            ]),
+            .init(title: "八、安全、未成年人與事件通報", paragraphs: [
+                "我們採資料最少化、Apple 平台權限、CloudKit 分享控制及傳輸加密等措施，但任何系統都無法保證絕對安全。請妥善保管家庭邀請碼與 Apple 帳號。",
+                "未成年人使用位置分享時，應由其法定代理人閱讀本政策、提供適當同意，並以未成年人最佳利益設定最小必要的共享範圍。",
+                "若發現疑似未授權分享、資料外洩或安全問題，請立即停止分享並來信聯絡。"
+            ]),
+            .init(title: "九、政策更新", paragraphs: [
+                "若資料用途、服務或法律要求有重大變更，我們會更新修訂日期，並在 App 或網站提供清楚通知；需要新同意時，會在變更生效前再次取得。"
+            ])
+        ]
+    }
+
+    private var agreementSections: [LegalDocumentSection] {
+        [
+            .init(title: "一、同意與資格", paragraphs: [
+                "當你勾選同意、完成首次設定或繼續使用安心圈，即表示你已閱讀並同意本用戶協議與使用條款，且了解隱私權政策。若你不同意，請勿完成設定，並可刪除已建立的資料。",
+                "未成年人應由法定代理人閱讀並同意。代表家庭或他人設定固定圈，不代表你有權替他們開啟即時位置分享。"
+            ]),
+            .init(title: "二、家庭圈與身分", paragraphs: [
+                "你應提供足以讓家人辨識、但不超過必要範圍的顯示名稱。Apple 登入與 iCloud 帳號由 Apple 管理；安心圈不持有你的 Apple 密碼。",
+                "家庭圈擁有者可建立 CKShare 邀請。收到邀請的人應自行確認邀請者與家庭關係；邀請碼與分享連結不得公開張貼、轉售或交給未獲同意者。"
+            ]),
+            .init(title: "三、即時圈的明確同意", paragraphs: [
+                "即時圈屬於裝置持有人自己的圈，必須由本人在該裝置開啟。成員同意分享最新位置、更新時間、半徑與顯示名稱給同一家庭 CKShare 的參與者，並可隨時停止。",
+                "禁止以欺騙、脅迫、偷拿裝置、安裝描述檔或其他方式繞過本人同意。不得把安心圈用於跟蹤、騷擾、監控伴侶、雇員考勤、歧視或任何違法用途。"
+            ]),
+            .init(title: "四、固定圈與安全資訊", paragraphs: [
+                "固定圈用於你有合理關心關係的住家、倉庫、家人的家或其他資產。請自訂容易辨識的名稱與必要半徑，並優先使用約略位置。",
+                "官方示警、避難資源、空氣品質、新聞與統計資訊可能延遲、變更或出錯；社區資訊除非明示官方來源或佐證，一律視為未驗證。請以發布機關最新資訊與現場指示為準。"
+            ]),
+            .init(title: "五、緊急情況", paragraphs: [
+                "安心圈不是緊急服務，也不保證通知一定送達。若有立即危險、犯罪、火災、醫療或救援需求，請直接撥打 110 或 119，並遵循主管機關指示。不要等待 App 通知或家人回覆。"
+            ]),
+            .init(title: "六、停止使用與刪除", paragraphs: [
+                "你可停止即時圈、退出家庭圈、撤回系統權限或在設定中刪除帳號與所有資料。家庭圈擁有者刪除共享區域可能使所有參與者失去家庭資料。",
+                "若有明確濫用、安全風險或違法要求，我們可在適用法律允許範圍內限制中繼服務；若情況允許，會提供理由與處理方式。"
+            ]),
+            .init(title: "七、協議更新與聯絡", paragraphs: [
+                "重大變更會在 App 或網站通知，並在需要時重新取得同意。問題、申訴或資料請求請寄至 hello@havencircle.app。"
+            ])
+        ]
+    }
+
+    private var termsSections: [LegalDocumentSection] {
+        [
+            .init(title: "一、服務內容", paragraphs: [
+                "安心圈提供固定圈、本人自願開啟的即時圈、官方風險比對、家庭安否回報、地圖資源與提醒功能。原型功能、資料來源與可用性可能隨版本調整。",
+                "本服務不取代政府告警、專業判斷、保全、醫療建議或緊急救援。遇立即危險請直接撥打 110 或 119。"
+            ]),
+            .init(title: "二、使用授權", paragraphs: [
+                "在你遵守本條款期間，我們授予你有限、非專屬、不可轉讓、可撤回的個人或家庭使用授權。除法律允許外，不得複製、出售、出租、逆向工程、干擾或未經授權存取服務。"
+            ]),
+            .init(title: "三、可接受使用", paragraphs: [
+                "你不得用本服務追蹤未同意者、騷擾或威脅他人、散布未驗證事件冒充官方資訊、破壞 API 或推播服務、批次蒐集資料、上傳惡意內容，或從事其他違法與侵害權利的行為。",
+                "你應保護邀請碼、裝置與 Apple 帳號；發現未授權使用時應立即停止分享、撤銷邀請並通知我們。"
+            ]),
+            .init(title: "四、第三方服務與內容", paragraphs: [
+                "Apple、政府資料平台、新聞來源、地圖導航與其他第三方服務各自適用其條款。安心圈會標示來源與可信度，但不控制第三方資料的持續供應、完整性或即時性。"
+            ]),
+            .init(title: "五、智慧財產", paragraphs: [
+                "安心圈名稱、介面、程式與原創內容的權利歸其權利人所有；政府開放資料、Apple 標誌及第三方內容仍歸各自權利人所有，並依其授權使用。"
+            ]),
+            .init(title: "六、可用性與責任界線", paragraphs: [
+                "我們會合理維護服務，但網路、iOS 背景排程、定位、CloudKit、APNs 或第三方資料可能造成延遲、中斷或不精確。你應以官方來源、現場狀況與專業人員指示作最終判斷。",
+                "在法律允許範圍內，服務按現況提供；但本條款不排除或限制消費者保護法及其他強制法律不得排除的權利。若因故意或重大過失依法應負責，本條款不作不當免除。"
+            ]),
+            .init(title: "七、變更、終止與準據法", paragraphs: [
+                "我們可能為安全、法規、平台或產品需求更新服務與條款。重大變更會清楚通知；若你不同意，可停止使用並刪除資料。",
+                "本條款以中華民國法律為準據法。爭議應先透過 hello@havencircle.app 誠信協商；依法不得預先排除的消費者管轄與救濟權利不受影響。部分條款無效時，其餘條款仍繼續有效。"
+            ])
+        ]
+    }
+}

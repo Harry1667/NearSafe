@@ -12,12 +12,13 @@ struct FamilyListView: View {
         List {
             // 一鍵直接邀請（共用元件，不再跳轉到安否回報段找第二顆按鈕）
             InviteFamilySection()
+            LiveCircleSharingSection()
             // 空狀態要有明確引導：入口只藏在右上角小圖示的話，長輩絕對找不到
             if members.isEmpty {
                 ContentUnavailableView {
                     Label("還沒有家人資料", systemImage: "person.2")
                 } description: {
-                    Text("新增家人並設定他的生活圈（例如爸媽的住家），有事件靠近時就會提醒你。")
+                    Text("邀請家人開啟自己的即時圈，或替住家、倉庫與家人的家建立固定圈。")
                 } actions: {
                     // 兩顆按鈕要自己排 VStack：直接並列會被 actions 容器壓縮成直排文字
                     VStack(spacing: HCSpacing.x2) {
@@ -38,9 +39,11 @@ struct FamilyListView: View {
                             .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
                         VStack(alignment: .leading) {
                             Text(member.name)
+                            let liveCount = member.lifeCircles.filter { $0.kind == .live }.count
+                            let fixedCount = member.lifeCircles.filter { $0.kind == .fixed }.count
                             Text(member.isPlace
-                                 ? "\(member.lifeCircles.count) 個提醒範圍 · 重要地點"
-                                 : "\(member.lifeCircles.count) 個生活圈 · \(member.relationship)")
+                                 ? "\(fixedCount) 個固定圈 · 重要地點"
+                                 : "\(liveCount) 個即時圈 · \(fixedCount) 個固定圈 · \(member.relationship)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -69,6 +72,7 @@ struct FamilyListView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     NavigationStack {
         FamilyListView()
@@ -77,3 +81,4 @@ struct FamilyListView: View {
     .environment(FamilySyncService())
     .environment(TabRouter())
 }
+#endif

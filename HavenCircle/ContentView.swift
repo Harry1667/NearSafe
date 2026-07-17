@@ -8,19 +8,35 @@ struct ContentView: View {
     @Query private var members: [LocalFamilyMember]
 
     var body: some View {
-        if onboardingCompleted || !members.isEmpty {
-            AppTabs()
-                .task {
-                    // 舊版使用者的一次性遷移：補寫旗標
-                    if !onboardingCompleted { onboardingCompleted = true }
-                }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--force-onboarding") {
+            OnboardingView()
+        } else if onboardingCompleted || !members.isEmpty {
+            appTabsWithLegacyMigration
         } else {
             OnboardingView()
         }
+        #else
+        if onboardingCompleted || !members.isEmpty {
+            appTabsWithLegacyMigration
+        } else {
+            OnboardingView()
+        }
+        #endif
+    }
+
+    private var appTabsWithLegacyMigration: some View {
+        AppTabs()
+            .task {
+                // 舊版使用者的一次性遷移：補寫旗標
+                if !onboardingCompleted { onboardingCompleted = true }
+            }
     }
 }
 
+#if DEBUG
 #Preview {
     ContentView()
         .modelContainer(PreviewSupport.container())
 }
+#endif

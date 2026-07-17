@@ -22,6 +22,7 @@ enum DeepLinkStore {
 /// 但容器由 HavenCircleApp.init 建立——這裡提供橋接（init 一定早於任何推播回呼）
 enum AppRuntime {
     @MainActor static var container: ModelContainer?
+    @MainActor static var familySync: FamilySyncService?
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -37,8 +38,25 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                     await FollowCircleService.handle(location: location, container: container)
                 }
             }
+            LocationService.shared.onLiveLocationUpdate = { location in
+                Task { @MainActor in
+                    let defaults = UserDefaults.standard
+                    guard defaults.bool(forKey: SettingsKeys.liveLocationSharingEnabled),
+                          let sync = AppRuntime.familySync else { return }
+                    let storedRadius = defaults.integer(forKey: SettingsKeys.liveCircleRadiusMeters)
+                    await sync.publishLiveLocation(
+                        location,
+                        displayName: defaults.string(forKey: SettingsKeys.profileDisplayName) ?? "",
+                        radiusMeters: storedRadius > 0 ? storedRadius : 1_000,
+                        context: container.mainContext
+                    )
+                }
+            }
             LocationService.shared.syncFollowMonitoring(
                 hasFollowCircle: FollowCircleService.hasFollowCircle(context: container.mainContext)
+            )
+            LocationService.shared.syncLiveLocationSharing(
+                isEnabled: UserDefaults.standard.bool(forKey: SettingsKeys.liveLocationSharingEnabled)
             )
         }
         return true
@@ -80,7 +98,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     /// 伺服器偵測到新官方警報 → 廣播 {content-available:1} → 系統在背景叫醒 App 走到這裡。
     /// 喚醒後跑一次完整資料管線：抓最新警報、比對生活圈、相關才發本機通知——
-    /// 「推播喚醒是廣播、判斷在裝置」正是零追蹤架構的核心（伺服器不知道任何人的家在哪）。
+    /// 事件伺服器只做廣播喚醒，警報比對仍在裝置上完成；家庭位置只存在家庭 CKShare，不會送到這台伺服器。
     func application(
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
@@ -91,9 +109,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             return
         }
         Task { @MainActor in
+            if let sync = AppRuntime.familySync {
+                await sync.fetchLiveLocations(context: container.mainContext)
+            }
             await EventPipeline.refresh(context: container.mainContext)
             AppLog.notifications.info("無聲推播喚醒：資料管線刷新完成")
-            // 一律回 .newData：讓系統認為喚醒有價值，維持之後的背景喚醒額度
+            // 一律回 .newData：官方警報或家庭位置任一更新，都完成了一次有價值的同步
             completionHandler(.newData)
         }
     }

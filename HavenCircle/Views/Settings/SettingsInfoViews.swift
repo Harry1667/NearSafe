@@ -30,7 +30,7 @@ struct DataSourceView: View {
                     .foregroundStyle(.secondary)
             }
             Section("資料怎麼到你手上") {
-                Text("政府示警 → 安心圈中繼站（整理與去重）→ 你的手機（依生活圈與可信度篩選）。全程只傳遞公開示警內容，不上傳你的任何位置資料。")
+                Text("政府示警 → 安心圈中繼站（整理與去重）→ 你的手機（依警戒圈與可信度篩選）。中繼站只傳遞公開示警；你主動開啟的即時圈位置另透過家庭 iCloud 加密同步，不會送到安心圈伺服器。")
                     .font(.footnote)
             }
             Section("目前限制（誠實告知）") {
@@ -61,11 +61,16 @@ struct AboutView: View {
                 }
             }
             Section("隱私原則") {
-                Label("生活圈與事件資料只儲存在這支手機", systemImage: "iphone")
-                Label("不追蹤任何人的即時位置", systemImage: "location.slash")
-                Label("家人同步走你自己的 iCloud，我們的伺服器看不到內容", systemImage: "lock.icloud")
+                Label("固定圈與事件資料儲存在這支手機", systemImage: "iphone")
+                Label("即時圈必須由本人開啟，並可隨時停止", systemImage: "location.fill")
+                Label("家人位置走家庭 iCloud，我們的伺服器看不到內容", systemImage: "lock.icloud")
             }
             .font(.subheadline)
+            Section("法律文件") {
+                NavigationLink("隱私權政策") { LegalDocumentView(document: .privacy) }
+                NavigationLink("用戶協議") { LegalDocumentView(document: .userAgreement) }
+                NavigationLink("使用條款") { LegalDocumentView(document: .terms) }
+            }
             Section {
                 Text("安心圈不是 110、119 或緊急救難服務。遇立即危險請直接撥打 110 或 119。")
                     .font(.footnote)

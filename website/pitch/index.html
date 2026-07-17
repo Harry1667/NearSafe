@@ -3,8 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="安心圈 HavenCircle 黑客松初賽提交：零位置追蹤的家人災害守護 App——真實政府示警資料、自建後端鏈路、有產品倫理的設計。" />
-    <title>安心圈 HavenCircle｜黑客松初賽提交</title>
+    <meta name="description" content="安心圈 HavenCircle 競賽提案：以本人同意的即時圈與固定資產圈，比對真實政府示警並完成家人安否閉環。" />
+    <title>安心圈 HavenCircle｜黑客松競賽提案</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&amp;family=Noto+Sans+TC:wght@400;500;600;700;800;900&amp;family=Noto+Serif+TC:wght@700;900&amp;display=swap" rel="stylesheet" />
     <style>
       :root {
         --ink: #14232f;
@@ -19,6 +22,9 @@
         --card: #ffffff;
         --card-soft: #fdfcf8;
         --shadow: 0 18px 40px rgba(20, 35, 47, 0.10);
+        --serif: "Noto Serif TC", "Songti TC", serif;
+        --sans: "Noto Sans TC", "PingFang TC", sans-serif;
+        --mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -41,13 +47,13 @@
       body {
         background: var(--cream);
         color: var(--ink);
-        font-family: "Manrope", "Avenir Next", -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+        font-family: var(--sans);
         line-height: 1.75;
         -webkit-font-smoothing: antialiased;
       }
       .wrap { max-width: 1060px; margin: 0 auto; padding: 0 22px; }
       .eyebrow {
-        font-family: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+        font-family: var(--mono);
         font-size: 11px;
         letter-spacing: .55px;
         color: var(--muted);
@@ -57,7 +63,7 @@
         display: inline-block; width: 7px; height: 7px; border-radius: 50%;
         background: var(--lime-deep); margin-right: 8px; vertical-align: 1px;
       }
-      h1, h2 { letter-spacing: -1.5px; line-height: 1.12; font-weight: 800; }
+      h1, h2 { font-family: var(--serif); letter-spacing: -2px; line-height: 1.15; font-weight: 900; }
       h1 em, h2 em { font-style: normal; color: var(--lime-deep); }
       section { padding: 64px 0; }
 
@@ -101,6 +107,28 @@
       .stat span { font-size: 12px; color: var(--muted); }
       @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 
+      /* ── 即時圈界線 ───────────────────── */
+      .live-brief {
+        position: relative; overflow: hidden; padding: 36px; border-radius: 26px;
+        background: #123048; color: #fff;
+        box-shadow: 0 26px 70px rgba(18, 48, 72, .18);
+      }
+      .live-brief::after {
+        position: absolute; right: -90px; top: -120px; width: 360px; height: 360px;
+        content: ""; border: 1px solid rgba(201, 230, 94, .26); border-radius: 50%;
+        box-shadow: 0 0 0 58px rgba(201, 230, 94, .055), 0 0 0 116px rgba(201, 230, 94, .028);
+      }
+      .live-brief-head { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr .9fr; gap: 42px; align-items: end; }
+      .live-brief h2 { color: white; font-size: clamp(32px, 4.5vw, 52px); }
+      .live-brief-head p { color: #bed0da; font-size: 14px; }
+      .live-rules { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 30px; }
+      .live-rule { min-height: 170px; padding: 18px; border: 1px solid rgba(255,255,255,.13); border-radius: 16px; background: rgba(255,255,255,.055); }
+      .live-rule span { color: var(--lime); font: 600 10px/1 var(--mono); }
+      .live-rule b { display: block; margin: 34px 0 8px; color: white; font-size: 16px; }
+      .live-rule p { color: #aebfc8; font-size: 12px; line-height: 1.65; }
+      @media (max-width: 820px) { .live-brief-head { grid-template-columns: 1fr; } .live-rules { grid-template-columns: 1fr 1fr; } }
+      @media (max-width: 520px) { .live-brief { padding: 25px; } .live-rules { grid-template-columns: 1fr; } }
+
       /* ── 問題與解法 ───────────────────── */
       .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 30px; }
       @media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
@@ -121,12 +149,30 @@
       .panel li::before { content: "— "; opacity: .55; }
       .panel.answer li b { color: #fff; }
 
+      /* ── 產品海報 ─────────────────────── */
+      .poster-stage {
+        padding: 38px; border-radius: 28px; background: #0d2c43; color: white;
+        background-image: radial-gradient(circle at 20% 10%, rgba(54, 87, 214, .36), transparent 30rem);
+      }
+      .poster-head { display: grid; grid-template-columns: 1fr .9fr; align-items: end; gap: 46px; margin-bottom: 30px; }
+      .poster-head h2 { color: white; }
+      .poster-head p { color: #adbec7; font-size: 13px; }
+      .posters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+      .poster { margin: 0; }
+      .poster > a { position: relative; display: block; padding: 6px; border: 1px solid rgba(255,255,255,.16); border-radius: 20px; background: rgba(255,255,255,.055); }
+      .poster > a::after { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; display: grid; place-items: center; content: "↗"; border-radius: 50%; background: rgba(255,255,255,.9); color: #14232f; font: 600 11px/1 var(--mono); }
+      .poster img { display: block; width: 100%; height: auto; border-radius: 14px; }
+      .poster figcaption { padding: 14px 5px 0; }
+      .poster figcaption b { display: block; color: white; font-family: var(--serif); font-size: 16px; }
+      .poster figcaption span { color: #91a7b3; font-size: 11px; }
+      @media (max-width: 760px) { .poster-stage { padding: 25px; } .poster-head { grid-template-columns: 1fr; gap: 14px; } .posters { grid-template-columns: 1fr; gap: 34px; } }
+
       /* ── 截圖 ─────────────────────────── */
       .shots-note { font-size: 13px; color: var(--muted); margin-top: 8px; }
       .shots {
-        display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-top: 34px;
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 34px;
       }
-      @media (max-width: 980px) { .shots { grid-template-columns: repeat(3, 1fr); } }
+      @media (max-width: 820px) { .shots { grid-template-columns: repeat(2, 1fr); } }
       @media (max-width: 640px) { .shots { grid-template-columns: repeat(2, 1fr); } }
       .shot { display: flex; flex-direction: column; gap: 10px; }
       .shot .frame {
@@ -177,8 +223,9 @@
       .side-card.pending .badge { background: var(--warm); color: var(--muted); border: 1px solid var(--line); }
 
       /* ── 產品倫理 ─────────────────────── */
-      .ethics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 30px; }
-      @media (max-width: 820px) { .ethics { grid-template-columns: 1fr; } }
+      .ethics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 30px; }
+      @media (max-width: 900px) { .ethics { grid-template-columns: 1fr 1fr; } }
+      @media (max-width: 560px) { .ethics { grid-template-columns: 1fr; } }
       .ethic {
         border-top: 3px solid var(--lime-deep); background: var(--card);
         border-radius: 0 0 18px 18px; padding: 22px; border-left: 1px solid var(--line);
@@ -196,6 +243,8 @@
 
       /* ── 團隊與連結 ───────────────────── */
       .links { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 22px; }
+      .team-name { margin-top: 12px; color: var(--muted); font-size: 16px; }
+      .team-name b { color: var(--ink); }
       .button {
         display: inline-flex; align-items: center; gap: 10px; text-decoration: none;
         padding: 13px 22px; border-radius: 99px; font-size: 14px; font-weight: 700;
@@ -213,33 +262,54 @@
         font-size: 12.5px; color: var(--muted);
       }
       footer strong { color: var(--orange); }
+      .legal-links { display: inline-flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; }
+      .legal-links a { color: var(--muted); text-underline-offset: 3px; }
     </style>
   </head>
   <body>
     <div class="wrap">
       <header class="top">
         <a class="brand" href="https://havencircle.looptw.com"><span class="brand-mark">⌂</span><span>HavenCircle<small>安心圈</small></span></a>
-        <span class="top-tag">HACKATHON SUBMISSION · 2026</span>
+        <span class="top-tag">HACKATHON PITCH · TEAM YAMAGATA</span>
       </header>
 
       <!-- Hero -->
       <section class="hero">
-        <p class="eyebrow"><i></i> ZERO-TRACKING FAMILY DISASTER GUARD</p>
-        <h1>不追蹤家人的位置，<br /><em>只守護家人的生活圈。</em></h1>
+        <p class="eyebrow"><i></i> CONSENT-BASED FAMILY SAFETY BOUNDARIES</p>
+        <h1>即時圈跟著家人，<br /><em>固定圈守護重要資產。</em></h1>
         <p class="hero-lede">
-          安心圈是一款<strong>零位置追蹤</strong>的家人災害守護 App：不看家人在哪裡，
-          只監看<strong>政府官方災害示警</strong>是否落在家人的生活圈——住家、長輩家——附近。
+          安心圈把<strong>本人主動分享最新位置</strong>的即時圈，和住家、倉庫、長輩家等固定圈，
+          交給<strong>政府官方災害示警</strong>比對；不建立移動軌跡，也不把家庭位置送到自建伺服器。
           警報命中才提醒，家人一鍵回報平安。資料是真的，後端是自建的，界線是說清楚的。
         </p>
         <div class="trust-line">
           <span class="mini-shield">✓</span>
-          <span>生活圈與住址只儲存在裝置本機，不追蹤、不上傳任何人的即時位置</span>
+          <span>即時圈由本人開啟並走家庭 iCloud；固定圈與住址保存在裝置本機</span>
         </div>
         <div class="stats">
-          <div class="stat"><b><i>43</i> 類</b><span>NCDR 政府民生示警全類別接入</span></div>
+          <div class="stat"><b><i>3</i> 組</b><span>NCDR／新聞／AQI 真實資料中繼</span></div>
           <div class="stat"><b>每 <i>5</i> 分鐘</b><span>自建爬蟲抓取官方示警更新</span></div>
           <div class="stat"><b>近 <i>6,000</i> 筆</b><span>避難所＋急救醫院官方開放資料內嵌</span></div>
           <div class="stat"><b><i>375</i> 個</b><span>全國鄉鎮市區行政區界內嵌比對</span></div>
+        </div>
+      </section>
+
+      <!-- 即時圈界線 -->
+      <section>
+        <div class="live-brief">
+          <div class="live-brief-head">
+            <div>
+              <p class="eyebrow"><i></i> LIVE CIRCLE, CLEAR BOUNDARIES</p>
+              <h2>我們開始分享位置，<br />也把界線做得更清楚。</h2>
+            </div>
+            <p>即時圈是家人本人主動分享的「最新位置」，不是無限期的行蹤紀錄。安全產品不能只說有定位，還要說清楚誰能開、資料去哪、多久失效。</p>
+          </div>
+          <div class="live-rules">
+            <article class="live-rule"><span>01 / CONSENT</span><b>只能替自己開啟</b><p>每台手機只能控制自己的即時圈，家庭成員無法替別人啟用。</p></article>
+            <article class="live-rule"><span>02 / PRIVATE</span><b>只走家庭 iCloud</b><p>最新位置透過 CKShare 分享，不進入 HavenCircle 事件或推播中繼站。</p></article>
+            <article class="live-rule"><span>03 / LATEST ONLY</span><b>不建立移動軌跡</b><p>只保留最新一筆位置與更新時間，不保存到訪或路徑歷史。</p></article>
+            <article class="live-rule"><span>04 / STALE</span><b>15 分鐘即過期</b><p>未更新會標示「位置已過期」並排除警報判斷，不冒充現在位置。</p></article>
+          </div>
         </div>
       </section>
 
@@ -251,27 +321,50 @@
           <div class="panel problem">
             <h3>現有做法的兩難</h3>
             <ul>
-              <li>Life360、尋找這類 App 用「即時定位」換安心——長輩覺得被監視，子女覺得像查勤，關心變成張力。</li>
+              <li>常見定位 App 缺少清楚的分享控制與過期標示——長輩容易覺得被監視，子女也可能把舊位置誤當成現在位置。</li>
               <li>政府災防告警簡訊只看「你人在哪」，不看「你牽掛的人住哪」；爸媽住彰化，人在台北的你什麼都收不到。</li>
               <li>官方警報管道一次轟炸全部類別，與自己無關的警報看多了，真正要緊的那一則反而被滑掉。</li>
             </ul>
           </div>
           <div class="panel answer">
-            <h3>安心圈的答案：<em>守護範圍，而非追蹤人</em></h3>
+            <h3>安心圈的答案：<em>位置只為風險判斷服務</em></h3>
             <ul>
-              <li><b>設生活圈</b>——住家、長輩家，位置與半徑由你決定，只存本機。</li>
-              <li><b>比對官方示警</b>——NCDR 43 類政府示警即時進來，落在生活圈附近才提醒，並附上「為何收到」的理由。</li>
+              <li><b>設警戒圈</b>——本人可開啟即時圈；住家、倉庫、長輩家則建立固定圈。</li>
+              <li><b>比對官方示警</b>——NCDR 家庭安全相關示警持續進來，落在警戒圈附近才提醒，並附上「為何收到」的理由。</li>
               <li><b>一鍵報平安</b>——iCloud 家庭圈安否回報＋已讀回條，讓「我平安」這句話即時送達全家。</li>
             </ul>
           </div>
         </div>
       </section>
 
+      <!-- 產品海報 -->
+      <section>
+        <div class="poster-stage">
+          <div class="poster-head">
+            <div><p class="eyebrow"><i></i> THREE POSTERS, ONE PRODUCT</p><h2>安心、隱私、行動。<br />三張海報說完。</h2></div>
+            <p>海報使用目前封版介面：先看家庭是否平安，再由本人控制即時圈，事件命中後進入地圖確認來源與行動。</p>
+          </div>
+          <div class="posters">
+            <figure class="poster">
+              <a href="../assets/posters/poster-safety-overview.png" aria-label="開啟安心總覽海報原圖"><img loading="lazy" width="830" height="1800" src="../assets/posters/poster-safety-overview-web.jpg" alt="家人平安一眼就懂的安心總覽海報" /></a>
+              <figcaption><b>家人平安，一眼就懂</b><span>安心首頁 · 狀態與安否回報</span></figcaption>
+            </figure>
+            <figure class="poster">
+              <a href="../assets/posters/poster-live-circle-privacy.png" aria-label="開啟即時圈隱私海報原圖"><img loading="lazy" width="830" height="1800" src="../assets/posters/poster-live-circle-privacy-web.jpg" alt="本人控制即時位置分享的隱私海報" /></a>
+              <figcaption><b>位置分享，由本人決定</b><span>即時圈 · 停止與過期界線</span></figcaption>
+            </figure>
+            <figure class="poster">
+              <a href="../assets/posters/poster-event-alert.png" aria-label="開啟附近事件提醒海報原圖"><img loading="lazy" width="830" height="1800" src="../assets/posters/poster-event-alert-web.jpg" alt="事件命中警戒圈並進入安全地圖的海報" /></a>
+              <figcaption><b>附近事件，立即知道原因</b><span>官方來源 · 命中理由 · 地圖行動</span></figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
       <!-- 6 張敘事截圖 -->
       <section>
-        <!-- WHY 段補上實機截圖後改回 SIX SCREENS／六個畫面 -->
-        <p class="eyebrow"><i></i> FIVE SCREENS, ONE STORY</p>
-        <h2>五個畫面，講完整個故事。</h2>
+        <p class="eyebrow"><i></i> SIX SCREENS, ONE STORY</p>
+        <h2>六個畫面，講完整個故事。</h2>
         <p class="shots-note">畫面中的示範事件為 NCDR 實際發布過的官方示警原文，標題主動標示【歷史示範】——不冒充即時警報，是我們的誠實原則。</p>
         <div class="shots">
           <figure class="shot">
@@ -282,40 +375,38 @@
             </figcaption>
           </figure>
           <figure class="shot">
-            <div class="frame"><img src="img/01-onboarding.png" alt="新手教學：零位置追蹤承諾" /></div>
+            <div class="frame"><img src="img/01-onboarding.png" alt="新手教學：本人同意與位置分享界線" /></div>
             <figcaption>
               <span class="num">02 / ONBOARDING</span>
-              <p><b>先說清楚界線</b>第一個畫面就承諾：你的位置永遠不上傳、不分享，資料只存在這支手機。</p>
+              <p><b>先說清楚界線</b>即時圈必須由本人開啟，可隨時停止，並清楚標示最後更新時間；位置只走家庭 iCloud。</p>
             </figcaption>
           </figure>
           <figure class="shot">
             <div class="frame"><img src="img/02-alerts.png" alt="提醒中心：需要注意的官方事件" /></div>
             <figcaption>
               <span class="num">03 / ALERTS</span>
-              <p><b>只提醒要緊的</b>NCDR 真實示警自動分類——落在家人生活圈的才「需要注意」；未驗證的媒體報導預設收合，不搶版面、永不推播。</p>
+              <p><b>只提醒要緊的</b>NCDR 真實示警自動分類——落在家人警戒圈的才「需要注意」；未驗證的媒體報導預設收合，不搶版面、永不推播。</p>
             </figcaption>
           </figure>
           <figure class="shot">
             <div class="frame"><img src="img/03-map.png" alt="安全地圖：警報塗層、圖例與避難資源" /></div>
             <figcaption>
               <span class="num">04 / MAP</span>
-              <p><b>看得懂的地圖</b>平時只有一顆「生活圈平安」膠囊，把畫面還給地圖；區域警報用行政區塗層、不用誤導的大頭針，避難所與急救醫院是全國近 6,000 筆真實開放資料。</p>
+              <p><b>看得懂的地圖</b>平時只有一顆「警戒圈平安」膠囊，把畫面還給地圖；區域警報用行政區塗層、不用誤導的大頭針，避難所與急救醫院是全國近 6,000 筆真實開放資料。</p>
             </figcaption>
           </figure>
-          <!-- TODO：04-event-detail.png 需實機截圖，檔案就位後取消註解並把家人段改回 06
           <figure class="shot">
             <div class="frame"><img src="img/04-event-detail.png" alt="事件詳情：為何收到的理由" /></div>
             <figcaption>
               <span class="num">05 / WHY</span>
-              <p><b>理由透明</b>每一則提醒都說得出「為何收到」——來源、可信度、跟哪個生活圈有關，一行講清楚。</p>
+              <p><b>理由透明</b>每一則提醒都說得出「為何收到」——來源、可信度、跟哪個警戒圈有關，一行講清楚。</p>
             </figcaption>
           </figure>
-          -->
           <figure class="shot">
             <div class="frame"><img src="img/05-family.png" alt="家人：安否回報與已讀回條" /></div>
             <figcaption>
-              <span class="num">05 / FAMILY</span>
-              <p><b>平安有回音</b>長輩一鍵回報「我平安」，全家透過 iCloud 即時看到，已讀回條讓關心有了回音。</p>
+              <span class="num">06 / FAMILY</span>
+              <p><b>兩種圈，一眼分清</b>即時圈由家人自願分享手機的最新位置；固定圈守住住家、倉庫與長輩家。沒有 iCloud 時也清楚說明限制，不假裝連線成功。</p>
             </figcaption>
           </figure>
         </div>
@@ -330,7 +421,7 @@
             <div class="node">
               <span class="nk">SOURCE</span>
               <b>NCDR 民生示警</b>
-              <span>政府災害示警平台，CAP 開放格式，43 類全接：天災／公共安全／民生／交通</span>
+              <span>政府災害示警平台公開 CAP 格式，篩選家庭安全相關的天災、公共安全與民生事件</span>
             </div>
             <div class="flow-arrow">→</div>
             <div class="node">
@@ -348,17 +439,17 @@
             <div class="node">
               <span class="nk">CLIENT · SWIFTUI</span>
               <b>安心圈 App</b>
-              <span>SwiftData 本地優先、AlertPolicy 單一決策點比對生活圈、斷網仍可用</span>
+              <span>SwiftData 本地優先、AlertPolicy 單一決策點比對警戒圈、斷網仍可用</span>
             </div>
           </div>
           <div class="arch-side">
             <div class="side-card">
-              <b>家庭共享：CloudKit CKShare</b><span class="badge">已實作</span><br />
-              安否回報與已讀回條走 iCloud 家庭圈，零自建帳號系統；避難所／醫院近 6,000 筆開放資料內嵌於 App，離線可查。
+              <b>最新位置：CloudKit CKShare</b><span class="badge">單機實機已驗證</span><br />
+              已完成品質閘門、序列化寫入與 CloudKit 讀回；陳舊或低精度位置會被擋下。跨帳號雙機加入、停止與過期仍在驗證中。
             </div>
             <div class="side-card pending">
-              <b>主動推播：APNs</b><span class="badge">App 端垂直切片已就緒・後端發送建置中</span><br />
-              App 已完成權杖註冊、通知 deep link 全鏈路（Apple Push Console 實測可達）；Oracle 端自動發送服務為下一步。
+              <b>主動推播：APNs</b><span class="badge">事件偵測與發送鏈路已實作・實機閉環驗證中</span><br />
+              App 已完成權杖註冊、deep link 與刪除撤銷；Oracle 端會偵測新官方警報並呼叫 APNs。正式主張仍待實機鎖屏收件錄影。
             </div>
           </div>
         </div>
@@ -371,38 +462,44 @@
         <div class="ethics">
           <div class="ethic">
             <span class="no">ETHIC 01</span>
-            <h3>未驗證，不推播</h3>
-            <p>未經官方確認的線索只在 App 內顯示，絕不推播打擾；每一則推出去的通知，都附上看得懂的「為何收到」理由。</p>
+            <h3>本人開啟，也能停止</h3>
+            <p>即時圈只能由裝置持有人控制；分享狀態與最後更新時間保持可見，不把定位藏在背景。</p>
           </div>
           <div class="ethic">
             <span class="no">ETHIC 02</span>
-            <h3>統計 ≠ 即時安全</h3>
-            <p>治安參考圖層主動標示「季度統計不等於即時安全程度」，只呈現高於全國中位數的分級——避免資料被誤讀成對社區的標籤。</p>
+            <h3>只留最新，不留軌跡</h3>
+            <p>家庭 iCloud 只保存最新一筆位置與時間；HavenCircle 自建伺服器從不接收家人位置。</p>
           </div>
           <div class="ethic">
             <span class="no">ETHIC 03</span>
-            <h3>塗層，不是大頭針</h3>
-            <p>強風豪雨影響的是整個行政區，釘一根大頭針會誤導成單點事故——所以區域警報用行政區塗層呈現，準確傳達影響範圍。</p>
+            <h3>過期就是未知</h3>
+            <p>超過 15 分鐘沒更新就排除警報判斷；沒有新資料時不把舊位置說成現在，也不製造錯誤安心。</p>
+          </div>
+          <div class="ethic">
+            <span class="no">ETHIC 04</span>
+            <h3>未驗證，不推播</h3>
+            <p>未經官方確認的線索只在 App 內顯示；每一則推出去的通知都附上來源、可信度與「為何收到」。</p>
           </div>
         </div>
       </section>
 
       <!-- 差異化一句 -->
       <section class="versus">
-        <p>Life360 追蹤<em>人</em>。<br />安心圈守護<em>範圍</em>。</p>
-        <small>不看家人在哪裡，只看家人身邊安不安全——讓關心，剛剛好。</small>
+        <p>位置不是目的。<br /><em>知道誰需要關心，才是。</em></p>
+        <small>本人主動分享最新位置、不建立移動軌跡；官方風險命中即時圈或固定圈時才提醒。</small>
       </section>
 
       <!-- 團隊與連結 -->
       <section>
         <p class="eyebrow"><i></i> TEAM &amp; LINKS</p>
         <h2>看更多。</h2>
+        <p class="team-name"><b>隊名</b>：山形</p>
         <div class="links">
           <a class="button primary" href="https://havencircle.looptw.com">產品官網 →</a>
           <span class="button disabled">Demo 影片（連結準備中）</span>
         </div>
         <p class="team-note">
-          <b>技術棧</b>：SwiftUI · SwiftData（本地優先）· CloudKit CKShare · MapKit · APNs（App 端垂直切片）·
+          <b>技術棧</b>：SwiftUI · SwiftData（本地優先）· CloudKit CKShare · MapKit · APNs ·
           自建 Python 爬蟲（Mac Mini）· Oracle Cloud 中繼 API · Nginx。<br />
           資料來源：NCDR 民生示警公開資訊、內政部消防署避難收容處所、衛福部急救責任醫院名單、政府開放資料平台。
         </p>
@@ -410,7 +507,8 @@
 
       <footer>
         安心圈是日常安全意識工具，並非緊急服務。若有立即危險或緊急情況，請直接撥打 <strong>110</strong> 或 <strong>119</strong>。
-        <br />© 2026 HAVENCIRCLE · 本頁為黑客松初賽提交物
+        <br /><span class="legal-links"><a href="../privacy.html">隱私權政策</a><a href="../user-agreement.html">用戶協議</a><a href="../terms.html">使用條款</a></span>
+        <br />© 2026 HAVENCIRCLE · 本頁為黑客松競賽提案
       </footer>
     </div>
   </body>

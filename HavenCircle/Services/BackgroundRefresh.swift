@@ -8,10 +8,9 @@ import os
 ///
 /// 能力邊界（誠實標示）：BGAppRefreshTask 的喚醒時機由系統決定——
 /// earliestBeginDate 只是「不早於」，實際間隔受使用習慣、電量、低耗電模式影響，
-/// 常見是幾十分鐘到數小時。要做到「事件發生即刻推播」仍需伺服器端 APNs（階段 4 後半）。
-/// 這一層是 APNs 就緒前的過渡：至少讓常用使用者在背景也能收到警報。
+/// 常見是幾十分鐘到數小時，因此它是 APNs 喚醒之外的補充刷新路徑，不承諾固定頻率。
 enum BackgroundRefresh {
-    static let taskIdentifier = "com.gomiigo.CamMenuApp.HavenCircle.refresh"
+    nonisolated static let taskIdentifier = "com.gomiigo.CamMenuApp.HavenCircle.refresh"
 
     /// 向系統登記背景任務處理器。必須在 App 啟動完成前呼叫（App.init 內）。
     /// launchHandler 由系統在背景佇列呼叫，所以這裡明確標 nonisolated，
@@ -41,6 +40,7 @@ enum BackgroundRefresh {
         }
     }
 
+    @MainActor
     private static func handle(_ task: BGAppRefreshTask, container: ModelContainer) async {
         schedule() // 先排下一次，確保這次失敗也不會斷鏈
 

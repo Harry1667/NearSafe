@@ -13,6 +13,7 @@ struct EventListView: View {
     @State private var expandedSections: Set<String> = []
     @State private var selected: LocalSafetyEvent?
     @State private var selectedAlert: RegionAlert?
+    @State private var didOpenDebugDetail = false
 
     private var visibleEvents: [LocalSafetyEvent] {
         events.filter { !$0.isArchived && !EventVisibility.isSuppressed($0) }
@@ -80,9 +81,9 @@ struct EventListView: View {
             regionAlertSection
             // 顯示面積跟「可信度／急迫性」成正比：需要注意永遠攤開；
             // 未驗證的確認中、離圈遠的附近動態、已結束——預設收合，點標題展開
-            section(title: "需要注意", subtitle: "官方確認且位於生活圈提醒範圍內", items: attention)
-            section(title: "持續確認中", subtitle: "資料尚未充分驗證，不會推播", items: confirming, collapsible: true)
-            section(title: "附近動態", subtitle: "官方事件，離生活圈 30 公里內", items: elsewhere, collapsible: true)
+            section(title: "需要注意", subtitle: "官方確認且位於有效警戒圈內", items: attention)
+            section(title: "未驗證線索", subtitle: "資料尚未充分驗證，不會推播", items: confirming, collapsible: true)
+            section(title: "附近動態", subtitle: "官方事件，離警戒圈 30 公里內", items: elsewhere, collapsible: true)
             nationwideSection
             section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended, collapsible: true)
         }
@@ -95,6 +96,21 @@ struct EventListView: View {
         .sheet(isPresented: $showDrill) { DrillView() }
         .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
         .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
+        #if DEBUG
+        .task(id: events.count) {
+            guard !didOpenDebugDetail,
+                  ProcessInfo.processInfo.arguments.contains("--open-first-event-detail") else { return }
+            let target = attention.first { $0.eventKey.contains("NFA_Fire") }
+                ?? attention.first
+                ?? visibleEvents.first { $0.eventKey.contains("NFA_Fire") }
+                ?? visibleEvents.first
+            guard let target else { return }
+            didOpenDebugDetail = true
+            // 等 push 導航動畫完成再出 sheet，避免兩種轉場互相打斷。
+            try? await Task.sleep(for: .milliseconds(450))
+            selected = target
+        }
+        #endif
     }
 
     /// 品牌簽名：平安不是「沒有內容」，是產品最想傳達的一刻——同心圓環＝守護圈完好。
@@ -115,7 +131,7 @@ struct EventListView: View {
                     .background(HCColor.safe.gradient, in: Circle())
             }
             .accessibilityHidden(true)
-            Text("生活圈一切平安")
+            Text("警戒圈一切平安")
                 .font(.system(.headline, design: .rounded))
             Text("目前沒有需要注意的事件，守護持續進行中。")
                 .font(.caption)
@@ -194,7 +210,7 @@ struct EventListView: View {
                     }
                 }
             } footer: {
-                Text("離所有生活圈超過 30 公里的官方事件收在這裡，避免稀釋與你相關的訊號。")
+                Text("離所有警戒圈超過 30 公里的官方事件收在這裡，避免稀釋與你相關的訊號。")
             }
         }
     }
@@ -255,8 +271,10 @@ struct EventListView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     EventListView()
         .modelContainer(PreviewSupport.container())
         .environment(TabRouter())
 }
+#endif

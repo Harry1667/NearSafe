@@ -7,7 +7,7 @@ struct FamilyHubView: View {
     @State private var mode: Mode = .circles
 
     enum Mode: String, CaseIterable {
-        case circles = "生活圈"
+        case circles = "警戒圈"
         case checkIn = "安否回報"
     }
 
@@ -21,6 +21,8 @@ struct FamilyHubView: View {
                     SafetyCheckInView(myName: myName)
                 }
             }
+            // 功能導覽直接讀取目前內容區的實際版面，避免導航列高度改變時遮罩偏移。
+            .tourAnchor(.familyContent)
             .navigationTitle("家人")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -36,8 +38,10 @@ struct FamilyHubView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     FamilyHubView(myName: "我")
         .modelContainer(PreviewSupport.container())
         .environment(FamilySyncService())
 }
+#endif

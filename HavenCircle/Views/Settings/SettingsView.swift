@@ -74,6 +74,10 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    settingsRow("法律與隱私", subtitle: "隱私權政策、用戶協議與使用條款",
+                                icon: "hand.raised.square.fill", color: .purple) {
+                        LegalCenterView()
+                    }
                     settingsRow("資料來源", subtitle: "政府示警來源與資料新鮮度",
                                 icon: "antenna.radiowaves.left.and.right", color: .teal) {
                         DataSourceView()
@@ -97,7 +101,7 @@ struct SettingsView: View {
                         }
                     }
                     Button {
-                        // 種旗標＋關掉設定 sheet，AppTabs 觀察到旗標會切回安心頁開始導覽
+                        // 種旗標＋關掉設定 sheet，AppTabs 觀察到旗標會從安心頁開始跨分頁導覽
                         UserDefaults.standard.set(true, forKey: SettingsKeys.homeTourPending)
                         dismiss()
                     } label: {
@@ -131,10 +135,12 @@ struct SettingsView: View {
                     }
                     .disabled(isDeleting)
                 } footer: {
-                    Text("清除這支手機上的所有家人、生活圈與事件資料，並退出（擁有者則刪除）iCloud 家庭圈。此動作無法復原。")
+                    Text("清除這支手機上的所有家人、警戒圈與事件資料，停止即時位置分享，並退出（擁有者則刪除）iCloud 家庭圈。此動作無法復原。")
                 }
 
+                #if DEBUG
                 demoSection
+                #endif
 
                 Section {
                     Label("安心圈不是緊急服務。遇立即危險請直接撥打 110 或 119。", systemImage: "phone.fill")
@@ -270,11 +276,21 @@ struct SettingsView: View {
         }
     }
 
-    /// 刪除帳號與資料：雲端家庭圈 → 本機資料庫 → 偏好設定 → 待發通知。
+    /// 刪除帳號與資料：撤銷推播權杖 → 雲端家庭圈 → 本機資料庫 → 偏好設定 → 通知。
     /// 完成後 ContentView 會因旗標與資料清空自動回到新手設定。
     private func deleteEverything() async {
         isDeleting = true
         defer { isDeleting = false }
+        UserDefaults.standard.set(false, forKey: SettingsKeys.liveLocationSharingEnabled)
+        LocationService.shared.syncLiveLocationSharing(isEnabled: false)
+        // 先使用仍保留的權杖要求中繼站刪除，再清掉本機副本；即使離線失敗，
+        // Apple 之後也會讓失效權杖被 APNs 回收，且刪除流程不應因此卡住。
+        if !apnsToken.isEmpty {
+            await APNsRegistrar.unregister(token: apnsToken)
+        }
+        if UserDefaults.standard.string(forKey: SettingsKeys.liveLocationDeviceID) != nil {
+            await sync.stopLiveLocationSharing(context: context)
+        }
         await sync.leaveFamily()
         // 逐筆刪除，不用 delete(model:)：批次刪除走 CoreData batch delete，
         // 會撞上 LocalLifeCircle.member 強制反向關聯的約束（實機已踩到）；
@@ -300,7 +316,10 @@ struct SettingsView: View {
                     SettingsKeys.appleAccountEmail, SettingsKeys.onboardingCompleted,
                     SettingsKeys.lastDataRefresh, SettingsKeys.alertsEnabled,
                     SettingsKeys.alertsPaused, SettingsKeys.highConfidenceOnly,
-                    SettingsKeys.digestEnabled, SettingsKeys.digestHour] {
+                    SettingsKeys.digestEnabled, SettingsKeys.digestHour,
+                    SettingsKeys.liveLocationSharingEnabled, SettingsKeys.liveCircleRadiusMeters,
+                    SettingsKeys.liveLocationDeviceID, SettingsKeys.apnsDeviceToken,
+                    SettingsKeys.legalAcceptanceVersion] {
             UserDefaults.standard.removeObject(forKey: key)
         }
         EventVisibility.reset()
@@ -370,6 +389,7 @@ struct SettingsView: View {
 
 private struct AppleAccountView: View {
     @Environment(FamilySyncService.self) private var sync
+    @Environment(\.modelContext) private var context
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
     @State private var signInError: String?
@@ -425,7 +445,7 @@ private struct AppleAccountView: View {
             }
 
             Section("資料範圍") {
-                Text("Apple 帳號只用於家人安否回報的 iCloud 同步。生活圈與事件資料仍保存在此裝置。")
+                Text("Apple 帳號用於家人安否回報與即時圈位置的 iCloud 同步。固定圈與事件資料仍保存在此裝置。")
                     .font(.footnote)
             }
 
@@ -434,7 +454,7 @@ private struct AppleAccountView: View {
                     showLogoutConfirm = true
                 }
             } footer: {
-                Text("登出會清除此裝置顯示的名稱與 email，回到登入介面；生活圈與事件資料不受影響。iCloud 同步本身由系統設定管理。")
+                Text("登出會清除此裝置顯示的名稱與 email；固定圈與事件資料不受影響。請先在家人頁停止即時位置分享，iCloud 帳號本身由系統設定管理。")
             }
         }
         .navigationTitle("Apple 帳號")
@@ -442,9 +462,16 @@ private struct AppleAccountView: View {
         .task { await sync.refreshAccountStatus() }
         .confirmationDialog("確定要登出嗎？", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("登出", role: .destructive) {
-                appleEmail = ""
-                displayName = ""
-                showSignIn = true
+                Task {
+                    UserDefaults.standard.set(false, forKey: SettingsKeys.liveLocationSharingEnabled)
+                    LocationService.shared.syncLiveLocationSharing(isEnabled: false)
+                    if UserDefaults.standard.string(forKey: SettingsKeys.liveLocationDeviceID) != nil {
+                        await sync.stopLiveLocationSharing(context: context)
+                    }
+                    appleEmail = ""
+                    displayName = ""
+                    showSignIn = true
+                }
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -573,7 +600,7 @@ private struct AlertSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("資料與安全") {
-                Text("所有家人、生活圈與事件資料皆只保存在此裝置。刪除 App 會刪除本機資料。")
+                Text("固定圈、家人與事件資料保存在此裝置；主動開啟的即時圈位置透過家庭 iCloud 同步。刪除 App 會刪除本機資料。")
                 Text("安心圈不是 110、119 或緊急救難服務。遇立即危險請直接撥打 110 或 119。")
             }
         }

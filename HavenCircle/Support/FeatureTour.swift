@@ -1,8 +1,9 @@
 import SwiftUI
+import UIKit
 import os // Swift 6.2 MemberImportVisibility：用 os.Logger 插值的檔案必須自行 import
 
 // MARK: - 功能導覽（coach marks）
-// 黑色半透明遮罩＋聚光燈挖洞，逐步介紹安心頁每個元件與使用流程。
+// 半透明遮罩＋聚光燈挖洞，逐步介紹安心、地圖與家人頁的主要使用流程。
 // 觸發：Onboarding 完成後首次進主畫面（homeTourPending 旗標消耗制）；設定頁可重看。
 
 /// 導覽目標：目標元件用 .tourAnchor(_:) 登記自己的位置，遮罩層據此挖洞
@@ -14,10 +15,16 @@ enum TourTarget: String {
     case checkInButton
     /// 分頁列是 TabView 私有結構拿不到 anchor，用畫面底部矩形近似
     case tabBar
+    /// Map 與主要內容使用實際 anchor；系統 toolbar 無法直接取 anchor 時才用安全區域降級推算
+    case mapCanvas
+    case mapControls
+    case familyModes
+    case familyContent
 }
 
 struct TourStep {
     let target: TourTarget
+    let tab: Int
     let title: String
     let message: String
 }
@@ -52,31 +59,32 @@ struct FeatureTourView: View {
     let anchors: [TourTarget: Anchor<CGRect>]
     /// nil＝導覽未進行；由 AppTabs 持有
     @Binding var stepIndex: Int?
+    /// 導覽跨到下一個一級頁面時，同步驅動 TabView 自動切頁
+    @Binding var selectedTab: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AccessibilityFocusState private var isCardFocused: Bool
 
     private static let allSteps: [TourStep] = [
-        .init(target: .statusHero, title: "一眼看到全家狀態",
-              message: "打開 App 第一眼：綠盾牌＝生活圈平安。有官方事件靠近時，這裡會整個變成紅色警示並帶你去看地圖。"),
-        .init(target: .familyList, title: "家人與重要地點",
-              message: "每位家人一行：圈內有沒有事件、最後一次回報平安是什麼時候。綠點＝目前無事。"),
-        .init(target: .watchRow, title: "背景看守中",
-              message: "沒讓你分心的事件都收在這——確認中的媒體報導、其他區域的官方事件、區域警報。點它進提醒中心看全部。"),
-        .init(target: .historyRow, title: "回顧過去 7 天",
-              message: "發生過什麼、何時解除，都留有紀錄，隨時回頭查。"),
-        .init(target: .checkInButton, title: "報個平安",
-              message: "災後最重要的一顆按鈕：一鍵告訴全家「我平安」，可選擇附上當下位置（只在按下的那一刻分享一次）。"),
-        .init(target: .tabBar, title: "地圖與家人",
-              message: "「安全地圖」看事件位置與警報範圍；「家人」管理生活圈、新增重要地點、邀請家人。"),
+        .init(target: .statusHero, tab: TabRouter.homeTab, title: "一眼看到全家狀態",
+              message: "打開 App 第一眼就會用文字告訴你：警戒圈是否平安、是否有事件靠近，以及即時位置是否超過 15 分鐘未更新。"),
+        .init(target: .mapCanvas, tab: TabRouter.mapTab, title: "安全地圖",
+              message: "地圖同時呈現家人主動分享的即時圈、你儲存的固定圈、官方警報範圍與事件位置；每個即時圈都會標示最後更新時間。"),
+        .init(target: .familyContent, tab: TabRouter.familyTab, title: "管理家人與重要地點",
+              message: "在「警戒圈」開啟自己的即時圈，或新增住家、倉庫、家人的家等固定圈；每位家人都必須在自己的手機上同意位置分享。"),
+        .init(target: .checkInButton, tab: TabRouter.homeTab, title: "回報平安，完成導覽",
+              message: "一鍵告訴全家「我平安」，也可只在送出當下附上一次位置。完成後會留在安心總覽；下一步可到「家人」邀請成員。"),
     ]
 
-    /// 只導覽畫面上真的存在的元件（例如還沒有家人時跳過家人列）
+    /// 跨頁目標不能用當下頁面的 anchors 篩掉，否則尚未切入的頁面永遠不會被介紹。
     private var steps: [TourStep] {
-        Self.allSteps.filter { anchors[$0.target] != nil || $0.target == .tabBar }
+        Self.allSteps
     }
 
     var body: some View {
         GeometryReader { proxy in
             let _ = {
-                let missing = Self.allSteps.map(\.target).filter { anchors[$0] == nil && $0 != .tabBar }
+                let anchoredTargets: [TourTarget] = [.statusHero, .mapCanvas, .familyContent, .checkInButton]
+                let missing = anchoredTargets.filter { anchors[$0] == nil }
                 if !missing.isEmpty {
                     AppLog.pipeline.info("導覽缺錨點：\(missing.map(\.rawValue).joined(separator: ","))")
                 }
@@ -98,40 +106,125 @@ struct FeatureTourView: View {
                     card(step: step, index: index, near: rect, in: proxy)
                 }
                 .transition(.opacity)
+                .accessibilityAddTraits(.isModal)
             }
         }
-        .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.25), value: stepIndex)
-    }
-
-    /// 目標挖洞範圍：anchor 外擴 8pt；分頁列用畫面底部近似
-    private func cutoutRect(for target: TourTarget, in proxy: GeometryProxy) -> CGRect {
-        if target == .tabBar {
-            return CGRect(x: 12, y: proxy.size.height - 104, width: proxy.size.width - 24, height: 88)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: stepIndex)
+        .onAppear { focusCurrentCard() }
+        .onChange(of: stepIndex) { _, newValue in
+            guard newValue != nil else { return }
+            focusCurrentCard()
         }
-        guard let anchor = anchors[target] else { return .zero }
-        return proxy[anchor].insetBy(dx: -8, dy: -8)
     }
 
-    /// 說明卡：目標在上半場放下方、在下半場放上方，避免遮住主角
+    /// 目標挖洞範圍：優先使用實際 anchor；只有系統私有容器才以安全區域降級推算。
+    /// FeatureTourView 本身不可 ignoresSafeArea，否則 GeometryProxy 的 safeAreaInsets 會歸零，
+    /// 在瀏海／動態島高度不同的裝置上造成整個聚光窗位移。
+    private func cutoutRect(for target: TourTarget, in proxy: GeometryProxy) -> CGRect {
+        let width = proxy.size.width
+        let height = proxy.size.height
+        let safeTop = proxy.safeAreaInsets.top
+
+        if let anchor = anchors[target] {
+            let anchoredRect = proxy[anchor]
+            switch target {
+            case .mapCanvas, .familyContent:
+                return contentSpotlightRect(from: anchoredRect, in: proxy)
+            default:
+                return clamped(anchoredRect.insetBy(dx: -8, dy: -8), in: proxy)
+            }
+        }
+
+        switch target {
+        case .tabBar:
+            return clamped(
+                CGRect(x: 12, y: height - proxy.safeAreaInsets.bottom - 76, width: width - 24, height: 64),
+                in: proxy
+            )
+        case .mapCanvas:
+            let top = safeTop + 56
+            let availableHeight = max(180, height - top - 250)
+            return clamped(
+                CGRect(x: 12, y: top, width: width - 24, height: min(360, availableHeight)),
+                in: proxy
+            )
+        case .mapControls:
+            let controlWidth = min(236, width - 24)
+            return clamped(
+                CGRect(x: width - controlWidth - 8, y: safeTop, width: controlWidth, height: 48),
+                in: proxy
+            )
+        case .familyModes:
+            let controlWidth = min(244, width - 32)
+            return clamped(
+                CGRect(x: (width - controlWidth) / 2, y: safeTop, width: controlWidth, height: 48),
+                in: proxy
+            )
+        case .familyContent:
+            let top = safeTop + 56
+            let availableHeight = max(160, height - top - 250)
+            return clamped(
+                CGRect(x: 12, y: top, width: width - 24, height: min(360, availableHeight)),
+                in: proxy
+            )
+        default:
+            return clamped(
+                CGRect(x: 12, y: safeTop + 56, width: width - 24, height: 96),
+                in: proxy
+            )
+        }
+    }
+
+    /// 地圖與家人清單可能比螢幕還高；聚光窗取其實際可見區域上半段，
+    /// 留出下方空間擺說明卡，同時不再依賴特定機型的狀態列高度。
+    private func contentSpotlightRect(from anchoredRect: CGRect, in proxy: GeometryProxy) -> CGRect {
+        let horizontalInset: CGFloat = 12
+        let navigationBottom = proxy.safeAreaInsets.top + 56
+        let top = max(anchoredRect.minY + 12, navigationBottom)
+        let left = max(horizontalInset, anchoredRect.minX + horizontalInset)
+        let right = min(proxy.size.width - horizontalInset, anchoredRect.maxX - horizontalInset)
+        let availableHeight = max(160, anchoredRect.maxY - top - 12)
+        return clamped(
+            CGRect(x: left, y: top, width: max(0, right - left), height: min(360, availableHeight)),
+            in: proxy
+        )
+    }
+
+    private func clamped(_ rect: CGRect, in proxy: GeometryProxy) -> CGRect {
+        let bounds = CGRect(origin: .zero, size: proxy.size).insetBy(dx: 2, dy: 2)
+        let intersection = rect.standardized.intersection(bounds)
+        return intersection.isNull || intersection.isEmpty
+            ? CGRect(x: 12, y: proxy.safeAreaInsets.top + 56, width: max(0, proxy.size.width - 24), height: 96)
+            : intersection
+    }
+
+    /// 說明卡：目標在上半場放下方、在下半場放上方，避免遮住主角。
+    /// 不用 ScrollView 當最外層：ScrollView 會貪滿 maxHeight，形成大片黑色空白邊。
     private func card(step: TourStep, index: Int, near rect: CGRect, in proxy: GeometryProxy) -> some View {
         let placeBelow = rect.midY < proxy.size.height / 2
+        let estimatedCardHeight = min(230, proxy.size.height * 0.32)
         return VStack(alignment: .leading, spacing: HCSpacing.x2) {
             Text(step.title)
                 .font(.system(.title3, design: .rounded, weight: .bold))
                 .foregroundStyle(.white)
             Text(step.message)
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(.white.opacity(0.9))
                 .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Button("略過導覽") { stepIndex = nil }
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.6))
+            HStack(spacing: 12) {
+                Button("略過") { finishTour() }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+                if index > 0 {
+                    Button("上一步", systemImage: "chevron.left") { goBack() }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
                 Spacer()
                 Text("\(index + 1) / \(steps.count)")
                     .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .accessibilityLabel("第 \(index + 1) 步，共 \(steps.count) 步")
                 Button(index + 1 == steps.count ? "完成" : "下一步") { advance() }
                     .font(.callout.bold())
                     .foregroundStyle(.white)
@@ -142,19 +235,56 @@ struct FeatureTourView: View {
             .padding(.top, 4)
         }
         .padding(HCSpacing.x4)
+        .fixedSize(horizontal: false, vertical: true)
         .background(Color(white: 0.12).opacity(0.95), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
         .padding(.horizontal, HCSpacing.x4)
         .frame(maxWidth: .infinity)
-        .offset(y: placeBelow ? min(rect.maxY + 16, proxy.size.height - 260)
-                              : max(rect.minY - 236, 60))
+        .offset(y: placeBelow ? min(rect.maxY + 16, proxy.size.height - estimatedCardHeight - 20)
+                              : max(rect.minY - estimatedCardHeight - 16, 60))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("功能導覽：\(step.title)")
+        .accessibilityFocused($isCardFocused)
     }
 
     private func advance() {
         guard let index = stepIndex else { return }
         if index + 1 < steps.count {
-            stepIndex = index + 1
+            let nextIndex = index + 1
+            // 先切到目標分頁，再讓下一張說明卡取代目前步驟。
+            // 同一個 SwiftUI 更新週期完成，不會要求使用者手動點分頁列。
+            move(to: nextIndex)
         } else {
-            stepIndex = nil
+            finishTour()
         }
+    }
+
+    private func goBack() {
+        guard let index = stepIndex, index > 0 else { return }
+        move(to: index - 1)
+    }
+
+    private func move(to index: Int) {
+        selectedTab = steps[index].tab
+        stepIndex = index
+        announcePage(for: steps[index].tab)
+    }
+
+    private func finishTour() {
+        selectedTab = TabRouter.homeTab
+        stepIndex = nil
+        UIAccessibility.post(notification: .announcement, argument: "功能導覽完成，已回到安心頁")
+    }
+
+    private func announcePage(for tab: Int) {
+        let pageName = switch tab {
+        case TabRouter.mapTab: "安全地圖頁"
+        case TabRouter.familyTab: "家人頁"
+        default: "安心頁"
+        }
+        UIAccessibility.post(notification: .announcement, argument: "已切換到\(pageName)")
+    }
+
+    private func focusCurrentCard() {
+        DispatchQueue.main.async { isCardFocused = true }
     }
 }

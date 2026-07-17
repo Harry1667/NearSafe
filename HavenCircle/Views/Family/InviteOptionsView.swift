@@ -4,13 +4,18 @@ import CoreImage.CIFilterBuiltins
 import UIKit
 
 /// 邀請方式選單：QR code（相機掃了就能加入）、8 位邀請碼（用唸的也行）、系統分享面板。
-/// 三種方式底層都是同一條 CKShare 連結，只是遞送手段不同。
+/// QR 與邀請碼使用一次性私人參與者 URL，不能直接使用未授權收件者無法開啟的一般 CKShare URL。
 struct InviteOptionsView: View {
     let share: CKShare
     let container: CKContainer
 
+    @Environment(FamilySyncService.self) private var sync
     @Environment(\.dismiss) private var dismiss
     @State private var showSystemShare = false
+    @State private var invitationURL: URL?
+    @State private var invitationError: String?
+    @State private var isPreparingInvitation = true
+    @State private var hasPreparedInvitation = false
     @State private var inviteCode: String?
     @State private var codeError: String?
     @State private var isGeneratingCode = false
@@ -18,14 +23,28 @@ struct InviteOptionsView: View {
     var body: some View {
         NavigationStack {
             List {
-                if let url = share.url {
+                if let url = invitationURL {
                     qrSection(url: url)
                     codeSection(url: url)
-                } else {
-                    // 理論上 makeShare 存檔成功後一定有 url；保留降級路徑不讓畫面開天窗
+                } else if isPreparingInvitation || !hasPreparedInvitation {
                     Section {
-                        Label("分享連結尚未就緒，請改用下方系統分享", systemImage: "exclamationmark.triangle")
+                        HStack {
+                            ProgressView()
+                            Text("正在建立私人邀請⋯")
+                        }
+                    }
+                } else {
+                    Section {
+                        Label("QR 私人邀請暫時無法建立", systemImage: "exclamationmark.triangle")
                             .foregroundStyle(HCColor.attention)
+                        if let invitationError {
+                            Text(invitationError)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("重新建立", systemImage: "arrow.clockwise") {
+                            Task { await prepareInvitation() }
+                        }
                     }
                 }
                 Section {
@@ -42,6 +61,7 @@ struct InviteOptionsView: View {
             .sheet(isPresented: $showSystemShare) {
                 CloudSharingSheet(share: share, container: container)
             }
+            .task { await prepareInvitation() }
         }
     }
 
@@ -63,7 +83,7 @@ struct InviteOptionsView: View {
                 Spacer()
             }
             .padding(.vertical, 8)
-            Text("請家人用 iPhone 相機掃描，點開連結即可加入。")
+            Text("請一位家人用 iPhone 相機掃描並接受邀請。這是私人一次性連結，使用後不能轉給其他人。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -115,6 +135,23 @@ struct InviteOptionsView: View {
             inviteCode = try await JoinCodeService.createCode(for: url)
         } catch {
             codeError = error.localizedDescription
+        }
+    }
+
+    private func prepareInvitation() async {
+        guard !hasPreparedInvitation || invitationError != nil else { return }
+        isPreparingInvitation = true
+        invitationError = nil
+        inviteCode = nil
+        defer {
+            isPreparingInvitation = false
+            hasPreparedInvitation = true
+        }
+        do {
+            invitationURL = try await sync.makeOneTimeInvitation(for: share)
+        } catch {
+            invitationURL = nil
+            invitationError = error.localizedDescription
         }
     }
 

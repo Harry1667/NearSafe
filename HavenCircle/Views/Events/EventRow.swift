@@ -52,7 +52,7 @@ struct EventRow: View {
 func relativeDistance(_ event: LocalSafetyEvent, _ members: [LocalFamilyMember]) -> String {
     let point = CLLocation(latitude: event.latitude, longitude: event.longitude)
     let candidates = members.flatMap { member in
-        member.lifeCircles.map { circle in
+        member.lifeCircles.filter(\.isActiveForAlerts).map { circle in
             (
                 ownerName: member.name,
                 circleName: circle.name,
@@ -60,7 +60,7 @@ func relativeDistance(_ event: LocalSafetyEvent, _ members: [LocalFamilyMember])
             )
         }
     }
-    guard let nearest = candidates.min(by: { $0.distance < $1.distance }) else { return "尚未設定生活圈" }
+    guard let nearest = candidates.min(by: { $0.distance < $1.distance }) else { return "尚未設定警戒圈" }
     let meters = max(Int(nearest.distance / 100) * 100, 100)
     if meters >= 1_000 {
         let km = Double(meters) / 1_000
@@ -80,17 +80,17 @@ func relativeTime(_ date: Date) -> String {
     return "\(hours / 24) 天前"
 }
 
-/// 「附近」的距離語意：離所有生活圈超過這個距離的事件不算「附近」。
+/// 「附近」的距離語意：離所有有效警戒圈超過這個距離的事件不算「附近」。
 /// 審查發現：沒有上限時，145 公里外的花蓮路況會被當「附近更新」推到台北使用者眼前，
 /// 稀釋真正相關的訊號。超過上限的事件收進「全台其他」次級清單，不是消失。
 enum NearbyScope {
     static let maxMeters: Double = 30_000
 }
 
-/// 事件到最近生活圈的距離（公尺），供排序使用
+/// 事件到最近有效警戒圈的距離（公尺），供排序使用
 func nearestCircleDistance(_ event: LocalSafetyEvent, _ members: [LocalFamilyMember]) -> Double {
     let point = CLLocation(latitude: event.latitude, longitude: event.longitude)
-    return members.flatMap(\.lifeCircles)
+    return members.flatMap(\.lifeCircles).filter(\.isActiveForAlerts)
         .map { point.distance(from: CLLocation(latitude: $0.latitude, longitude: $0.longitude)) }
         .min() ?? .greatestFiniteMagnitude
 }

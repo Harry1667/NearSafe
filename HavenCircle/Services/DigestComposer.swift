@@ -14,10 +14,10 @@ enum DigestComposer {
 
         if attention.isEmpty {
             if filteredCount > 0 {
-                return "今天，家人生活圈附近暫無高風險事件。安心圈已為你過濾 \(filteredCount) 件低風險或未驗證資訊。"
+                return "今天，家人警戒圈附近暫無高風險事件。安心圈已為你過濾 \(filteredCount) 件低風險或未驗證資訊。"
             }
-            return "今天，家人生活圈附近暫無高風險事件。"
+            return "今天，家人警戒圈附近暫無高風險事件。"
         }
-        return "今天家人生活圈附近有 \(attention.count) 件需要注意的事件，請開啟安心圈查看詳情。"
+        return "今天家人警戒圈附近有 \(attention.count) 件需要注意的事件，請開啟安心圈查看詳情。"
     }
 }

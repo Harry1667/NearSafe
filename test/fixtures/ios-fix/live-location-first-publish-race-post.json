@@ -1,0 +1,33 @@
+{
+  "bug": "live-location-first-publish-race",
+  "capturedAt": "2026-07-17T11:36:17+08:00",
+  "device": "physical iPhone, identifiers redacted",
+  "result": "race, stale-location gate, and CloudKit readback fixed on physical device",
+  "events": [
+    {
+      "level": "注意",
+      "category": "即時圈上傳",
+      "message": "略過陳舊或低精度定位"
+    },
+    {
+      "level": "資訊",
+      "category": "即時圈上傳",
+      "message": "已有一筆 CloudKit 寫入進行中；本次重複定位回呼已合併"
+    },
+    {
+      "level": "通過",
+      "category": "即時圈上傳",
+      "message": "CloudKit 最新位置寫入成功"
+    },
+    {
+      "level": "通過",
+      "category": "即時圈下載",
+      "message": "讀取到 1 筆家庭最新位置"
+    }
+  ],
+  "absent": [
+    "record to insert already exists",
+    "即時位置同步失敗",
+    "Field 'recordName' is not marked queryable"
+  ]
+}

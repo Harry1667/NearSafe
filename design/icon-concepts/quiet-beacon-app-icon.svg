@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="96" y1="64" x2="928" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0D294A"/>
+      <stop offset="0.52" stop-color="#0B2443"/>
+      <stop offset="1" stop-color="#081D38"/>
+    </linearGradient>
+    <linearGradient id="outerRing" x1="332" y1="224" x2="798" y2="790" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B64E6"/>
+      <stop offset="1" stop-color="#3158D5"/>
+    </linearGradient>
+    <linearGradient id="innerRing" x1="427" y1="330" x2="731" y2="668" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#16A092"/>
+      <stop offset="1" stop-color="#11877D"/>
+    </linearGradient>
+    <linearGradient id="home" x1="466" y1="432" x2="604" y2="596" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D0EEE7"/>
+      <stop offset="1" stop-color="#BFDCD5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed square artwork. iOS applies the final rounded-rectangle mask. -->
+  <rect width="1024" height="1024" fill="url(#background)"/>
+
+  <g fill="none" stroke-linecap="round">
+    <path
+      d="M594 233 A288 288 0 1 0 795 616"
+      stroke="url(#outerRing)"
+      stroke-width="56"
+    />
+    <path
+      d="M620 333 A204 204 0 1 0 729 522"
+      stroke="url(#innerRing)"
+      stroke-width="56"
+    />
+  </g>
+
+  <path
+    fill="url(#home)"
+    fill-rule="evenodd"
+    d="
+      M535 417
+      C501 438 453 479 453 527
+      C453 568 481 594 519 599
+      L519 531
+      C519 511 534 496 553 496
+      C573 496 588 511 588 531
+      L588 594
+      C611 582 626 557 626 527
+      C626 478 575 437 535 417
+      Z
+    "
+  />
+</svg>

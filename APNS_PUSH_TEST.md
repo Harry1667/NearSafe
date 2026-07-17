@@ -1,115 +1,102 @@
-# APNs 推播測試操作說明
+# APNs 實機推播驗證
 
-> 對應 App 端垂直切片（2026-07-16）：App 啟動即註冊 APNs 並把裝置權杖存本機；
-> 設定頁「示範與開發」區可複製權杖；點擊通知會 deep link 到提醒中心。
-> 後端（Oracle）發送服務尚未建置，本文件說明如何**不寫後端**就驗證整條推播路徑。
+> 更新：2026-07-17。APNs 後端與 `.p8` 金鑰已上線；目前缺的是 Development 與 Production 各一次實機收件證據。
 
-## 路徑總覽
+## 先回答：要不要先上 TestFlight？
 
-```
-Apple Push Console（手動發送） ──► APNs ──► 實機收到推播 ──► 點擊 ──► App 開啟提醒中心
-```
+不用。第一輪直接用 Xcode 把 Debug build 裝到 iPhone，速度最快，也能驗證通知權限、APNs sandbox、背景喚醒與 deep link。介面封版後再用 TestFlight 驗證 Release build 的 production APNs，作為提交前的第二道證據。
 
-App 端已完成的部分：
-- `HavenCircleApp.swift`：啟動時 `registerForRemoteNotifications()`
-- `ShareAcceptance.swift`（AppDelegate）：收到權杖轉十六進位存 `UserDefaults`（鍵：`apnsDeviceToken`）
-- 設定頁 → 示範與開發 → 「APNs 裝置權杖」點一下複製
-- `NotificationDelegate.didReceive`：點通知 → `havencircle://alerts` → 提醒中心分頁
+| 安裝方式 | APNs 環境 | 用途 |
+| --- | --- | --- |
+| Xcode Debug 實機 | sandbox / Development | 開發期找問題、讀完整診斷 Log |
+| TestFlight | production | 封版後確認正式簽名、production token 與真實安裝流程 |
 
-## 方法一：Apple Push Console（實機，推薦）
+App 上傳權杖時會附上 build 環境，伺服器會自動選擇對應 APNs 主機；不同環境的 token 不能混用。
 
-前置：實機安裝 Development 簽名的 build（entitlements 已含 `aps-environment: development`）。
+## 測試前準備
 
-1. 實機開 App → 設定分頁 → 「示範與開發」→ 點權杖複製（AirDrop / 備忘錄同步到 Mac）
-2. 用開發者帳號登入 [icloud.developer.apple.com/dashboard](https://icloud.developer.apple.com/dashboard/)
-3. 選 App ID `com.gomiigo.CamMenuApp.HavenCircle` → **Push Notifications Console**
-4. Create New Notification：
-   - Environment：**Development**（簽名環境要對，不然回 `BadDeviceToken`）
-   - Device Token：貼上剛複製的權杖
-   - Payload：
+1. iPhone 登入 iCloud，接上 Mac，在 Xcode 選擇該 iPhone 後執行 Debug build。
+2. 開啟 App → 設定 → **Debug 實機測試** → **實機診斷金手指**。
+3. 先按「清除」，再按「一鍵執行實機檢查」，允許通知與定位。
+4. 若要驗證背景定位，另按「要求永遠允許定位」，並在系統設定確認定位權限為「永遠」。
+5. 複製診斷報告留存。報告不包含完整 APNs token、精確座標、住址或家人姓名。
 
-   ```json
-   {
-     "aps": {
-       "alert": {
-         "title": "地震速報：臺北市南港區",
-         "body": "官方確認事件落在「住家」提醒範圍內，請留意家人狀況。"
-       },
-       "sound": "default"
-     }
-   }
-   ```
+App 每次啟動都會自動留下裝置、Background Modes、通知權限、定位權限、APNs token 是否存在與 iCloud 狀態；一鍵檢查會再測定位回呼、NCDR API 及 5 秒本機診斷通知。
 
-5. Send → 實機鎖屏應在數秒內收到 → 點擊通知 → App 直接開在提醒中心
+> 「5 秒本機診斷通知」只證明通知權限與系統呈現正常，**不等於 APNs 證據**。
 
-## 方法二：模擬器（免開發者帳號、免實機）
+## 方法一：Apple Push Notification Console
 
-模擬器不走真 APNs，但 `simctl push` 走同一條系統通知管線，可驗證「收到→點擊→deep link」：
+適合驗證單一 Development token 與保存 Apple 的送達紀錄。
 
-```bash
-# 存成 demo.apns（"Simulator Target Bundle" 讓拖曳安裝也能用）
-cat > demo.apns <<'EOF'
+1. 在 Debug 設定頁複製 APNs 裝置權杖。
+2. 登入 [Apple Push Notification Console](https://icloud.developer.apple.com/dashboard/notifications/teams/)。
+3. 選 App ID `com.gomiigo.CamMenuApp.HavenCircle`。
+4. Environment 選 **Development**，貼上該 Debug build 的 token。
+5. 發送以下可見通知：
+
+```json
 {
-  "Simulator Target Bundle": "com.gomiigo.CamMenuApp.HavenCircle",
   "aps": {
     "alert": {
-      "title": "地震速報：臺北市南港區",
-      "body": "官方確認事件落在「住家」提醒範圍內，請留意家人狀況。"
+      "title": "安心圈實機驗證",
+      "body": "APNs 已送達；點擊後應開啟提醒中心。"
     },
     "sound": "default"
   }
 }
-EOF
-
-xcrun simctl push 58EB62E3-88E2-4827-B286-95382DD94AD7 com.gomiigo.CamMenuApp.HavenCircle demo.apns
 ```
 
-## 方法三：App 內模擬按鈕（Demo 現場最穩）
+6. 鎖定 iPhone，錄下通知到達與點擊後開啟提醒中心。
+7. 截圖 Push Notification Console 的 delivery log；裝置 token 需遮蔽，只保留環境、時間與成功狀態。
 
-設定頁 → 示範與開發 → 「模擬警報通知（示範用）」：本機通知延遲 5 秒發送，
-留時間鎖定螢幕展示鎖屏通知。標題帶【示範】字樣——對評審誠實標示這是本機示範，
-不冒充伺服器推播。
+## 方法二：HavenCircle 伺服器
 
-## 方法四：伺服器主動推送（正式架構，2026-07-16 上線）
+整條正式鏈為：App 上傳 token → Oracle 登記 → NCDR cron 發無聲喚醒 → App 在裝置端更新事件、比對警戒圈 → 命中時才發本機通知。
 
-整條鏈：App 啟動自動上傳權杖 → Oracle `/apns/register.php` 登記 →
-cron（每 5 分鐘）比對 NCDR `latest.json` 的警報 identifier → 有新警報就對
-所有裝置廣播「無聲喚醒」→ 裝置被叫醒後自己跑資料管線、比對生活圈、
-相關才發本機通知。
+伺服器只保存推播所需 token 與環境，不接收警戒圈、最新位置或位置軌跡；最新位置只透過家庭 iCloud CKShare 分享。
 
-**零追蹤設計**：伺服器只存權杖，不存位置／生活圈；喚醒是無差別廣播，
-「這則警報跟我家有沒有關係」永遠只在裝置上判斷。
-
-**產品鐵律**：cron 只看 NCDR 官方資料集；媒體報導（news）永遠不觸發推播。
-
-伺服器端檔案（`website/apns/`，部署於 havencircle.looptw.com/apns/）：
-
-| 檔案 | 用途 |
-|---|---|
-| `register.php` | App 上傳權杖（開放端點，格式驗證＋上限 500） |
-| `notify_all.php` | 手動廣播（需 `X-Admin-Key`；`mode=alert` 可發可見通知供 Demo） |
-| `cron_check.php` | cron 每 5 分鐘偵測新警報 → 自動廣播無聲喚醒 |
-| `data/` | 權杖清單、.p8 私鑰、log（nginx deny all，外部抓不到） |
-
-手動廣播測試（admin key 在伺服器 `_apns_config.php`）：
+管理金鑰只放在目前 Terminal 的環境變數，不能寫入 App、文件、影片或 git：
 
 ```bash
-# 無聲喚醒（正式模式）
-curl -X POST https://havencircle.looptw.com/apns/notify_all.php \
-  -H "X-Admin-Key: <admin-key>" -d '{}'
+export HAVENCIRCLE_APNS_ADMIN_KEY='在這裡貼伺服器管理金鑰'
 
-# 可見通知（Demo 用）
+# 可見 APNs：驗證伺服器 → APNs → 鎖屏通知
 curl -X POST https://havencircle.looptw.com/apns/notify_all.php \
-  -H "X-Admin-Key: <admin-key>" \
-  -d '{"mode":"alert","title":"安心圈","body":"這是伺服器推送測試"}'
+  -H "X-Admin-Key: $HAVENCIRCLE_APNS_ADMIN_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"alert","title":"安心圈實機驗證","body":"伺服器 APNs 已送達；點擊查看提醒中心。"}'
+
+# 無聲 APNs：驗證背景喚醒與裝置端事件管線
+curl -X POST https://havencircle.looptw.com/apns/notify_all.php \
+  -H "X-Admin-Key: $HAVENCIRCLE_APNS_ADMIN_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{}'
 ```
 
-## 已知限制（下一步）
+預期結果：
 
-- **APNs 金鑰尚未安裝**：需到 developer.apple.com → Keys 生成 APNs Auth Key（.p8），
-  把檔案放到伺服器 `apns/data/AuthKey.p8`、Key ID 填入 `_apns_config.php` 後，
-  發送才會真正生效（在那之前 cron 會記錄「金鑰尚未安裝」並跳過）
-- Development（Xcode 直裝）走 sandbox 環境、TestFlight/上架走 production，
-  App 會依 build 型態自動帶對環境，伺服器據此選擇 APNs 主機
-- 無聲喚醒（content-available）受 iOS 節流：頻率上限大約每小時數次，
-  且低電量模式可能延遲——這是 Apple 的系統行為，所有 App 一視同仁
+- HTTP 回應顯示至少一台相符環境裝置送出成功；若同時有 sandbox 與 production token，要分開看各環境結果。
+- 可見推播在鎖屏出現，點擊後進提醒中心。
+- 無聲推播本身不應出現橫幅；重新打開診斷頁，Log 應出現「收到背景遠端通知」及事件管線完成狀態。
+- 若當下沒有新的相關官方事件，無聲喚醒後沒有使用者通知是正確結果，不能把它判定為失敗。
+
+## 測試矩陣與通過條件
+
+| 編號 | Build | 測試 | 通過條件 |
+| --- | --- | --- | --- |
+| P01 | Xcode Debug | 權限＋本機通知 | Log 有授權結果，5 秒通知可見 |
+| P02 | Xcode Debug | Development 可見 APNs | 鎖屏收件、點擊進提醒中心、Apple／伺服器成功紀錄 |
+| P03 | Xcode Debug | Development 無聲 APNs | 背景 callback 與事件管線完成 Log |
+| P04 | TestFlight | Production 可見 APNs | 正式安裝可收件、點擊 deep link 正確 |
+| P05 | TestFlight | Production 無聲 APNs | 背景 callback 與事件管線完成，無錯誤假成功 |
+
+## 常見失敗判讀
+
+- `BadDeviceToken`：token 與 Development／Production 環境不一致，先刪除 App、重裝並重新複製 token。
+- 診斷顯示沒有 token：確認 Signing & Capabilities 有 Push Notifications，網路正常，重新啟動 App。
+- 只有本機通知成功：只能證明通知權限，尚未證明 APNs。
+- 可見通知成功、無聲喚醒偶爾延遲：iOS 會依電量、使用狀態與系統預算調度背景推播，需記錄實際時間，不能承諾固定秒數。
+- 使用者手動從 App Switcher 強制結束 App：不要作為背景持續更新的成功案例；把它列為獨立邊界測試並如實記錄。
+
+完整背景定位與雙機證據流程見 `submission/DEVICE_EVIDENCE_PLAN.md`。

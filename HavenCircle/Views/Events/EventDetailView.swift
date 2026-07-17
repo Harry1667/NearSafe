@@ -53,7 +53,7 @@ struct EventDetailView: View {
             } else {
                 Text(event.isOfficiallyConfirmed
                      ? "官方來源已確認。若有立即危險，請直接撥打 110 或 119。"
-                     : "資料仍在確認中，不會自動通知家人。")
+                     : "這是未驗證線索，資料仍在確認中，不會自動通知家人。")
             }
         }
     }

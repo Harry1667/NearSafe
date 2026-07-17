@@ -29,6 +29,7 @@ enum AlertPolicy {
 
         for member in members {
             for circle in member.lifeCircles {
+                guard circle.isActiveForAlerts else { continue }
                 guard circle.alertTypes.contains(event.eventType) else { continue }
                 let distance = point.distance(
                     from: CLLocation(latitude: circle.latitude, longitude: circle.longitude)
@@ -45,19 +46,19 @@ enum AlertPolicy {
         }
 
         guard !matches.isEmpty else {
-            return AlertDecision(shouldPush: false, matches: [], reason: "事件不在任何生活圈的提醒範圍內")
+            return AlertDecision(shouldPush: false, matches: [], reason: "事件不在任何有效警戒圈的提醒範圍內")
         }
         guard event.isOfficiallyConfirmed else {
             return AlertDecision(shouldPush: false, matches: matches, reason: "未驗證線索僅在 App 內顯示，不會推播")
         }
         let inSchedule = matches.filter(\.withinSchedule)
         guard let best = inSchedule.min(by: { $0.distanceMeters < $1.distanceMeters }) else {
-            return AlertDecision(shouldPush: false, matches: matches, reason: "相關生活圈都在提醒時段外，僅在 App 內顯示")
+            return AlertDecision(shouldPush: false, matches: matches, reason: "相關警戒圈都在提醒時段外，僅在 App 內顯示")
         }
         return AlertDecision(
             shouldPush: true,
             matches: matches,
-            reason: "事件位於\(best.memberName)的「\(best.circleName)」生活圈約 \(best.distanceMeters) 公尺內，\(event.trustStatus)"
+            reason: "事件位於\(best.memberName)的「\(best.circleName)」警戒圈約 \(best.distanceMeters) 公尺內，\(event.trustStatus)"
         )
     }
 }

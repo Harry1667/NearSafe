@@ -1,6 +1,25 @@
 import Foundation
 import SwiftData
 
+enum LifeCircleKind: String, CaseIterable {
+    case live
+    case fixed
+
+    var title: String {
+        switch self {
+        case .live: "即時圈"
+        case .fixed: "固定圈"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .live: "location.fill"
+        case .fixed: "mappin.and.ellipse"
+        }
+    }
+}
+
 @Model
 final class LocalLifeCircle {
     @Attribute(.unique) var circleKey: String
@@ -21,9 +40,13 @@ final class LocalLifeCircle {
     var scheduleEndHour: Int = 24
     /// 所在行政區（供區域型警報比對；「未指定」表示不參與區域警報）
     var district: String = "未指定"
-    /// 跟隨圈：圈心跟著這台手機移動（顯著位置變更時由 FollowCircleService 更新）。
-    /// 使用者明確開啟才成立；位置只寫本機資料庫，不上傳、不分享
+    /// 圈類型：fixed＝固定資產／地點，live＝由家人手機共享的移動警戒圈。
+    /// 保留 isFollowMe 供舊資料遷移；本機擁有者的 live circle 會同時設為 true。
+    var kindRawValue: String = "fixed"
     var isFollowMe: Bool = false
+    /// 即時圈的位置時效與 CloudKit 來源。固定圈兩欄皆為 nil。
+    var locationUpdatedAt: Date?
+    var sharedLocationID: String?
     var member: LocalFamilyMember?
 
     init(
@@ -48,6 +71,26 @@ final class LocalLifeCircle {
 }
 
 extension LocalLifeCircle {
+    var kind: LifeCircleKind {
+        get { isFollowMe || kindRawValue == LifeCircleKind.live.rawValue ? .live : .fixed }
+        set { kindRawValue = newValue.rawValue }
+    }
+
+    /// 即時位置超過 15 分鐘未更新，就不能再用來觸發安全判斷。
+    /// 圈仍保留在畫面上並明示過期，避免把舊座標冒充現在位置。
+    var isActiveForAlerts: Bool {
+        guard kind == .live else { return true }
+        guard let locationUpdatedAt else { return false }
+        return locationUpdatedAt > Date.now.addingTimeInterval(-15 * 60)
+    }
+
+    var locationFreshnessText: String {
+        guard kind == .live else { return "固定位置" }
+        guard let locationUpdatedAt else { return "尚未取得位置" }
+        guard isActiveForAlerts else { return "位置已過期" }
+        return "\(locationUpdatedAt.formatted(.relative(presentation: .named)))更新"
+    }
+
     /// 事件發生時間是否落在這個生活圈的提醒時段內
     func isWithinSchedule(at date: Date = .now) -> Bool {
         guard scheduleEnabled else { return true }

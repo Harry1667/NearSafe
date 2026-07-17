@@ -4,6 +4,7 @@ import SwiftData
 struct AppTabs: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var context
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var members: [LocalFamilyMember]
     @AppStorage(SettingsKeys.profileDisplayName) private var profileDisplayName = ""
 
@@ -17,9 +18,11 @@ struct AppTabs: View {
 
     // DEBUG：--start-tab <n> 讓 App 直接開在指定分頁，方便自動化截圖驗證
     @State private var router = TabRouter(selection: Self.initialTab())
-    // 功能導覽：黑幕聚光燈逐步介紹安心頁（nil＝未進行）
+    // 功能導覽：黑幕聚光燈跨分頁介紹主要功能（nil＝未進行）
     @AppStorage(SettingsKeys.homeTourPending) private var homeTourPending = false
     @State private var tourStep: Int?
+    /// Onboarding 完成後先讓地圖的守護圈確認儀式播完，再開始四步功能導覽。
+    @State private var shouldConfirmCircleOnMap = UserDefaults.standard.bool(forKey: SettingsKeys.guardianIntroPending)
 
     private static func initialTab() -> Int {
         #if DEBUG
@@ -30,32 +33,44 @@ struct AppTabs: View {
             return min(max(tab, 0), 3)
         }
         #endif
+        if UserDefaults.standard.bool(forKey: SettingsKeys.guardianIntroPending) {
+            return TabRouter.mapTab
+        }
         return TabRouter.homeTab  // 打開就是安心頁：3 秒讀完「家人都平安嗎」
     }
 
     var body: some View {
-        TabView(selection: Bindable(router).selection) {
-            HomeStatusView(myName: myName)
-                .tabItem { Label("安心", systemImage: "checkmark.shield.fill") }
-                .tag(TabRouter.homeTab)
-            SafetyMapView()
-                .tabItem { Label("安全地圖", systemImage: "map.fill") }
-                .tag(TabRouter.mapTab)
-            FamilyHubView(myName: myName)
-                .tabItem { Label("家人", systemImage: "person.2.fill") }
-                .tag(TabRouter.familyTab)
+        ZStack {
+            TabView(selection: Bindable(router).selection) {
+                HomeStatusView(myName: myName)
+                    .tabItem { Label("安心", systemImage: "checkmark.shield.fill") }
+                    .tag(TabRouter.homeTab)
+                SafetyMapView()
+                    .tabItem { Label("安全地圖", systemImage: "map.fill") }
+                    .tag(TabRouter.mapTab)
+                FamilyHubView(myName: myName)
+                    .tabItem { Label("家人", systemImage: "person.2.fill") }
+                    .tag(TabRouter.familyTab)
+            }
+            .tint(HCColor.brand)
+            .environment(router)
+            // 設定改為全域 sheet：任何頁面（含家人頁的「查看 Apple 帳號狀態」）都能打開
+            .sheet(isPresented: Bindable(router).showSettings) { SettingsView() }
+            // Coach marks 顯示時，VoiceOver 只應讀到導覽卡，不可穿透到背景按鈕。
+            .accessibilityHidden(tourStep != nil)
+            .allowsHitTesting(tourStep == nil)
         }
-        .tint(HCColor.brand)
-        .environment(router)
-        // 設定改為全域 sheet：任何頁面（含家人頁的「查看 Apple 帳號狀態」）都能打開
-        .sheet(isPresented: Bindable(router).showSettings) { SettingsView() }
-        // 功能導覽遮罩：anchor 由安心頁各元件向上匯報，遮罩蓋整個畫面（含分頁列）
+        // 功能導覽遮罩：主要內容使用實際 anchor，只有 TabView 私有結構才做安全區域降級推算
         .overlayPreferenceValue(TourAnchorKey.self) { anchors in
             if tourStep != nil {
-                FeatureTourView(anchors: anchors, stepIndex: $tourStep)
+                FeatureTourView(
+                    anchors: anchors,
+                    stepIndex: $tourStep,
+                    selectedTab: Bindable(router).selection
+                )
             }
         }
-        // 旗標一變 true 就開始導覽（首次進入或設定頁重看都走這裡）
+        // 旗標一變 true 就從安心頁開始跨分頁導覽（首次進入或設定頁重看都走這裡）
         .task(id: homeTourPending) {
             // DEBUG：--tour 強制啟動導覽，供自動化截圖與 Demo 排練
             var forceTour = false
@@ -63,7 +78,14 @@ struct AppTabs: View {
             forceTour = ProcessInfo.processInfo.arguments.contains("--tour")
             #endif
             guard homeTourPending || forceTour else { return }
-            try? await Task.sleep(for: .milliseconds(900)) // 等安心頁站穩再上黑幕
+            if shouldConfirmCircleOnMap {
+                router.selection = TabRouter.mapTab
+                // 等地圖框住剛建立的圈並顯示名稱／半徑；Reduce Motion 時只需短暫停留。
+                try? await Task.sleep(for: reduceMotion ? .milliseconds(900) : .milliseconds(3_100))
+                shouldConfirmCircleOnMap = false
+            } else {
+                try? await Task.sleep(for: .milliseconds(900))
+            }
             router.selection = TabRouter.homeTab
             tourStep = 0
             homeTourPending = false
@@ -103,8 +125,10 @@ struct AppTabs: View {
     }
 }
 
+#if DEBUG
 #Preview {
     AppTabs()
         .modelContainer(PreviewSupport.container())
         .environment(FamilySyncService())
 }
+#endif

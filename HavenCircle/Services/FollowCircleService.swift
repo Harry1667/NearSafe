@@ -23,20 +23,19 @@ enum FollowCircleService {
             guard location.distance(from: old) >= minimumMove else { continue }
             circle.latitude = location.coordinate.latitude
             circle.longitude = location.coordinate.longitude
+            circle.kind = .live
+            circle.locationUpdatedAt = location.timestamp
             moved = true
         }
         guard moved else { return }
 
         // 反查行政區（區域型警報比對用）與粗略地名；反查失敗保留原值，不擋座標更新
-        if let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first {
-            let text = [placemark.subAdministrativeArea, placemark.locality, placemark.subLocality, placemark.name]
-                .compactMap { $0 }
-                .joined(separator: " ")
-            let district = OnboardingView.guessDistrict(from: text)
-            let label = [placemark.locality, placemark.subLocality].compactMap { $0 }.joined()
+        if let place = await MapReverseGeocoder.lookup(location) {
+            let district = OnboardingView.guessDistrict(from: place.searchableText)
+            let label = place.approximateLabel(district: district)
             for circle in circles {
                 if district != Districts.unspecified { circle.district = district }
-                if !label.isEmpty { circle.encryptedAddress = label }
+                if let label { circle.encryptedAddress = label }
             }
         }
 

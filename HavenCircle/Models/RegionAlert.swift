@@ -107,7 +107,7 @@ extension RegionAlert {
     func matchedCircles(members: [LocalFamilyMember]) -> [(memberName: String, circleName: String)] {
         members.flatMap { member in
             member.lifeCircles
-                .filter { affectedDistricts.contains($0.district) }
+                .filter { $0.isActiveForAlerts && affectedDistricts.contains($0.district) }
                 .map { (member.name, $0.name) }
         }
     }

@@ -53,7 +53,7 @@ struct SafetyCheckInView: View {
             Text(shareError ?? "")
         }
         .sheet(item: $shareSheet) { bundle in
-            CloudSharingSheet(share: bundle.share, container: bundle.container)
+            InviteOptionsView(share: bundle.share, container: bundle.container)
         }
         .task {
             await sync.refreshAccountStatus()
@@ -198,13 +198,8 @@ struct SafetyCheckInView: View {
     /// 回報端做一次反向地理編碼，家人看到的是「台北市信義區」而不是座標。
     /// 失敗回 nil（回報列會退回顯示「已附上位置」），不重試不阻塞。
     private static func reverseGeocode(_ location: CLLocation) async -> String? {
-        guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first else {
-            return nil
-        }
-        let parts = [placemark.administrativeArea, placemark.locality, placemark.subLocality]
-            .compactMap(\.self)
-        var seen = Set<String>()
-        let unique = parts.filter { seen.insert($0).inserted }
-        return unique.isEmpty ? nil : unique.joined()
+        guard let place = await MapReverseGeocoder.lookup(location) else { return nil }
+        let district = OnboardingView.guessDistrict(from: place.searchableText)
+        return place.approximateLabel(district: district)
     }
 }

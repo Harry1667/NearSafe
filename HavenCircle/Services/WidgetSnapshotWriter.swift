@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import SwiftData
 import WidgetKit
 
@@ -13,27 +14,37 @@ enum WidgetSnapshotWriter {
         let members = (try? context.fetch(FetchDescriptor<LocalFamilyMember>())) ?? []
         let events = (try? context.fetch(FetchDescriptor<LocalSafetyEvent>())) ?? []
         let circles = members.flatMap(\.lifeCircles)
-        guard let primary = circles.first else { return } // 尚未完成新手設定
+        // Widget 只呈現使用者保存的固定地點，不放家人位置或移動軌跡。
+        guard let primary = circles.first(where: { $0.kind == .fixed }) else { return }
 
-        // 「需要留意」＝官方確認、進行中、落在任一生活圈提醒範圍（與提醒中心同一判準）
+        // 「需要留意」＝官方確認、進行中、落在目前固定警戒圈提醒範圍。
         let attention = events
             .filter { !$0.isEnded && !$0.isArchived && $0.isOfficiallyConfirmed }
-            .filter { !AlertPolicy.evaluate(event: $0, members: members).matches.isEmpty }
-            .sorted { nearestCircleDistance($0, members) < nearestCircleDistance($1, members) }
+            .filter { primary.alertTypes.contains($0.eventType) }
+            .filter { distance(from: $0, to: primary) <= Double(primary.radiusMeters + $0.precisionMeters) }
+            .sorted { distance(from: $0, to: primary) < distance(from: $1, to: primary) }
 
-        let topEvent = attention.first.map { event in
+        let eventSummaries = attention.prefix(3).map { event in
             WidgetEventSummary(
                 title: event.title,
                 isOfficial: event.isOfficiallyConfirmed,
-                approximateDistanceMeters: Int(nearestCircleDistance(event, members))
+                approximateDistanceMeters: roundedDistance(from: event, to: primary),
+                approximateLocation: event.approximateLocation,
+                latitude: event.latitude,
+                longitude: event.longitude
             )
         }
         let snapshot = WidgetSnapshot(
             generatedAt: .now,
             circleName: primary.name,
             radiusMeters: primary.radiusMeters,
+            circleKind: primary.kind.rawValue,
+            circleUpdatedAt: primary.locationUpdatedAt,
+            circleLatitude: primary.latitude,
+            circleLongitude: primary.longitude,
             attentionCount: attention.count,
-            topEvent: topEvent
+            topEvent: eventSummaries.first,
+            events: Array(eventSummaries)
         )
         do {
             let encoder = JSONEncoder()
@@ -43,5 +54,15 @@ enum WidgetSnapshotWriter {
         } catch {
             AppLog.dataError("Widget 快照寫入失敗：\(error.localizedDescription)")
         }
+    }
+
+    private static func distance(from event: LocalSafetyEvent, to circle: LocalLifeCircle) -> Double {
+        CLLocation(latitude: event.latitude, longitude: event.longitude)
+            .distance(from: CLLocation(latitude: circle.latitude, longitude: circle.longitude))
+    }
+
+    /// 距離只取到百公尺，避免 Widget 暴露不必要的精度。
+    private static func roundedDistance(from event: LocalSafetyEvent, to circle: LocalLifeCircle) -> Int {
+        max(Int(distance(from: event, to: circle) / 100) * 100, 100)
     }
 }

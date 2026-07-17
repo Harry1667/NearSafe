@@ -57,7 +57,7 @@ struct DistrictBoundaries {
         byTown[town] ?? []
     }
 
-    private static func ring(_ coords: [[Double]]) -> [CLLocationCoordinate2D] {
+    nonisolated private static func ring(_ coords: [[Double]]) -> [CLLocationCoordinate2D] {
         coords.compactMap { pair in
             guard pair.count == 2 else { return nil }
             return CLLocationCoordinate2D(latitude: pair[1], longitude: pair[0]) // GeoJSON 是 [經度, 緯度]

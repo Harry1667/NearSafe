@@ -1,0 +1,24 @@
+{
+  "bug": "live-location-first-publish-race",
+  "capturedAt": "2026-07-17T11:31:34+08:00",
+  "device": "physical iPhone, identifiers redacted",
+  "description": "首次開啟即時圈時，多個定位回呼同時新增同一筆 CloudKit record；第一筆成功，後到的失敗覆蓋 UI。",
+  "expected": "同一時間只執行一筆上傳；若伺服器已先建立 record，抓回伺服器版本後更新，不顯示假失敗。",
+  "events": [
+    {
+      "level": "通過",
+      "category": "即時圈上傳",
+      "message": "CloudKit 最新位置寫入成功"
+    },
+    {
+      "level": "失敗",
+      "category": "即時圈上傳",
+      "message": "record to insert already exists"
+    },
+    {
+      "level": "失敗",
+      "category": "即時圈上傳",
+      "message": "record to insert already exists"
+    }
+  ]
+}
