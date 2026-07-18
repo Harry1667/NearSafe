@@ -37,21 +37,36 @@ struct HomeStatusView: View {
     var body: some View {
         // 導航堆疊綁在 router 上：deep link（widget/通知的 alerts）能直接推入提醒中心
         NavigationStack(path: Bindable(router).homePath) {
+            ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(spacing: HCSpacing.x6) {
                     statusHero
                         .tourAnchor(.statusHero)
+                        .id(TourTarget.statusHero)
                     if !members.isEmpty {
                         familySection
                             .tourAnchor(.familyList)
+                            .id(TourTarget.familyList)
                     }
                     watchSummaryRow
                         .tourAnchor(.watchRow)
+                        .id(TourTarget.watchRow)
                     historyRow
                         .tourAnchor(.historyRow)
+                        .id(TourTarget.historyRow)
                 }
                 .padding(.horizontal, HCSpacing.x4)
                 .padding(.top, HCSpacing.x4)
+            }
+            // 功能導覽介紹到的列可能在摺疊線以下（小螢幕尤其）：先捲進畫面再讓聚光燈框住，
+            // 否則錨點矩形在螢幕外，裁切後聚光燈會框到不相干的位置
+            .onReceive(NotificationCenter.default.publisher(for: .tourStepTargetChanged)) { note in
+                guard let target = note.object as? TourTarget,
+                      [.statusHero, .familyList, .watchRow, .historyRow].contains(target) else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    scrollProxy.scrollTo(target, anchor: .center)
+                }
+            }
             }
             .navigationTitle("安心圈")
             // 情緒底色：狀態色從頁面頂部滲下來的極淡漸層——平安是守護綠、

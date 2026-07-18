@@ -22,6 +22,12 @@ enum TourTarget: String {
     case familyContent
 }
 
+extension Notification.Name {
+    /// 導覽步驟切換時廣播目標：目標所在頁面（如安心頁的 ScrollView）收到後
+    /// 先把目標捲進畫面，聚光燈才有正確的錨點矩形可框
+    static let tourStepTargetChanged = Notification.Name("tourStepTargetChanged")
+}
+
 struct TourStep {
     let target: TourTarget
     let tab: Int
@@ -131,10 +137,14 @@ struct FeatureTourView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: stepIndex)
-        .onAppear { focusCurrentCard() }
+        .onAppear {
+            focusCurrentCard()
+            broadcastTarget()
+        }
         .onChange(of: stepIndex) { _, newValue in
             guard newValue != nil else { return }
             focusCurrentCard()
+            broadcastTarget()
         }
     }
 
@@ -317,5 +327,11 @@ struct FeatureTourView: View {
 
     private func focusCurrentCard() {
         DispatchQueue.main.async { isCardFocused = true }
+    }
+
+    /// 通知目標所在頁面把目標捲進畫面（安心頁的列在小螢幕可能位於摺疊線以下）
+    private func broadcastTarget() {
+        guard let index = stepIndex, steps.indices.contains(index) else { return }
+        NotificationCenter.default.post(name: .tourStepTargetChanged, object: steps[index].target)
     }
 }
