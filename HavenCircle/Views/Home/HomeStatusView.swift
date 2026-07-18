@@ -199,7 +199,7 @@ struct HomeStatusView: View {
                     .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(member.name).font(.body.weight(.medium))
-                    Text(memberStatusText(member, hasNearbyEvent: hasNearbyEvent, ping: ping))
+                    Text(memberStatusText(member, nearbyEvent: nearbyEvent, ping: ping))
                         .font(.caption)
                         .foregroundStyle(hasNearbyEvent || hasStaleLiveCircle ? rowColor : .secondary)
                 }
@@ -246,9 +246,22 @@ struct HomeStatusView: View {
             .max(by: { $0.createdAt < $1.createdAt })
     }
 
-    private func memberStatusText(_ member: LocalFamilyMember, hasNearbyEvent: Bool, ping: SafetyPing?) -> String {
+    private func memberStatusText(_ member: LocalFamilyMember, nearbyEvent: LocalSafetyEvent?, ping: SafetyPing?) -> String {
         var parts: [String] = []
-        parts.append(hasNearbyEvent ? "圈內有事件" : (member.isPlace ? "範圍內無事件" : "圈內無事件"))
+        if let event = nearbyEvent {
+            // 寫清楚是哪個圈、多遠、什麼事件——只寫「圈內有事件」不足以判斷要不要行動
+            if let match = AlertPolicy.evaluate(event: event, members: [member])
+                .matches.min(by: { $0.distanceMeters < $1.distanceMeters }) {
+                let distanceText = match.distanceMeters >= 1_000
+                    ? String(format: "約 %.1f 公里", Double(match.distanceMeters) / 1_000)
+                    : "約 \(match.distanceMeters) 公尺"
+                parts.append("「\(match.circleName)」\(distanceText)處：\(event.title)")
+            } else {
+                parts.append("圈內事件：\(event.title)")
+            }
+        } else {
+            parts.append(member.isPlace ? "範圍內無事件" : "圈內無事件")
+        }
         if let liveCircle = member.lifeCircles.first(where: { $0.kind == .live }) {
             parts.append(liveCircle.locationFreshnessText)
         }
