@@ -17,11 +17,12 @@ enum WidgetSnapshotWriter {
         // Widget 只呈現使用者保存的固定地點，不放家人位置或移動軌跡。
         guard let primary = circles.first(where: { $0.kind == .fixed }) else { return }
 
-        // 「需要留意」＝官方確認、進行中、落在目前固定警戒圈提醒範圍。
+        // 「需要留意」＝官方確認、進行中、且 AlertPolicy 判定命中任一警戒圈。
+        // 必須與 App 內用同一個判定式（含災型影響半徑），否則會出現
+        // 「App 紅盾、小工具卻說平安」的矛盾（實機回報過的 bug）
         let attention = events
             .filter { !$0.isEnded && !$0.isArchived && $0.isOfficiallyConfirmed }
-            .filter { primary.alertTypes.contains($0.eventType) }
-            .filter { distance(from: $0, to: primary) <= Double(primary.radiusMeters + $0.precisionMeters) }
+            .filter { !AlertPolicy.evaluate(event: $0, members: members).matches.isEmpty }
             .sorted { distance(from: $0, to: primary) < distance(from: $1, to: primary) }
 
         let eventSummaries = attention.prefix(3).map { event in

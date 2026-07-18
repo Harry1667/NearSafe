@@ -155,6 +155,8 @@ enum SixDisasterScenario {
             await NotificationScheduler.notifyIfNeeded(for: event, members: members)
         }
         context.saveReporting()
+        // 桌面小工具同步：種子直接寫資料庫、不經管線，要自己刷新快照
+        WidgetSnapshotWriter.refresh(context: context)
         AppLog.data.info("六災難測試場景已建立（4 點狀＋2 區域）")
     }
 

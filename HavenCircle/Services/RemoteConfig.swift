@@ -21,6 +21,9 @@ enum RemoteConfig {
         /// 災型影響半徑（公尺）：鍵＝EventCategory 的類別字串。
         /// 上架後可遠端調參（300m 太吵、3km 太廣都不必送審）
         var impactRadius: [String: Double]?
+        /// 危險級災型清單（通知漏斗）：命中者用時效性通知＋安否互動按鈕；
+        /// 其餘（高溫、降雨、停水…）只發一般提醒。可遠端調整
+        var dangerKinds: [String]?
     }
 
     /// 目前生效的設定：啟動先載快取，refresh() 成功後換新
@@ -43,6 +46,18 @@ enum RemoteConfig {
         if let remote = current.impactRadius?[eventType] { return max(0, Int(remote)) }
         return Self.defaultImpactRadius[eventType] ?? 0
     }
+
+    /// 危險級判定（通知漏斗）：火災、械鬥、地震、海嘯、颱風這類「需要家人互相確認」的災型。
+    /// 點狀事件比對 eventType（火災／公共安全），區域警報比對 kind（地震／海嘯／颱風），
+    /// 兩個命名空間字串不重疊，共用同一張清單
+    static func isDangerKind(_ kind: String) -> Bool {
+        (current.dangerKinds ?? Self.defaultDangerKinds).contains(kind)
+    }
+
+    private static let defaultDangerKinds = [
+        EventCategory.fire, EventCategory.publicSafety, // 點狀：火災、械鬥/槍擊
+        "地震", "海嘯", "颱風",                            // 區域：三大重災
+    ]
 
     /// 內建預設（遠端沒給或斷網時生效）
     private static let defaultImpactRadius: [String: Int] = [

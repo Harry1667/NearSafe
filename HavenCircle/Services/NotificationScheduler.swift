@@ -4,11 +4,21 @@ import os
 
 /// 本機通知排程。所有通知都必須經過這裡，才能保證「暫停提醒」真的有效。
 enum NotificationScheduler {
-    /// 事件警報通知的互動分類：長按（或下拉）通知即可直接回報安否，不必先開 App。
-    /// 這是「事件 → 你 → 家人」閉環的入口：按下後由 NotificationDelegate 寫入安否回報並同步家庭圈。
+    /// 事件警報通知的互動分類：長按（或下拉）通知即可操作，不必先開 App。
+    /// 依事件主角分兩種：命中「我的圈」→ 回報我平安／尚未脫離危險；
+    /// 命中「家人的圈」→ 詢問是否平安（發出平安確認請求，對方手機會收到）。
     static let safetyAlertCategory = "SAFETY_ALERT"
+    static let familyCheckCategory = "FAMILY_CHECK"
     static let actionReportSafe = "REPORT_SAFE"
     static let actionReportDanger = "REPORT_DANGER"
+    static let actionAskSafe = "ASK_SAFE"
+
+    /// 通知互動型態（依「事件打在誰的圈」決定）
+    enum AlertInteraction {
+        case selfReport   // 我的圈：回報我平安／尚未脫離危險
+        case familyCheck  // 家人的圈：詢問是否平安
+        case none         // 地點類成員或提醒級災害：純通知
+    }
 
     /// App 啟動時登記通知分類（Apple 規定要在通知送出前登記好）
     static func registerCategories() {
@@ -22,12 +32,22 @@ enum NotificationScheduler {
             title: "尚未脫離危險",
             options: [] // 同上；紅色 destructive 樣式反而像「刪除」，不用
         )
-        let category = UNNotificationCategory(
+        let selfCategory = UNNotificationCategory(
             identifier: safetyAlertCategory,
             actions: [safe, danger],
             intentIdentifiers: []
         )
-        UNUserNotificationCenter.current().setNotificationCategories([category])
+        let ask = UNNotificationAction(
+            identifier: actionAskSafe,
+            title: "詢問是否平安",
+            options: []
+        )
+        let familyCategory = UNNotificationCategory(
+            identifier: familyCheckCategory,
+            actions: [ask],
+            intentIdentifiers: []
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([selfCategory, familyCategory])
     }
     static func requestPermission() async -> Bool {
         do {
@@ -46,7 +66,14 @@ enum NotificationScheduler {
     /// 發送事件提醒。修正舊版問題：這裡實際檢查「啟用本機提醒」與「暫停提醒」旗標，
     /// 任一不符就不發，並記錄原因。
     /// eventKey：讓通知點擊能直達該事件詳情，不帶就只開提醒中心清單（如每日摘要）。
-    static func scheduleAlert(title: String, body: String, id: String, eventKey: String? = nil) async {
+    static func scheduleAlert(
+        title: String,
+        body: String,
+        id: String,
+        eventKey: String? = nil,
+        interaction: AlertInteraction = .none,
+        timeSensitive: Bool = false
+    ) async {
         let defaults = UserDefaults.standard
         // alertsEnabled 預設值為 true（鍵不存在時視為啟用），alertsPaused 預設 false
         let enabled = defaults.object(forKey: SettingsKeys.alertsEnabled) as? Bool ?? true
@@ -68,9 +95,16 @@ enum NotificationScheduler {
         content.sound = .default
         if let eventKey {
             content.userInfo = ["eventKey": eventKey]
-            // 事件警報才掛安否回報按鈕（每日摘要、解除通知不需要）
-            content.categoryIdentifier = safetyAlertCategory
         }
+        // 互動按鈕依事件主角掛載；提醒級災害（高溫、降雨…）不掛
+        switch interaction {
+        case .selfReport: content.categoryIdentifier = safetyAlertCategory
+        case .familyCheck: content.categoryIdentifier = familyCheckCategory
+        case .none: break
+        }
+        // 危險級（火災、械鬥、地震、海嘯、颱風）用時效性通知：可突破專注模式、鎖屏置頂。
+        // 提醒級維持一般層級，避免高溫特報也吵到勿擾中的使用者
+        content.interruptionLevel = timeSensitive ? .timeSensitive : .active
         do {
             try await UNUserNotificationCenter.current()
                 .add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
@@ -93,11 +127,29 @@ enum NotificationScheduler {
             return decision
         }
         let prefix = event.isDrill ? "【演練】" : ""
+        // 通知漏斗：危險級才掛互動按鈕與時效性通知；主角是誰決定掛哪組按鈕
+        let isDanger = RemoteConfig.isDangerKind(event.eventType)
+        let best = decision.matches.min(by: { $0.distanceMeters < $1.distanceMeters })
+        let interaction: AlertInteraction
+        var callToAction = ""
+        if !isDanger {
+            interaction = .none
+        } else if best?.isCurrentUser == true {
+            interaction = .selfReport
+            callToAction = "長按通知可直接回報安否，家人會收到你的狀態。"
+        } else if let best, !best.isPlace {
+            interaction = .familyCheck
+            callToAction = "長按通知可一鍵詢問\(best.memberName)是否平安。"
+        } else {
+            interaction = .none // 地點類成員（倉庫等）不會回報平安
+        }
         await scheduleAlert(
             title: "\(prefix)\(event.title)",
-            body: "\(decision.reason)。長按通知可直接回報安否，家人會收到你的狀態。",
+            body: "\(decision.reason)。\(callToAction)",
             id: event.eventKey,
-            eventKey: event.eventKey
+            eventKey: event.eventKey,
+            interaction: interaction,
+            timeSensitive: isDanger
         )
         // 標記已推播：同一事件不重複打擾（通知限流的最小單位）
         event.hasNotified = true

@@ -200,10 +200,28 @@ enum EventPipeline {
                 let matched = alert.matchedCircles(members: members)
                 if !matched.isEmpty {
                     let names = matched.map { "\($0.memberName)（\($0.circleName)）" }.joined(separator: "、")
+                    // 通知漏斗：地震／海嘯／颱風＝危險級（時效性＋互動按鈕）；
+                    // 高溫、降雨、停水這類提醒級只發一般通知，不吵人也不開家人確認迴圈
+                    let isDanger = RemoteConfig.isDangerKind(raw.kind)
+                    let interaction: NotificationScheduler.AlertInteraction
+                    var callToAction = ""
+                    if !isDanger {
+                        interaction = .none
+                    } else if matched.contains(where: \.isCurrentUser) {
+                        interaction = .selfReport
+                        callToAction = "長按通知可直接回報安否。"
+                    } else if let person = matched.first(where: { !$0.isPlace }) {
+                        interaction = .familyCheck
+                        callToAction = "長按通知可一鍵詢問\(person.memberName)是否平安。"
+                    } else {
+                        interaction = .none
+                    }
                     await NotificationScheduler.scheduleAlert(
                         title: "\(raw.kind)警報：\(raw.title)",
-                        body: "影響 \(names) 所在行政區。\(raw.guidance)",
-                        id: raw.alertKey
+                        body: "影響 \(names) 所在行政區。\(raw.guidance)\(callToAction)",
+                        id: raw.alertKey,
+                        interaction: interaction,
+                        timeSensitive: isDanger
                     )
                 }
             }

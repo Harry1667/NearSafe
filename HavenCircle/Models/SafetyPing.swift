@@ -7,12 +7,19 @@ enum SafetyStatus: String, CaseIterable {
     case safe = "我平安"
     case inDanger = "尚未脫離危險"
     case needHelp = "需要協助"
+    /// 平安確認請求：家人圈出事時，其他人長按通知發起「請回報平安」。
+    /// 不是自我狀態——回報頁的按鈕列只放前三個（見 selfReportable）
+    case pleaseReport = "請回報平安"
+
+    /// 自我回報用的狀態（回報頁按鈕列）；pleaseReport 是發給別人的請求，不在此列
+    static let selfReportable: [SafetyStatus] = [.safe, .inDanger, .needHelp]
 
     var systemImage: String {
         switch self {
         case .safe: "checkmark.circle.fill"
         case .inDanger: "exclamationmark.triangle.fill"
         case .needHelp: "exclamationmark.circle.fill"
+        case .pleaseReport: "questionmark.circle.fill"
         }
     }
 }

@@ -7,6 +7,10 @@ struct CircleMatch {
     /// 概略距離（取整到百公尺，避免暴露精確位置）
     let distanceMeters: Int
     let withinSchedule: Bool
+    /// 命中的圈屬於本人＝通知帶「回報我平安」；屬於其他家人＝帶「詢問是否平安」
+    let isCurrentUser: Bool
+    /// 地點類成員（倉庫等）不會回報平安，不掛互動按鈕
+    let isPlace: Bool
 }
 
 /// 提醒決策結果。reason 直接顯示給使用者——「每則通知都能看見為何收到」
@@ -42,7 +46,9 @@ enum AlertPolicy {
                     memberName: member.name,
                     circleName: circle.name,
                     distanceMeters: max(Int(distance / 100) * 100, 100),
-                    withinSchedule: circle.isWithinSchedule(at: date)
+                    withinSchedule: circle.isWithinSchedule(at: date),
+                    isCurrentUser: member.isCurrentUser,
+                    isPlace: member.isPlace
                 ))
             }
         }

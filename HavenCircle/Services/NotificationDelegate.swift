@@ -22,24 +22,29 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     ) async {
         let eventKey = response.notification.request.content.userInfo["eventKey"] as? String
 
-        // 安否回報快速按鈕（長按警報通知）：不開 App、直接寫入回報並同步家庭圈。
-        // 這是「事件 → 你收到警報 → 回報 → 家人收到你的狀態」閉環最短的一條路。
+        // 快速按鈕（長按警報通知）：不開 App、直接寫入回報／發起確認並同步家庭圈。
+        // 我的圈出事＝回報自己；家人的圈出事＝發「請回報平安」的確認請求。
         let quickStatus: SafetyStatus? = switch response.actionIdentifier {
         case NotificationScheduler.actionReportSafe: .safe
         case NotificationScheduler.actionReportDanger: .inDanger
+        case NotificationScheduler.actionAskSafe: .pleaseReport
         default: nil
         }
         if let quickStatus {
-            await MainActor.run { Analytics.track("checkin_from_notification") }
+            await MainActor.run {
+                Analytics.track(quickStatus == .pleaseReport
+                    ? "family_check_from_notification"
+                    : "checkin_from_notification")
+            }
             guard let sync = await AppRuntime.familySync else { return }
             let rawName = UserDefaults.standard.string(forKey: SettingsKeys.profileDisplayName) ?? ""
             let senderName = rawName.isEmpty ? "我" : rawName
             await sync.postPing(
                 senderName: senderName,
                 status: quickStatus,
-                note: "由警報通知快速回報"
+                note: quickStatus == .pleaseReport ? "收到警報後發起平安確認" : "由警報通知快速回報"
             )
-            return // 快速回報不需要開提醒中心
+            return // 快速操作不需要開提醒中心
         }
 
         await MainActor.run {

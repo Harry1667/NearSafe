@@ -242,9 +242,14 @@ struct SafetyMapView: View {
             }
             if showAlertAreas {
                 ForEach(alertAreas) { area in
+                    // 塗層濃度依嚴重度分級：大雨特報這類提醒級常一次涵蓋兩百多個行政區，
+                    // 同等濃度會讓整個雙北鋪滿紅框（實機回報「地圖很亂」的主因之一）。
+                    // 警戒／危急維持醒目；留意／注意退成極淡底色、幾乎無邊框
+                    let isSevere = area.severityRank >= 2
+                    let color = RegionAlert.severityColor(rank: area.severityRank)
                     MapPolygon(coordinates: area.ring)
-                        .foregroundStyle(RegionAlert.severityColor(rank: area.severityRank).opacity(0.18))
-                        .stroke(RegionAlert.severityColor(rank: area.severityRank).opacity(0.55), lineWidth: 1)
+                        .foregroundStyle(color.opacity(isSevere ? 0.20 : 0.07))
+                        .stroke(color.opacity(isSevere ? 0.6 : 0.18), lineWidth: isSevere ? 1.5 : 0.5)
                 }
             }
             if showCircles {
@@ -317,6 +322,9 @@ struct SafetyMapView: View {
                     }
                     .accessibilityLabel("\(event.title)，\(event.trustStatus)，\(event.approximateLocation)")
                 }
+                // 事件 pin 不顯示文字標籤：圖示已表達類型，縮遠時一堆「重大交通事故」
+                // 文字互相壓、被鄰近 pin 截斷（實機回報）；點 pin 後底部卡片有完整標題
+                .annotationTitles(.hidden)
             }
             // 自己的位置（藍點）：需要 when-in-use 權限，未授權時 MapKit 自動不畫
             UserAnnotation()

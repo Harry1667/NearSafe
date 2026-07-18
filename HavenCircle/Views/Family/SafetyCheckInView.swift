@@ -103,7 +103,7 @@ struct SafetyCheckInView: View {
                 // 開啟當下就要權限，別等到按回報才跳系統框打斷流程
                 if isOn { LocationService.shared.requestPermissionIfNeeded() }
             }
-            ForEach(SafetyStatus.allCases, id: \.self) { status in
+            ForEach(SafetyStatus.selfReportable, id: \.self) { status in
                 Button {
                     Task { await report(status) }
                 } label: {

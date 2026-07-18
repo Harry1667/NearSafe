@@ -647,8 +647,16 @@ final class FamilySyncService {
             case .needHelp:
                 ("\(ping.senderName)回報：需要協助",
                  (ping.note.isEmpty ? "" : "\(ping.note)。") + "請立即聯繫確認狀況。")
+            case .pleaseReport:
+                ("\(ping.senderName)想確認你是否平安",
+                 "收到警報後，\(ping.senderName)發起了平安確認；請開啟 App 回報你的狀態。")
             }
-            await NotificationScheduler.scheduleAlert(title: title, body: body, id: "ping-\(ping.id)")
+            // 「請回報平安」的請求與「尚未脫離危險」的回報都屬於危險溝通，用時效性通知
+            let urgent = ping.status != .safe
+            await NotificationScheduler.scheduleAlert(
+                title: title, body: body, id: "ping-\(ping.id)",
+                timeSensitive: urgent
+            )
         }
 
         if seenList.count > 300 { seenList.removeFirst(seenList.count - 300) }

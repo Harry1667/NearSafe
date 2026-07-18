@@ -104,11 +104,13 @@ extension RegionAlert {
     }
 
     /// 受影響的生活圈（以行政區比對）
-    func matchedCircles(members: [LocalFamilyMember]) -> [(memberName: String, circleName: String)] {
+    func matchedCircles(
+        members: [LocalFamilyMember]
+    ) -> [(memberName: String, circleName: String, isCurrentUser: Bool, isPlace: Bool)] {
         members.flatMap { member in
             member.lifeCircles
                 .filter { $0.isActiveForAlerts && affectedDistricts.contains($0.district) }
-                .map { (member.name, $0.name) }
+                .map { (member.name, $0.name, member.isCurrentUser, member.isPlace) }
         }
     }
 }
