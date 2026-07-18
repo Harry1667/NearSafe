@@ -138,6 +138,10 @@ struct FeatureTourView: View {
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: stepIndex)
         .onAppear {
+            // 從中途步驟啟動（--tour-step）時要先切到該步所屬分頁
+            if let index = stepIndex, steps.indices.contains(index) {
+                selectedTab = steps[index].tab
+            }
             focusCurrentCard()
             broadcastTarget()
         }
@@ -158,6 +162,9 @@ struct FeatureTourView: View {
 
         if let anchor = anchors[target] {
             let anchoredRect = proxy[anchor]
+            #if DEBUG
+            AppLog.pipeline.info("導覽挖洞：\(target.rawValue) 錨點=\(String(format: "%.0f,%.0f %.0fx%.0f", anchoredRect.minX, anchoredRect.minY, anchoredRect.width, anchoredRect.height)) safeTop=\(String(format: "%.0f", safeTop))")
+            #endif
             switch target {
             case .mapCanvas, .familyContent:
                 return contentSpotlightRect(from: anchoredRect, in: proxy)
@@ -165,6 +172,9 @@ struct FeatureTourView: View {
                 return clamped(anchoredRect.insetBy(dx: -8, dy: -8), in: proxy)
             }
         }
+        #if DEBUG
+        AppLog.pipeline.info("導覽挖洞：\(target.rawValue) 無錨點，走降級推算")
+        #endif
 
         switch target {
         case .tabBar:
@@ -209,16 +219,21 @@ struct FeatureTourView: View {
     /// 地圖與家人清單可能比螢幕還高；聚光窗取其實際可見區域上半段，
     /// 留出下方空間擺說明卡，同時不再依賴特定機型的狀態列高度。
     private func contentSpotlightRect(from anchoredRect: CGRect, in proxy: GeometryProxy) -> CGRect {
-        let horizontalInset: CGFloat = 12
-        let navigationBottom = proxy.safeAreaInsets.top + 56
-        let top = max(anchoredRect.minY + 12, navigationBottom)
-        let left = max(horizontalInset, anchoredRect.minX + horizontalInset)
-        let right = min(proxy.size.width - horizontalInset, anchoredRect.maxX - horizontalInset)
-        let availableHeight = max(160, anchoredRect.maxY - top - 12)
-        return clamped(
+        // 錨點與繪製同在 proxy 的區域座標（原點已在狀態列下方），這裡不可再加 safeAreaInsets——
+        // 重複加會把整個聚光窗往下推 60+pt，正是「窗頂切在卡片標題上」的根因（log 實測定位）。
+        // 錨點區域本來就從導航列下方開始，外擴 8pt 後直接用即可
+        let top = max(anchoredRect.minY - 8, 8)
+        let left = max(8, anchoredRect.minX - 4)
+        let right = min(proxy.size.width - 8, anchoredRect.maxX + 4)
+        let availableHeight = max(160, anchoredRect.maxY - top + 8)
+        let result = clamped(
             CGRect(x: left, y: top, width: max(0, right - left), height: min(360, availableHeight)),
             in: proxy
         )
+        #if DEBUG
+        AppLog.pipeline.info("導覽挖洞：內容區回傳 rect=\(String(format: "%.0f,%.0f %.0fx%.0f", result.minX, result.minY, result.width, result.height))")
+        #endif
+        return result
     }
 
     private func clamped(_ rect: CGRect, in proxy: GeometryProxy) -> CGRect {

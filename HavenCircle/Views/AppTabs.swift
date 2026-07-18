@@ -115,7 +115,17 @@ struct AppTabs: View {
                 try? await Task.sleep(for: .milliseconds(900))
             }
             router.selection = TabRouter.homeTab
-            tourStep = 0
+            var startStep = 0
+            #if DEBUG
+            // --tour-step N：直接從第 N 步（0 起算）開始，供逐步自動化截圖驗證
+            let args = ProcessInfo.processInfo.arguments
+            if let flagIndex = args.firstIndex(of: "--tour-step"),
+               args.indices.contains(flagIndex + 1),
+               let requested = Int(args[flagIndex + 1]) {
+                startStep = max(0, requested)
+            }
+            #endif
+            tourStep = startStep
             homeTourPending = false
         }
         // App 每次回到前景重跑資料管線（含每日摘要重算）。
