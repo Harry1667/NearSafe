@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
     @AppStorage(SettingsKeys.apnsDeviceToken) private var apnsToken = ""
     @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
+    @AppStorage(SettingsKeys.analyticsEnabled) private var analyticsEnabled = true
     @State private var showTutorial = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -81,6 +82,27 @@ struct SettingsView: View {
                     settingsRow("資料來源", subtitle: "政府示警來源與資料新鮮度",
                                 icon: "antenna.radiowaves.left.and.right", color: .teal) {
                         DataSourceView()
+                    }
+                    // 匿名統計可整個關掉：隱私承諾不是只寫在政策裡，要給使用者實際的關閉權
+                    Toggle(isOn: $analyticsEnabled) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("匿名使用統計")
+                                    .foregroundStyle(.primary)
+                                Text("僅事件次數與版本，不含識別碼與位置")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "chart.bar.fill")
+                                .font(.callout)
+                                .foregroundStyle(.white)
+                                .frame(width: 29, height: 29)
+                                .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                        }
+                    }
+                    .onChange(of: analyticsEnabled) { _, enabled in
+                        if !enabled { Analytics.clearQueue() } // 關閉即清空未送出的佇列
                     }
                     settingsRow("關於安心圈", subtitle: "版本、官網與隱私原則",
                                 icon: "info.circle.fill", color: .gray) {

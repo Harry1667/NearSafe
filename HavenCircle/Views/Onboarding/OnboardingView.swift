@@ -669,6 +669,8 @@ struct OnboardingView: View {
         }
         // 完成旗標與家人資料脫鉤：之後就算刪光家人資料也不會被打回新手流程
         onboardingCompleted = true
+        // 匿名統計：新手設定完成是最重要的漏斗事件（啟動數 vs 完成數＝流失率）
+        Analytics.track("onboarding_completed")
         // 種下守護圈開場動效旗標：首次進地圖時演「鏡頭飛向生活圈」的確認儀式
         UserDefaults.standard.set(true, forKey: SettingsKeys.guardianIntroPending)
         // 種下功能導覽旗標：首次進主畫面時黑幕聚光燈跨分頁逐步介紹

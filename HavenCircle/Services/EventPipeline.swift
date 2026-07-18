@@ -79,6 +79,11 @@ enum EventPipeline {
     private static func ingestPointEvents(context: ModelContext, members: [LocalFamilyMember]) async {
         var reports: [RawEventReport] = []
         for provider in providers {
+            // 遠端開關：媒體報導層可從 config/app.json 整層關閉
+            // （新聞源出問題時免送審止血；官方 NCDR 源不設開關，那是產品底線）
+            if provider is NewsEventProvider, !RemoteConfig.feature("newsEvents", default: true) {
+                continue
+            }
             do {
                 reports += try await provider.fetchReports()
             } catch {

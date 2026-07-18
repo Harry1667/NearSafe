@@ -79,6 +79,8 @@ struct HavenCircleApp: App {
                 .preferredColorScheme(AppearanceMode(rawValue: appearanceMode)?.colorScheme)
                 .environment(familySync)
                 .task {
+                    // 遠端設定放最前面（5 秒逾時）：後面的資料管線要吃它的功能開關
+                    await RemoteConfig.refresh()
                     Self.markCurrentUser(
                         context: modelContainer.mainContext,
                         displayName: profileDisplayName
@@ -88,6 +90,9 @@ struct HavenCircleApp: App {
                     UIApplication.shared.registerForRemoteNotifications()
                     // 啟動即跑一次資料管線（mock 來源；階段 4 換成真實來源）
                     await EventPipeline.refresh(context: modelContainer.mainContext)
+                    // 匿名統計：記一次啟動並把累積佇列送出（斷網自動留到下次）
+                    Analytics.track("app_open")
+                    await Analytics.flush()
                     await familySync.refreshAccountStatus()
                     LocationService.shared.syncLiveLocationSharing(
                         isEnabled: liveLocationSharingEnabled

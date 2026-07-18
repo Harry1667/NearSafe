@@ -22,6 +22,8 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     ) async {
         let eventKey = response.notification.request.content.userInfo["eventKey"] as? String
         await MainActor.run {
+            // 匿名統計：通知被點開＝提醒真的有被看（只記次數，不記事件內容）
+            Analytics.track("notification_opened")
             // 用 URLComponents 組網址：eventKey 來自資料源（可能含空格或非 ASCII），要正確編碼
             var components = URLComponents()
             components.scheme = "havencircle"

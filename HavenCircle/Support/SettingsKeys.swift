@@ -31,6 +31,8 @@ enum SettingsKeys {
     static let homeTourPending = "homeTourPending"
     /// 首次設定時明確同意的法律文件版本；條款重大更新時改版號即可重新取得同意
     static let legalAcceptanceVersion = "legalAcceptanceVersion"
+    /// 匿名使用統計開關（預設開）：關閉時 Analytics 不記錄也不送出
+    static let analyticsEnabled = "analyticsEnabled"
 }
 
 /// 資料時效：所有會刷新事件資料的路徑都應呼叫這裡
