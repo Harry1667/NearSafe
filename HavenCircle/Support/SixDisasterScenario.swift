@@ -23,13 +23,23 @@ enum SixDisasterScenario {
     static func runIfRequested(context: ModelContext) async {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("--clear-six-disasters") {
-            removeAll(context: context)
-            context.saveReporting()
-            AppLog.data.info("六災難測試場景已清除")
+            clear(context: context)
             return
         }
         guard args.contains("--seed-six-disasters") else { return }
-        removeAll(context: context) // 冪等：重跑不疊加
+        await seed(context: context)
+    }
+
+    /// 清除場景（設定頁按鈕與啟動參數共用）
+    static func clear(context: ModelContext) {
+        removeAll(context: context)
+        context.saveReporting()
+        AppLog.data.info("六災難測試場景已清除")
+    }
+
+    /// 建立場景（設定頁按鈕與啟動參數共用；冪等，重跑先清後建）
+    static func seed(context: ModelContext) async {
+        removeAll(context: context)
 
         // MARK: 家人與固定資產（警戒圈半徑統一 1km、訂閱全部四災型）
         let mom = LocalFamilyMember(memberKey: keyPrefix + "mom", name: "媽媽", relationship: "母親")

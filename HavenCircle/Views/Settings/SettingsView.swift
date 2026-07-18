@@ -190,6 +190,8 @@ struct SettingsView: View {
 
     /// 模擬警報通知與 APNs 權杖。誠實原則：模擬通知標題一律帶【示範】字樣，
     /// 不冒充真實災害警報；權杖只在本機顯示，供 Apple Push Console 推播測試。
+    /// 整段只在 DEBUG 編譯：引用了 DEBUG-only 的 SixDisasterScenario
+    #if DEBUG
     @ViewBuilder
     private var demoSection: some View {
         Section {
@@ -225,6 +227,38 @@ struct SettingsView: View {
                         .foregroundStyle(.white)
                         .frame(width: 29, height: 29)
                         .background(HCColor.brand.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                }
+            }
+            Button {
+                Task {
+                    await SixDisasterScenario.seed(context: context)
+                    demoSeedFeedback = "已載入六災難測試場景（4 點狀＋2 區域，含測試家人與倉庫）"
+                }
+            } label: {
+                Label {
+                    Text("載入六災難測試場景")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "tornado")
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .frame(width: 29, height: 29)
+                        .background(Color.red.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                }
+            }
+            Button {
+                SixDisasterScenario.clear(context: context)
+                demoSeedFeedback = "已清除六災難測試場景"
+            } label: {
+                Label {
+                    Text("清除六災難場景")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "xmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .frame(width: 29, height: 29)
+                        .background(Color.gray.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
                 }
             }
             Button {
@@ -277,6 +311,7 @@ struct SettingsView: View {
             #endif
         }
     }
+    #endif
 
     /// 延遲 5 秒發送：留時間鎖定螢幕，展示通知在鎖屏上的真實樣貌
     private func scheduleDemoNotification() async {

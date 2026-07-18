@@ -53,12 +53,20 @@ struct NCDRPointEventProvider: EventProvider {
         return (lat, lon, max(100, Int(radiusKm * 1000)))
     }
 
-    /// NCDR 類別對應到 App 的事件分類（MVP 四類）
+    /// NCDR 類別對應到 App 的事件分類（MVP 四類）。
+    /// 交通與公共安全類補齊對應：之前只認 3 種字串，交通類點狀事件會被誤歸「天災」
+    /// 而套用天災的推播規則；歸對類後，交通類依產品預設不推播、僅在 App 內顯示。
     static func eventType(for category: String?) -> String {
         switch category {
-        case "火災": EventCategory.fire
-        case "疏散避難", "防空", "輻射災害": EventCategory.publicSafety
-        default: EventCategory.disaster
+        case "火災":
+            EventCategory.fire
+        case "疏散避難", "防空", "輻射災害", "傳染病", "急門診通報", "縣市災情通報":
+            EventCategory.publicSafety
+        case "道路封閉", "鐵路事故", "高速公路路況", "聯絡道淹水封閉",
+             "強風管制路段", "地下道積淹水", "捷運營運":
+            EventCategory.traffic
+        default:
+            EventCategory.disaster
         }
     }
 }

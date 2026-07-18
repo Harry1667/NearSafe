@@ -108,9 +108,12 @@ struct OnboardingView: View {
 
     // MARK: - 第 1 步：歡迎
 
+    /// 小螢幕適配：內容可捲動、條款與 CTA 固定在底部永不被遮——
+    /// 原本的固定 VStack 在 iPhone 12 等較矮機型會把條款區擠出畫面
     private var welcomePage: some View {
+        ScrollView {
         VStack(spacing: 20) {
-            Spacer()
+            Spacer(minLength: 12)
             // 品牌漸層圓底座＋白色盾牌：歡迎頁的第一眼要像產品 logo，不是浮著的系統圖示
             ZStack {
                 Circle()
@@ -145,23 +148,29 @@ struct OnboardingView: View {
             }
             .padding(.horizontal, 24)
 
-            Spacer()
             Label("安心圈不是緊急服務；遇立即危險請撥打 110 或 119。", systemImage: "phone.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(HCColor.danger)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+        }
+        .padding(.vertical, 12)
+        }
+        .safeAreaInset(edge: .bottom) {
             // 法律同意放在流程起點：使用者在填任何資料、授任何權限之前先決定要不要同意，
             // 不同意就不會發生「輸入都填了、權限都給了才被條款卡住」的先斬後奏
-            if !isReplay {
-                legalAgreementBlock
-                    .padding(.horizontal, 24)
+            VStack(spacing: 10) {
+                if !isReplay {
+                    legalAgreementBlock
+                        .padding(.horizontal, 24)
+                }
+                primaryButton("同意並開始設定", disabled: !isReplay && !legalAccepted) {
+                    withAnimation { step = .signIn }
+                }
             }
-            primaryButton("同意並開始設定", disabled: !isReplay && !legalAccepted) {
-                withAnimation { step = .signIn }
-            }
+            .padding(.vertical, 8)
+            .background(.bar)
         }
-        .padding(.bottom, 24)
     }
 
     // MARK: - 第 2 步：Apple 登入（右上角可跳過）
@@ -207,20 +216,24 @@ struct OnboardingView: View {
     // MARK: - 第 2 步：名稱
 
     private var namePage: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            stepHeader("怎麼稱呼你？", "這個名稱會顯示在家人的安否回報裡，例如「媽媽 回報了平安」。")
-            TextField("你的名稱", text: $name)
-                .font(.title2)
-                .multilineTextAlignment(.center)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal, 48)
-            Spacer()
+        ScrollView {
+            VStack(spacing: 16) {
+                stepHeader("怎麼稱呼你？", "這個名稱會顯示在家人的安否回報裡，例如「媽媽 回報了平安」。")
+                TextField("你的名稱", text: $name)
+                    .font(.title2)
+                    .multilineTextAlignment(.center)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 48)
+            }
+            .padding(.top, 56)
+        }
+        .safeAreaInset(edge: .bottom) {
             primaryButton("下一步", disabled: !isReplay && name.trimmingCharacters(in: .whitespaces).isEmpty) {
                 withAnimation { step = .circle }
             }
+            .padding(.vertical, 8)
+            .background(.bar)
         }
-        .padding(.bottom, 24)
     }
 
     // MARK: - 第 3 步：第一個生活圈
@@ -295,8 +308,8 @@ struct OnboardingView: View {
     // MARK: - 第 4 步：通知權限
 
     private var notificationPage: some View {
+        ScrollView {
         VStack(spacing: 16) {
-            Spacer()
             Image(systemName: "bell.badge.fill")
                 .font(.system(size: 56))
                 .foregroundStyle(HCColor.brand)
@@ -319,26 +332,32 @@ struct OnboardingView: View {
                 .foregroundStyle(HCColor.danger)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            Spacer()
-            if isReplay {
-                Text("教學模式不會顯示系統通知權限視窗。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                primaryButton("下一步") { withAnimation { step = .done } }
-            } else if notificationGranted == nil {
-                primaryButton("允許通知") {
-                    Task {
-                        notificationGranted = await NotificationScheduler.requestPermission()
-                    }
-                }
-                Button("稍後再說") { withAnimation { step = .done } }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                primaryButton("下一步") { withAnimation { step = .done } }
-            }
         }
-        .padding(.bottom, 24)
+        .padding(.top, 40)
+        }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 10) {
+                if isReplay {
+                    Text("教學模式不會顯示系統通知權限視窗。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    primaryButton("下一步") { withAnimation { step = .done } }
+                } else if notificationGranted == nil {
+                    primaryButton("允許通知") {
+                        Task {
+                            notificationGranted = await NotificationScheduler.requestPermission()
+                        }
+                    }
+                    Button("稍後再說") { withAnimation { step = .done } }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    primaryButton("下一步") { withAnimation { step = .done } }
+                }
+            }
+            .padding(.vertical, 8)
+            .background(.bar)
+        }
         .task {
             guard !isReplay, notificationGranted == nil else { return }
             switch await NotificationScheduler.authorizationStatus() {
@@ -382,10 +401,23 @@ struct OnboardingView: View {
                     }
                     .padding(.horizontal, 32)
                 }
-                valueCard("person.crop.circle.badge.plus", HCColor.brand,
-                          "下一步：邀請家人（可略過）",
-                          "到「家人」分頁邀請家人加入，支援 QR code 或 8 位邀請碼；需要登入 iCloud。")
-                    .padding(.horizontal, 24)
+                // 可點的行動卡（不是說明文字）：點了直接完成設定並跳到家人頁的邀請介面
+                Button {
+                    finishSetup(routeToFamily: true)
+                } label: {
+                    HStack(spacing: 0) {
+                        valueCard("person.crop.circle.badge.plus", HCColor.brand,
+                                  "邀請家人（可略過）",
+                                  "點這裡完成設定並前往「家人」頁，用 QR code 或 8 位邀請碼邀請；需要登入 iCloud。")
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.trailing, 12)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isReplay)
+                .padding(.horizontal, 24)
                 Label("安心圈不是緊急服務；遇立即危險請撥打 110 或 119。", systemImage: "phone.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(HCColor.danger)
@@ -610,7 +642,9 @@ struct OnboardingView: View {
         }
     }
 
-    private func finishSetup() {
+    /// routeToFamily：使用者按了「邀請家人」行動卡——完成設定後直接前往家人頁的邀請介面，
+    /// 並跳過守護圈動效與功能導覽（先讓他做想做的事；導覽可從設定頁重看）
+    private func finishSetup(routeToFamily: Bool = false) {
         let displayName = name.trimmingCharacters(in: .whitespaces)
         // 重播模式只是導覽：不建立資料、不動旗標，關掉就好
         if isReplay {
@@ -671,10 +705,15 @@ struct OnboardingView: View {
         onboardingCompleted = true
         // 匿名統計：新手設定完成是最重要的漏斗事件（啟動數 vs 完成數＝流失率）
         Analytics.track("onboarding_completed")
-        // 種下守護圈開場動效旗標：首次進地圖時演「鏡頭飛向生活圈」的確認儀式
-        UserDefaults.standard.set(true, forKey: SettingsKeys.guardianIntroPending)
-        // 種下功能導覽旗標：首次進主畫面時黑幕聚光燈跨分頁逐步介紹
-        UserDefaults.standard.set(true, forKey: SettingsKeys.homeTourPending)
+        if routeToFamily {
+            // 直達家人頁邀請介面（AppTabs 出現後由 DeepLinkStore 補路由）
+            DeepLinkStore.pending = URL(string: "havencircle://family")
+        } else {
+            // 種下守護圈開場動效旗標：首次進地圖時演「鏡頭飛向生活圈」的確認儀式
+            UserDefaults.standard.set(true, forKey: SettingsKeys.guardianIntroPending)
+            // 種下功能導覽旗標：首次進主畫面時黑幕聚光燈跨分頁逐步介紹
+            UserDefaults.standard.set(true, forKey: SettingsKeys.homeTourPending)
+        }
     }
 
     private func openSystemSettings() {

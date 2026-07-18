@@ -74,6 +74,7 @@ enum EventPipeline {
         await NotificationScheduler.refreshDailyDigest(
             summary: DigestComposer.summary(events: events, members: members)
         )
+        AppLog.pipeline.info("✅ 管線刷新完成：庫內事件 \(events.count) 筆、警戒圈成員 \(members.count) 位")
     }
 
     // MARK: 點狀事件
@@ -95,6 +96,8 @@ enum EventPipeline {
         }
 
         let grouped = Dictionary(grouping: reports, by: signature(of:))
+        // 事件通報進 Xcode console：管線每輪的輸入量與去重結果，一眼看出資料有沒有進來
+        AppLog.pipeline.info("📥 點狀事件：收到 \(reports.count) 筆回報 → 去重後 \(grouped.count) 組")
         for (sig, group) in grouped {
             let trust = trustLevel(for: group)
             let key = "evt-\(sig)"

@@ -46,7 +46,22 @@ extension View {
 
 /// 挖洞遮罩：全畫面黑底＋目標區圓角開窗（even-odd 填色）
 private struct CutoutMask: Shape {
-    let cutout: CGRect
+    var cutout: CGRect
+    /// 挖洞範圍可動畫：聚光燈在步驟間「滑」過去，而不是瞬間跳位
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
+        get {
+            AnimatablePair(
+                AnimatablePair(cutout.origin.x, cutout.origin.y),
+                AnimatablePair(cutout.size.width, cutout.size.height)
+            )
+        }
+        set {
+            cutout = CGRect(
+                x: newValue.first.first, y: newValue.first.second,
+                width: newValue.second.first, height: newValue.second.second
+            )
+        }
+    }
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.addRect(rect)
@@ -111,6 +126,8 @@ struct FeatureTourView: View {
                 }
                 .transition(.opacity)
                 .accessibilityAddTraits(.isModal)
+                // 錨點在頁面渲染後才註冊；rect 從降級推算換成實際位置時要用滑動而非跳動
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: rect)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: stepIndex)
@@ -268,9 +285,19 @@ struct FeatureTourView: View {
     }
 
     private func move(to index: Int) {
-        selectedTab = steps[index].tab
-        stepIndex = index
-        announcePage(for: steps[index].tab)
+        let targetTab = steps[index].tab
+        if targetTab != selectedTab {
+            // 跨分頁：先切頁、等目標頁面掛上錨點（約半秒）再移動聚光燈——
+            // 立刻移動只能用降級推算的位置畫框，就是「沒對齊」的來源
+            selectedTab = targetTab
+            announcePage(for: targetTab)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(reduceMotion ? 150 : 450))
+                stepIndex = index
+            }
+        } else {
+            stepIndex = index
+        }
     }
 
     private func finishTour() {

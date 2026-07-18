@@ -83,12 +83,17 @@ LLM_MIN_CONFIDENCE = 0.6  # LLM 信心低於此值 → 丟棄 LLM 結果、退�
 # seen.json 滾動上限
 SEEN_MAX = 2000
 
-# 資料來源（皆為 RSS 2.0，已實測存活）
+# 資料來源。RSS 2.0 為預設；format="atom" 走 parse_atom（公視）。
+# 2026-07-18 擴充背景：實測 TVBS／東森 EBC／三立官網均已無公開 RSS，可加的只有下面兩條。
 FEEDS = [
     {"name": "中央社", "feed": "社會", "url": "https://feeds.feedburner.com/rsscna/social"},
     {"name": "中央社", "feed": "地方", "url": "https://feeds.feedburner.com/rsscna/local"},
     {"name": "自由時報", "feed": "社會", "url": "https://news.ltn.com.tw/rss/society.xml"},
     {"name": "ETtoday", "feed": "社會", "url": "https://feeds.feedburner.com/ettoday/society"},
+    {"name": "公視", "feed": "新聞", "url": "https://news.pts.org.tw/xml/newsfeed.xml", "format": "atom"},
+    # UDN 從海外 IP 實測回「合法 RSS 外殼但 item 全空」（疑地區過濾）；
+    # 爬蟲機在台灣網路，掛著觀察——若仍為空殼，空 items 會被標題過濾自然略過，無害
+    {"name": "聯合報", "feed": "社會", "url": "https://udn.com/rssfeed/news/2/6639?ch=news"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -211,7 +216,36 @@ def parse_rss(data):
             "guid": text_of("guid"),
             "pubDate": text_of("pubDate"),
         })
-    return items
+    # 沒有標題的 item（如 UDN 對海外 IP 的空殼 feed）直接濾掉，不進 seen 也不進分類
+    return [i for i in items if i["title"]]
+
+
+ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+
+
+def parse_atom(data):
+    """解析 Atom feed（公視用），輸出與 parse_rss 相同形狀的 dict 清單。"""
+    root = ET.fromstring(data)
+    items = []
+    for entry in root.findall("atom:entry", ATOM_NS):
+        def text_of(tag):
+            node = entry.find(f"atom:{tag}", ATOM_NS)
+            return (node.text or "").strip() if node is not None and node.text else ""
+
+        # Atom 的 link 是屬性不是內文；rel 省略或 alternate 才是文章網址
+        link = ""
+        for node in entry.findall("atom:link", ATOM_NS):
+            if node.get("rel") in (None, "alternate"):
+                link = node.get("href") or ""
+                break
+        items.append({
+            "title": strip_html(text_of("title")),
+            "description": strip_html(text_of("summary") or text_of("content")),
+            "link": link,
+            "guid": text_of("id"),
+            "pubDate": text_of("published") or text_of("updated"),
+        })
+    return [i for i in items if i["title"]]
 
 
 def stable_id(item):
@@ -221,14 +255,17 @@ def stable_id(item):
 
 
 def parse_pubdate(s):
-    """RFC 822 pubDate → ISO8601（台北時區）；解析失敗就用現在時間"""
+    """RFC 822（RSS）或 ISO8601（Atom）→ ISO8601（台北時區）；解析失敗就用現在時間"""
     try:
         dt = email.utils.parsedate_to_datetime(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=TZ_TAIPEI)
-        return dt.astimezone(TZ_TAIPEI).isoformat()
     except Exception:
-        return datetime.now(TZ_TAIPEI).isoformat()
+        try:
+            dt = datetime.fromisoformat((s or "").replace("Z", "+00:00"))
+        except Exception:
+            return datetime.now(TZ_TAIPEI).isoformat()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=TZ_TAIPEI)
+    return dt.astimezone(TZ_TAIPEI).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -542,7 +579,7 @@ def main(feeds=None, out_dir=None):
         # 單一 feed 失敗：記 log、標 ok=false，繼續跑其他 feed
         try:
             data = fetch_url(feed["url"])
-            items = parse_rss(data)
+            items = parse_atom(data) if feed.get("format") == "atom" else parse_rss(data)
         except Exception as e:
             log("feed 抓取/解析失敗（跳過此 feed）：{} {} — {}".format(
                 feed["name"], feed["feed"], e))

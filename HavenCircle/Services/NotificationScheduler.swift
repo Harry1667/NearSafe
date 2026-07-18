@@ -74,6 +74,7 @@ enum NotificationScheduler {
         do {
             try await UNUserNotificationCenter.current()
                 .add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+            AppLog.notifications.info("✅ 已推播：\(title)")
         } catch {
             AppLog.notifications.error("通知排程失敗（\(id)）：\(error.localizedDescription)")
         }
