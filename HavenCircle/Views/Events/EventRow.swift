@@ -65,16 +65,13 @@ struct EventRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(event.isDrill ? "【演練】\(event.title)" : event.title)
                     .font(.subheadline.bold())
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Text(eventSeverityAndTrust(event))
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(trustColor)
-                    .lineLimit(1)
-                Text("\(relativeTime(event.occurredAt))・\(relativeDistance(event, members))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
+                compactMetadata
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
@@ -84,6 +81,20 @@ struct EventRow: View {
         .padding(.horizontal, HCSpacing.x3)
         .padding(.vertical, 9)
         .accessibilityElement(children: .combine)
+    }
+
+    /// 寬度足夠時維持單行；窄機型自動拆成時間、距離兩行，不縮字也不截斷。
+    private var compactMetadata: some View {
+        ViewThatFits(in: .horizontal) {
+            Text("\(relativeTime(event.occurredAt))・\(relativeDistance(event, members))")
+                .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(relativeTime(event.occurredAt))
+                Text(relativeDistance(event, members))
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
     }
 
     private func eventIcon(size: CGFloat) -> some View {

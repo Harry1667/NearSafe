@@ -18,6 +18,9 @@ enum RemoteConfig {
         var upgradeMessage: String?
         var features: [String: Bool]?
         var tuning: [String: Double]?
+        /// 災型影響半徑（公尺）：鍵＝EventCategory 的類別字串。
+        /// 上架後可遠端調參（300m 太吵、3km 太廣都不必送審）
+        var impactRadius: [String: Double]?
     }
 
     /// 目前生效的設定：啟動先載快取，refresh() 成功後換新
@@ -32,6 +35,22 @@ enum RemoteConfig {
     static func tuning(_ name: String, default defaultValue: Double) -> Double {
         current.tuning?[name] ?? defaultValue
     }
+
+    /// 災型影響半徑（公尺）：不同災害的波及範圍天差地遠——
+    /// 車禍影響一個路口、槍擊影響一個街區、火災濃煙波及上千公尺。
+    /// 警報判定式＝事件距離 ≤ 警戒圈半徑 ＋ 位置精度 ＋ 這個值（影響圈與警戒圈的交集）。
+    static func impactRadiusMeters(for eventType: String) -> Int {
+        if let remote = current.impactRadius?[eventType] { return max(0, Int(remote)) }
+        return Self.defaultImpactRadius[eventType] ?? 0
+    }
+
+    /// 內建預設（遠端沒給或斷網時生效）
+    private static let defaultImpactRadius: [String: Int] = [
+        EventCategory.traffic: 300,        // 車禍：一個路口的範圍
+        EventCategory.publicSafety: 1_500, // 槍擊／械鬥：波及整個街區，避開為上
+        EventCategory.fire: 1_000,         // 火災：濃煙與延燒範圍
+        EventCategory.disaster: 1_000,     // 天災（淹水感測、空品惡化等）
+    ]
 
     /// 啟動時呼叫：抓最新設定並更新快取。逾時收短到 5 秒——
     /// 這一步在啟動流程的最前面，不能讓斷網使用者等一分鐘才看到資料。

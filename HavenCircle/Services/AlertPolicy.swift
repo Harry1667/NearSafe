@@ -34,8 +34,10 @@ enum AlertPolicy {
                 let distance = point.distance(
                     from: CLLocation(latitude: circle.latitude, longitude: circle.longitude)
                 )
-                // 事件位置有誤差，半徑加上位置精準度作為緩衝
-                guard distance <= Double(circle.radiusMeters + event.precisionMeters) else { continue }
+                // 交集判定：事件影響圈（災型影響半徑＋位置精度緩衝）碰到警戒圈就算命中。
+                // 車禍只掃一個路口、火災濃煙波及上千公尺——影響半徑依災型而異，可遠端調參
+                let impactMeters = RemoteConfig.impactRadiusMeters(for: event.eventType)
+                guard distance <= Double(circle.radiusMeters + event.precisionMeters + impactMeters) else { continue }
                 matches.append(CircleMatch(
                     memberName: member.name,
                     circleName: circle.name,

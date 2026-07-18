@@ -792,7 +792,9 @@ struct SafetyMapView: View {
                             selected = event
                         } label: {
                             EventRow(event: event, members: visibleMembers, style: .mapCompact)
-                                .frame(width: 292)
+                                .containerRelativeFrame(.horizontal) { availableWidth, _ in
+                                    min(max(availableWidth - 48, 260), 340)
+                                }
                                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
@@ -844,11 +846,12 @@ private struct MapEventSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(event.isDrill ? "【演練】\(event.title)" : event.title)
                         .font(.headline)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                     Text(eventSeverityAndTrust(event))
                         .font(.caption)
                         .foregroundStyle(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Button {
@@ -862,11 +865,7 @@ private struct MapEventSheet: View {
                 .accessibilityLabel("關閉事件摘要")
             }
 
-            Text("\(relativeTime(event.occurredAt))・\(relativeDistance(event, members))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            metadata
 
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) { selectedDetent = .large }
@@ -883,6 +882,19 @@ private struct MapEventSheet: View {
         }
         .padding(.horizontal, HCSpacing.x4)
         .padding(.top, HCSpacing.x3)
+    }
+
+    private var metadata: some View {
+        ViewThatFits(in: .horizontal) {
+            Text("\(relativeTime(event.occurredAt))・\(relativeDistance(event, members))")
+                .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(relativeTime(event.occurredAt))
+                Text(relativeDistance(event, members))
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 

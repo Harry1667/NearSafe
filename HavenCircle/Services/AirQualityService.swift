@@ -2,7 +2,8 @@ import Foundation
 import SwiftUI
 
 /// 環境部空品測站資料（經 Oracle 中繼站，每小時更新）。
-/// 定位是「日常環境資訊圖層」，與災害警報嚴格區隔：不推播、不進提醒中心，只在地圖顯示。
+/// 兩種用途：①地圖上的日常環境資訊圖層（全部測站）；
+/// ②AQI 突破警報門檻時由 AirQualityEventProvider 轉成災害事件進管線（預設 AQI≥150）。
 struct AQIStation: Decodable, Identifiable {
     let siteId: String?
     let name: String?
