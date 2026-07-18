@@ -281,3 +281,44 @@
 1. 決定 `chore/app-store-prep` 是否併回 main（`git checkout main && git merge --ff-only chore/app-store-prep`）；順手考慮把垃圾檔加進 `.gitignore`。
 2. 若要繼續監控/熱更：照上面「自建在 Oracle」的方案動工。
 3. 真實上架優先序：CloudKit schema→Production、商店截圖、App Privacy 問卷、TestFlight 補實機證據。
+
+## 2026-07-18〜19 熱更/監控上線 + 影響圈模型 + 安否閉環 + 實機打磨（`chore/app-store-prep`，已逐次併回 main，HEAD `f43fd96`）
+
+### ⚠️ 下個 session 最優先的兩件待辦（已存成專案 memory，會自動提醒）
+1. **部署新聞爬蟲 detail 到 Mac Mini**：`fetch_news.py` 已加 AI 詳述 prompt 並 commit，但這台機器連不到 Mac Mini（`macmini` 別名在控制電腦上）。真實新聞的「事件說明」尚未生效；官方事件與測試事件已可見。見 memory `deploy-news-crawler-detail`。
+2. **上架前驗 SwiftData schema 遷移**：加 `LocalSafetyEvent.detail` 這種標準加法式遷移，覆蓋安裝舊版竟會執行期崩潰（崩在 `LocalLifeCircle.alertTypes` 的 SwiftData 斷言，`makeContainer` fallback 攔不到）。上架前、每次改 @Model 都要專門測「帶舊資料升級」路徑。見 memory `verify-schema-migration-before-appstore` 與 LESSONS 2026-07-19 條。
+
+### 已完成：Oracle 自建熱更 + 匿名統計（不用 Firebase）
+- `website/config/`：`app.json`（App 啟動抓、`no-store`、三層兜底：遠端→快取→內建預設）＋密碼保護後臺 `admin.php`（改值自動蓋 updatedAt、留 20 份備份）。App 端 `RemoteConfig.swift`。
+- `website/analytics/`：匿名 `events.php`（只累加「當日×事件名×版本×iOS 大版本」，不存 IP/識別碼/位置）＋密碼保護看板 `dashboard.php`。App 端 `Analytics.swift`（佇列→啟動批次送、斷網保留）。設定頁有「匿名使用統計」開關。
+- 已部署 havencircle.looptw.com 並實測（含安全邊界 data/ 與底線檔全 404）；密鑰檔照 apns 慣例 gitignore。App Privacy 問卷對照表在 `submission/APP_PRIVACY_QUESTIONNAIRE.md`。
+- 熱更實戰驗證過：線上把 AQI 門檻 150→60（未重裝 App），枋山站 AQI 62 立即生成事件並推播。
+
+### 已完成：影響圈模型（使用者要的「災難影響圈 ∩ 警戒圈 → 警報」）
+- 判定式：`事件距離 ≤ 圈半徑 + 位置精度 + 災型影響半徑`。影響半徑依災型（車禍 300m／公共安全 1500m／火災·天災 1000m），表放 `config/app.json` 可遠端調。
+- 空品連鎖：`AirQualityEventProvider` 圈附近測站 AQI 破門檻（預設 150）→ 生成官方事件 → 走同一套判定。工廠火災空污飄到你家的情境。
+- 實測：圈距火災 1.9km（舊上限 1.5km 收不到）→ 正確推播。
+
+### 已完成：通知漏斗 + 主角分化按鈕 + 安否閉環
+- **通知漏斗**：危險級（火災/公共安全/地震/海嘯/颱風，清單 `dangerKinds` 可遠端調）用**時效性通知**（`interruptionLevel=.timeSensitive`，突破勿擾，entitlement `time-sensitive` 已簽入）＋互動按鈕；提醒級（高溫/降雨/停水）只發一般通知。
+- **主角分化按鈕**（長按通知＋事件詳情頁「安否」區同一套邏輯）：我的圈→「回報我平安／尚未脫離危險」；家人的圈→「詢問是否平安」（發 pleaseReport，對方收到「X想確認你是否平安」）；地點類（倉庫）→純通知。SafetyStatus 加 `inDanger`、`pleaseReport`。
+- 家人端 `fetchPings` 偵測他人新回報 → 本機通知（首次同步只登記不通知防洗版）。
+- ⚠️ 跨裝置閉環（家人真的收到回報）**單機驗不了**，等雙機 CKShare 實測。
+
+### 已完成：實機測試打磨（iPhone 12 華柏翰的iPhone12，`devicectl` 直裝）
+- **A1 本人顯示「我」**：家人列/通知/詳情不再出現「1的『住家』」；設定改名同步到本人成員 name。
+- **A2 事件詳情頁補安否按鈕**（錯過通知也有動線）。
+- **新增：事件 AI 詳細描述**：`LocalSafetyEvent.detail`。新聞走爬蟲 LLM 白話重寫、官方走政府原始 description；詳情頁「事件說明」區（不是貼原始新聞）。六災難測試事件內建 detail 可立即看。
+- **A4 地圖降噪**：圈標記移除重複「固定圈」徽章與外框、縮小；事件 pin 縮小；提醒級警報塗層淡化（大雨特報不再鋪滿雙北）。
+- **導覽修正**：跨分頁先切頁等錨點再移聚光燈；修 safe area 重複計算（家人頁 5/6 窗頂切標題的根因）；小螢幕 Onboarding 條款不再被遮、邀請家人改可點行動卡。DEBUG `--tour-step N` 可逐步截圖。
+- **六災難場景**：設定頁一鍵「載入／清除」按鈕（DEBUG-only），實機不用改 scheme 參數。
+- **Xcode console log**：管線「收到X筆→去重Y組」、`✅ 已推播`、`不推播（原因）`、「導覽挖洞」座標。
+
+### 仍需真人／外部條件（延續，未變）
+1. **雙機 CKShare 全流程**（跨帳號邀請、即時圈雙向、安否閉環對方真收到、鎖屏 APNs、背景定位過期）——目前風險最集中的未驗證區，也是 CloudKit schema→Production 的前置。
+2. 時效性通知在實機的鎖屏呈現、地圖降噪、詳情頁安否按鈕——待使用者在 iPhone 12 上確認（本 session 結束時 App 剛乾淨重裝、停在新 Onboarding）。
+3. Demo 影片；三份法律頁公開 URL 與客服信箱；營運前法律審閱。
+
+### 本 session 踩坑（詳見 LESSONS 2026-07-19 兩條）
+- 共用工作區用 `git add -A` 兩度掃進另一個 AI session 的未驗證變更 → 改用列名 `git add <檔案清單>`。
+- SwiftData 加 @Model 欄位後舊 store 覆蓋安裝執行期崩潰（見上面待辦 2）。
