@@ -1,13 +1,17 @@
 import Foundation
 
-/// 安否狀態（安否回報的核心）
+/// 安否狀態（安否回報的核心）。
+/// 「尚未脫離危險」介於平安與求助之間：人還安全但事件未結束（例：火警已疏散、仍在現場外等待），
+/// 讓家人知道「已有回音、但要持續關注」，而不是二選一的平安／求助。
 enum SafetyStatus: String, CaseIterable {
     case safe = "我平安"
+    case inDanger = "尚未脫離危險"
     case needHelp = "需要協助"
 
     var systemImage: String {
         switch self {
         case .safe: "checkmark.circle.fill"
+        case .inDanger: "exclamationmark.triangle.fill"
         case .needHelp: "exclamationmark.circle.fill"
         }
     }

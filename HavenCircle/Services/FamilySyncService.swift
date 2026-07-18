@@ -617,6 +617,42 @@ final class FamilySyncService {
             AppLog.cloud.error("讀取共享安否回報失敗：\(error.localizedDescription)")
         }
         pings = collected.sorted { $0.createdAt > $1.createdAt }
+        await notifyIncomingPings(pings)
+    }
+
+    /// 家人回報通知：抓到「別人新送出」的安否回報時發本機通知——
+    /// 「已回報平安」讓你放心、「尚未脫離危險／需要協助」提醒你持續關注。
+    /// 已看過的回報 ID 存本機（上限 300）；首次同步只登記不通知，避免剛加入家庭圈就被歷史回報洗版。
+    private func notifyIncomingPings(_ latest: [SafetyPing]) async {
+        let defaults = UserDefaults.standard
+        let seenKey = "seenSafetyPingIDs"
+        let myName = defaults.string(forKey: SettingsKeys.profileDisplayName) ?? ""
+        let previouslySeen = defaults.stringArray(forKey: seenKey)
+        let isFirstSync = previouslySeen == nil
+        var seenSet = Set(previouslySeen ?? [])
+        var seenList = previouslySeen ?? []
+
+        for ping in latest where !seenSet.contains(ping.id) {
+            seenSet.insert(ping.id)
+            seenList.append(ping.id)
+            // 自己的回報不用通知自己
+            guard !isFirstSync, ping.senderName != myName else { continue }
+            let (title, body): (String, String) = switch ping.status {
+            case .safe:
+                ("\(ping.senderName)已回報平安",
+                 ping.note.isEmpty ? "已收到平安回報。" : ping.note)
+            case .inDanger:
+                ("\(ping.senderName)回報：尚未脫離危險",
+                 (ping.note.isEmpty ? "" : "\(ping.note)。") + "請持續關注並保持聯繫。")
+            case .needHelp:
+                ("\(ping.senderName)回報：需要協助",
+                 (ping.note.isEmpty ? "" : "\(ping.note)。") + "請立即聯繫確認狀況。")
+            }
+            await NotificationScheduler.scheduleAlert(title: title, body: body, id: "ping-\(ping.id)")
+        }
+
+        if seenList.count > 300 { seenList.removeFirst(seenList.count - 300) }
+        defaults.set(seenList, forKey: seenKey)
     }
 
     private func fetchPings(

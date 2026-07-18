@@ -30,6 +30,8 @@ struct HavenCircleApp: App {
         HCAppearance.apply()
         // 前景也要顯示通知橫幅（演練模式必要）
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        // 警報通知的「回報我平安／尚未脫離危險」快速按鈕（要在任何通知送出前登記）
+        NotificationScheduler.registerCategories()
         // 背景任務處理器必須在啟動完成前登記（Apple 規定），所以放 init 不放 .task
         BackgroundRefresh.register(container: modelContainer)
     }
@@ -85,6 +87,10 @@ struct HavenCircleApp: App {
                         context: modelContainer.mainContext,
                         displayName: profileDisplayName
                     )
+                    #if DEBUG
+                    // 六災難情境測試：--seed-six-disasters／--clear-six-disasters
+                    await SixDisasterScenario.runIfRequested(context: modelContainer.mainContext)
+                    #endif
                     // 註冊 APNs：權杖與通知權限互相獨立，先拿權杖存著（AppDelegate 回呼），
                     // AppDelegate 取得權杖後會上傳到中繼站；伺服器偵測新官方警報後用 APNs 喚醒。
                     UIApplication.shared.registerForRemoteNotifications()

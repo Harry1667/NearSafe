@@ -4,6 +4,31 @@ import os
 
 /// 本機通知排程。所有通知都必須經過這裡，才能保證「暫停提醒」真的有效。
 enum NotificationScheduler {
+    /// 事件警報通知的互動分類：長按（或下拉）通知即可直接回報安否，不必先開 App。
+    /// 這是「事件 → 你 → 家人」閉環的入口：按下後由 NotificationDelegate 寫入安否回報並同步家庭圈。
+    static let safetyAlertCategory = "SAFETY_ALERT"
+    static let actionReportSafe = "REPORT_SAFE"
+    static let actionReportDanger = "REPORT_DANGER"
+
+    /// App 啟動時登記通知分類（Apple 規定要在通知送出前登記好）
+    static func registerCategories() {
+        let safe = UNNotificationAction(
+            identifier: actionReportSafe,
+            title: "回報我平安",
+            options: [] // 不需開 App，背景就能回報
+        )
+        let danger = UNNotificationAction(
+            identifier: actionReportDanger,
+            title: "尚未脫離危險",
+            options: [] // 同上；紅色 destructive 樣式反而像「刪除」，不用
+        )
+        let category = UNNotificationCategory(
+            identifier: safetyAlertCategory,
+            actions: [safe, danger],
+            intentIdentifiers: []
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([category])
+    }
     static func requestPermission() async -> Bool {
         do {
             return try await UNUserNotificationCenter.current()
@@ -43,6 +68,8 @@ enum NotificationScheduler {
         content.sound = .default
         if let eventKey {
             content.userInfo = ["eventKey": eventKey]
+            // 事件警報才掛安否回報按鈕（每日摘要、解除通知不需要）
+            content.categoryIdentifier = safetyAlertCategory
         }
         do {
             try await UNUserNotificationCenter.current()
@@ -67,7 +94,7 @@ enum NotificationScheduler {
         let prefix = event.isDrill ? "【演練】" : ""
         await scheduleAlert(
             title: "\(prefix)\(event.title)",
-            body: "\(decision.reason)。",
+            body: "\(decision.reason)。長按通知可直接回報安否，家人會收到你的狀態。",
             id: event.eventKey,
             eventKey: event.eventKey
         )
