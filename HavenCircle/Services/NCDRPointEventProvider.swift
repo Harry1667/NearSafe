@@ -34,9 +34,21 @@ struct NCDRPointEventProvider: EventProvider {
                 sourceURL: "https://alerts.ncdr.nat.gov.tw/",
                 isOfficial: true, // NCDR 全是政府機關發布
                 occurredAt: occurredAt,
-                ttlSeconds: ttl
+                ttlSeconds: ttl,
+                // 官方事件的「AI 詳細描述」直接用政府原始文字：description 是事件說明、
+                // instruction 是應變建議，兩者合成一段完整可讀的官方描述
+                detail: Self.composeDetail(description: event.description, instruction: event.instruction)
             )
         }
+    }
+
+    /// 合成官方詳細描述：事件說明（description）＋應變建議（instruction），去重與去空白。
+    /// 兩者都空回 nil，讓詳情頁退回其他欄位而不是顯示空段落。
+    static func composeDetail(description: String?, instruction: String?) -> String? {
+        let parts = [description, instruction]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
 
     /// CAP circle 格式："緯度,經度 半徑"（半徑單位公里），例 "24.0247,120.4281 0.5"
@@ -88,4 +100,7 @@ private struct PointCapEvent: Decodable {
     let areaDesc: String?
     let circle: String?
     let category: String?
+    /// 官方事件說明與應變建議（合成 detail 用；舊資料可能缺，故 Optional）
+    let description: String?
+    let instruction: String?
 }

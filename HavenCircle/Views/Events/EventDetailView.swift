@@ -7,17 +7,28 @@ struct EventDetailView: View {
     let members: [LocalFamilyMember]
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(FamilySyncService.self) private var sync
+    @AppStorage(SettingsKeys.profileDisplayName) private var profileName = ""
     @State private var showResolveConfirmation = false
+    @State private var checkInFeedback: String?
+    @State private var isReporting = false
 
     private var decision: AlertDecision {
         AlertPolicy.evaluate(event: event, members: members)
+    }
+
+    /// 這則事件最靠近的命中圈（決定安否按鈕要放哪一組）
+    private var closestMatch: CircleMatch? {
+        decision.matches.min(by: { $0.distanceMeters < $1.distanceMeters })
     }
 
     var body: some View {
         NavigationStack {
             List {
                 statusSection
+                detailSection
                 whySection
+                checkInSection
                 infoSection
                 sourceSection
                 resourceSection
@@ -58,17 +69,86 @@ struct EventDetailView: View {
         }
     }
 
+    /// AI 整理的詳細描述：新聞事件是爬蟲 LLM 產的白話說明、官方事件是政府原始 description。
+    /// 只在有內容時顯示；空的舊資料不佔版面（詳情頁其他區塊仍完整）。
+    @ViewBuilder
+    private var detailSection: some View {
+        if let detail = event.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+            Section("事件說明") {
+                Text(detail)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+                Text(event.isOfficiallyConfirmed
+                     ? "以上為官方發布內容。"
+                     : "以上為新聞來源經整理後的說明，非官方確認資訊。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     /// 「每則通知都能看見為何收到」——直接顯示 AlertPolicy 的決策理由
     private var whySection: some View {
         Section("提醒判斷") {
             Text(decision.reason)
                 .font(.subheadline)
             ForEach(decision.matches, id: \.circleName) { match in
-                LabeledContent("\(match.memberName)・\(match.circleName)") {
+                LabeledContent("\(match.isCurrentUser ? "我" : match.memberName)・\(match.circleName)") {
                     Text("約 \(match.distanceMeters) 公尺\(match.withinSchedule ? "" : "（時段外）")")
                 }
                 .font(.caption)
             }
+        }
+    }
+
+    /// 安否操作：與通知按鈕同一套「主角」邏輯，讓錯過通知的人也能在詳情頁快速回報。
+    /// 我的圈→回報平安/尚未脫離危險；家人的圈→詢問對方是否平安；地點類（倉庫）→不顯示。
+    @ViewBuilder
+    private var checkInSection: some View {
+        if !event.isEnded, let match = closestMatch, !match.isPlace {
+            Section("安否") {
+                if match.isCurrentUser {
+                    Button {
+                        report(.safe)
+                    } label: {
+                        Label("回報我平安", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(HCColor.safe)
+                    }
+                    Button {
+                        report(.inDanger)
+                    } label: {
+                        Label("尚未脫離危險", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(HCColor.danger)
+                    }
+                } else {
+                    Button {
+                        report(.pleaseReport)
+                    } label: {
+                        Label("詢問\(match.memberName)是否平安", systemImage: "questionmark.circle.fill")
+                            .foregroundStyle(HCColor.brand)
+                    }
+                }
+                if let checkInFeedback {
+                    Label(checkInFeedback, systemImage: "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(HCColor.safe)
+                }
+            }
+            .disabled(isReporting)
+        }
+    }
+
+    private func report(_ status: SafetyStatus) {
+        isReporting = true
+        let senderName = profileName.trimmingCharacters(in: .whitespaces).isEmpty ? "我" : profileName
+        Task {
+            await sync.postPing(
+                senderName: senderName,
+                status: status,
+                note: status == .pleaseReport ? "從事件詳情發起平安確認" : "從事件詳情回報"
+            )
+            checkInFeedback = status == .pleaseReport ? "已送出確認請求" : "已送出回報"
+            isReporting = false
         }
     }
 

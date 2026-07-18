@@ -17,6 +17,8 @@ struct RawEventReport {
     let isOfficial: Bool
     let occurredAt: Date
     let ttlSeconds: TimeInterval
+    /// AI 整理的詳細描述（新聞走 LLM、官方走原始 description）；缺則 nil
+    var detail: String? = nil
 }
 
 protocol EventProvider {
@@ -112,6 +114,8 @@ enum EventPipeline {
                 if let primary = group.first(where: \.isOfficial) ?? group.first {
                     existing.title = primary.title
                     existing.approximateLocation = primary.approximateLocation
+                    // 詳細描述可能是後來才由 LLM 補上；有新的就更新，沒有就保留舊值
+                    if let detail = primary.detail, !detail.isEmpty { existing.detail = detail }
                 }
                 if trustRank(trust) > trustRank(existing.trustStatus) {
                     existing.trustStatus = trust
@@ -137,7 +141,8 @@ enum EventPipeline {
                     trustStatus: trust,
                     severity: trust == TrustStatus.confirming ? "持續確認中" : "需要注意",
                     deduplicationGroup: sig,
-                    expiresAt: .now.addingTimeInterval(group.map(\.ttlSeconds).max() ?? 86_400)
+                    expiresAt: .now.addingTimeInterval(group.map(\.ttlSeconds).max() ?? 86_400),
+                    detail: (group.first(where: { $0.detail?.isEmpty == false }) ?? primary).detail
                 )
                 context.insert(event)
                 await NotificationScheduler.notifyIfNeeded(for: event, members: members)

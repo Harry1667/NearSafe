@@ -45,7 +45,9 @@ struct NewsEventProvider: EventProvider {
                 sourceURL: event.sourceURL,
                 isOfficial: false, // 媒體報導：永不推播
                 occurredAt: published,
-                ttlSeconds: ttl
+                ttlSeconds: ttl,
+                // AI 整理的 1–2 句詳細描述（爬蟲 LLM 產）；沒有就 nil，詳情頁退回其他欄位
+                detail: event.detail?.isEmpty == false ? event.detail : nil
             )
         }
     }
@@ -140,6 +142,8 @@ private struct NewsEvent: Decodable {
     let category: String?
     /// LLM 產的短摘要（10–12 字）。必須是 Optional：舊資料沒有這欄，缺欄硬解會讓整批事件消失
     let summary: String?
+    /// LLM 產的詳細描述（1–2 句，地點＋發生什麼＋現況）。同樣 Optional 相容舊資料
+    let detail: String?
     /// sourceName 可能是字串（單一來源）或陣列（跨來源合併），寬鬆解碼
     private let sourceName: SourceName?
 

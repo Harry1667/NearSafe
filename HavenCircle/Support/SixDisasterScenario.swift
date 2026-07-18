@@ -86,7 +86,8 @@ enum SixDisasterScenario {
                 latitude: 24.9970, longitude: 121.5698692, precisionMeters: 500,
                 sourceName: "測試情境", sourceURL: "https://havencircle.looptw.com",
                 trustStatus: TrustStatus.officialConfirmed, severity: "需要注意",
-                deduplicationGroup: keyPrefix + "fire", expiresAt: expiry
+                deduplicationGroup: keyPrefix + "fire", expiresAt: expiry,
+                detail: "文山區一棟五層公寓頂樓起火，濃煙自頂樓竄出，消防單位已派遣多輛消防車到場灌救，正疏散周邊住戶。附近居民請緊閉門窗、避免吸入濃煙，並讓出通道供救災車輛通行。"
             ),
             LocalSafetyEvent(
                 eventKey: keyPrefix + "smoke",
@@ -97,7 +98,8 @@ enum SixDisasterScenario {
                 latitude: 25.0359, longitude: 121.4174, precisionMeters: 500,
                 sourceName: "測試情境", sourceURL: "https://havencircle.looptw.com",
                 trustStatus: TrustStatus.officialConfirmed, severity: "需要注意",
-                deduplicationGroup: keyPrefix + "smoke", expiresAt: expiry
+                deduplicationGroup: keyPrefix + "smoke", expiresAt: expiry,
+                detail: "新莊區一處工廠發生大火，燃燒產生的濃煙向東擴散，周邊空氣品質監測站測得數值明顯上升。下風處民眾請減少外出、關閉門窗與空調外循環，有呼吸道疾病者應特別留意。"
             ),
             LocalSafetyEvent(
                 eventKey: keyPrefix + "brawl",
@@ -108,7 +110,8 @@ enum SixDisasterScenario {
                 latitude: 25.0510, longitude: 121.5654, precisionMeters: 300,
                 sourceName: "測試情境", sourceURL: "https://havencircle.looptw.com",
                 trustStatus: TrustStatus.officialConfirmed, severity: "需要注意",
-                deduplicationGroup: keyPrefix + "brawl", expiresAt: expiry
+                deduplicationGroup: keyPrefix + "brawl", expiresAt: expiry,
+                detail: "信義區街頭發生多人持械鬥毆，警方已到場控制現場並帶回相關人員，事發路段一度交通壅塞。民眾請避免圍觀、遠離衝突區域，若目擊後續狀況可撥打 110 報案。"
             ),
             LocalSafetyEvent(
                 eventKey: keyPrefix + "crash",
@@ -119,7 +122,8 @@ enum SixDisasterScenario {
                 latitude: 25.0203, longitude: 121.4590, precisionMeters: 300,
                 sourceName: "測試情境", sourceURL: "https://havencircle.looptw.com",
                 trustStatus: TrustStatus.officialConfirmed, severity: "需要注意",
-                deduplicationGroup: keyPrefix + "crash", expiresAt: expiry
+                deduplicationGroup: keyPrefix + "crash", expiresAt: expiry,
+                detail: "板橋區一處路口發生聯結車與機車碰撞事故，警方封閉部分車道進行排除與現場處理，該路段回堵。用路人請改道行駛、減速慢行，並留意現場交通指揮。"
             ),
         ]
         for event in pointEvents { context.insert(event) }

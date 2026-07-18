@@ -344,7 +344,7 @@ LLM_PROMPT_TEMPLATE = """你是災害事故新聞分類器。判斷下面這則�
 描述：{description}
 
 只回覆一行 JSON，不要任何其他文字，格式：
-{{"is_incident": true或false, "county": "縣市全名（如 台中市）或null", "district": "鄉鎮市區或null", "place": "地點簡述或null", "category": "火災|交通|天災|公共安全|民生 其中之一", "confidence": 0到1的數字, "summary": "10至12個中文字的事件重點（只寫地點＋發生什麼事，如「板橋警匪追逐警破窗逮人」；不要標點、驚嘆號與媒體渲染詞；一律使用台灣繁體中文，禁止任何簡體字）"}}"""
+{{"is_incident": true或false, "county": "縣市全名（如 台中市）或null", "district": "鄉鎮市區或null", "place": "地點簡述或null", "category": "火災|交通|天災|公共安全|民生 其中之一", "confidence": 0到1的數字, "summary": "10至12個中文字的事件重點（只寫地點＋發生什麼事，如「板橋警匪追逐警破窗逮人」；不要標點、驚嘆號與媒體渲染詞；一律使用台灣繁體中文，禁止任何簡體字）", "detail": "30到60字的事件詳細說明，用中性平實的語氣重新整理（地點＋發生什麼＋目前現況或影響），不要媒體渲染詞、不要驚嘆號、不要記者名或報社名；一律使用台灣繁體中文，禁止任何簡體字"}}"""
 
 
 def call_proxy_llm(prompt):
@@ -450,6 +450,12 @@ def llm_classify(title, description):
         result["summary"] = to_traditional(compact_summary[:12]) or None
     else:
         result["summary"] = None
+    # detail 消毒：保留標點（是完整句子），只去頭尾空白、截斷過長、強制簡轉繁；空則 None
+    detail = result.get("detail")
+    if isinstance(detail, str) and detail.strip():
+        result["detail"] = to_traditional(detail.strip()[:120]) or None
+    else:
+        result["detail"] = None
     # 地點欄位同樣過簡轉繁（LLM 抽的 district/place 也可能混簡體）
     for key in ("district", "place"):
         if isinstance(result.get(key), str):
@@ -487,8 +493,8 @@ def merge_duplicate(existing, new_event):
     names = [n.strip() for n in existing["sourceName"].split("、")]
     if new_event["sourceName"] not in names:
         existing["sourceName"] = existing["sourceName"] + "、" + new_event["sourceName"]
-    # 既有欄位缺值時，用新來源的值補上（縣市/地點/摘要越齊越好）
-    for key in ("county", "district", "place", "summary"):
+    # 既有欄位缺值時，用新來源的值補上（縣市/地點/摘要/詳述越齊越好）
+    for key in ("county", "district", "place", "summary", "detail"):
         if not existing.get(key) and new_event.get(key):
             existing[key] = new_event[key]
 
@@ -628,6 +634,7 @@ def main(feeds=None, out_dir=None):
                 "category": category,
                 "confidence": 0.5,          # 規則路徑的預設信心值
                 "summary": None,            # 短摘要只有 LLM 路徑會產生；App 端 null 時退回原標題
+                "detail": None,             # 詳細描述同樣只有 LLM 路徑會產生；App 端 null 時退回其他欄位
                 "extraction": "rules",
                 "trust": "media-report",    # 媒體報導層：只進「持續確認中」，永不推播
                 "corroboration": 1,
@@ -647,6 +654,7 @@ def main(feeds=None, out_dir=None):
                         "category": llm["category"],
                         "confidence": llm["confidence"],
                         "summary": llm.get("summary"),
+                        "detail": llm.get("detail"),
                         "extraction": "llm",
                     })
 

@@ -31,6 +31,10 @@ final class LocalSafetyEvent {
     var sourceURL: String
     var trustStatus: String
     var severity: String
+    /// AI 整理的詳細描述（1–2 句：地點＋發生什麼＋現況）。
+    /// 新聞事件走爬蟲 LLM 產出、官方事件用政府原始 description＋instruction；
+    /// 缺這欄的舊資料為 nil，詳情頁會退回既有欄位組合。給預設值以支援輕量遷移
+    var detail: String? = nil
     /// 相似事件去重群組
     var deduplicationGroup: String
     var expiresAt: Date
@@ -59,6 +63,7 @@ final class LocalSafetyEvent {
         severity: String,
         deduplicationGroup: String,
         expiresAt: Date,
+        detail: String? = nil,
         status: EventStatus = .active,
         isDrill: Bool = false
     ) {
@@ -77,6 +82,7 @@ final class LocalSafetyEvent {
         self.severity = severity
         self.deduplicationGroup = deduplicationGroup
         self.expiresAt = expiresAt
+        self.detail = detail
         self.status = status.rawValue
         self.isDrill = isDrill
     }

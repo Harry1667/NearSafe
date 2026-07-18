@@ -63,10 +63,12 @@ enum AlertPolicy {
         guard let best = inSchedule.min(by: { $0.distanceMeters < $1.distanceMeters }) else {
             return AlertDecision(shouldPush: false, matches: matches, reason: "相關警戒圈都在提醒時段外，僅在 App 內顯示")
         }
+        // 本人圈說「你的」，家人／地點圈說名字——避免使用者名字填成「1」時出現「1的『住家』」
+        let subject = best.isCurrentUser ? "你" : best.memberName
         return AlertDecision(
             shouldPush: true,
             matches: matches,
-            reason: "事件位於\(best.memberName)的「\(best.circleName)」警戒圈約 \(best.distanceMeters) 公尺內，\(event.trustStatus)"
+            reason: "事件位於\(subject)的「\(best.circleName)」警戒圈約 \(best.distanceMeters) 公尺內，\(event.trustStatus)"
         )
     }
 }

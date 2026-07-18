@@ -29,4 +29,9 @@ final class LocalFamilyMember {
 
 extension LocalFamilyMember {
     var isPlace: Bool { kind == "place" }
+
+    /// 介面第三人稱顯示：本人一律顯示「我」，避免使用者把名字填成「1」時
+    /// 通知與家人列出現「1的『住家』」這種難讀的字樣。
+    /// 注意：這只用於「本機自我顯示」；發給家人的安否回報署名仍用真實 name（見 postPing）
+    var displayName: String { isCurrentUser ? "我" : name }
 }

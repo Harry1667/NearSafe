@@ -266,24 +266,25 @@ struct SafetyMapView: View {
                         circle.name,
                         coordinate: .init(latitude: circle.latitude, longitude: circle.longitude)
                     ) {
-                        VStack(spacing: 2) {
+                        // 降噪：圈標記只留小圖示（圈名交給 MapKit 標籤、類型交給圖示與顏色），
+                        // 移除每個圈都重複的「固定圈／即時圈」文字徽章與外框，讓事件 pin 讀得清楚。
+                        // 即時圈保留過期提示，那是安全判斷必要資訊
+                        VStack(spacing: 1) {
                             Image(systemName: circle.kind.iconName)
-                                .font(.caption.bold())
+                                .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(.white)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 24, height: 24)
                                 .background(renderedColor, in: Circle())
                                 .overlay(Circle().stroke(.white, lineWidth: 1.5))
-                            Text(circle.kind.title)
-                                .font(.system(size: 9, weight: .semibold))
                             if circle.kind == .live {
                                 Text(circle.locationFreshnessText)
-                                    .font(.system(size: 8))
+                                    .font(.system(size: 8, weight: .medium))
                                     .foregroundStyle(circle.isActiveForAlerts ? .secondary : HCColor.attention)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(.thinMaterial, in: Capsule())
                             }
                         }
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 3)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(
                             "\(circle.name)，\(circle.kind.title)，警戒半徑 \(circle.radiusMeters) 公尺，\(circle.locationFreshnessText)"
@@ -313,9 +314,9 @@ struct SafetyMapView: View {
                         Image(systemName: event.isDrill
                               ? "bell.and.waves.left.and.right"
                               : EventCategory.icon(for: event.eventType))
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
+                            .frame(width: 32, height: 32)
                             .background(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention, in: Circle())
                             .overlay(Circle().stroke(.white, lineWidth: 2))
                             .shadow(color: .black.opacity(0.25), radius: 3, y: 1)

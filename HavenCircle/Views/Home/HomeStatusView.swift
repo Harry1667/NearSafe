@@ -213,7 +213,7 @@ struct HomeStatusView: View {
                     .font(.title2)
                     .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(member.name).font(.body.weight(.medium))
+                    Text(member.displayName).font(.body.weight(.medium))
                     Text(memberStatusText(member, nearbyEvent: nearbyEvent, ping: ping))
                         .font(.caption)
                         .foregroundStyle(hasNearbyEvent || hasStaleLiveCircle ? rowColor : .secondary)

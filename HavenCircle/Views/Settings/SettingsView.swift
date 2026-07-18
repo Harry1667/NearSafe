@@ -594,14 +594,24 @@ private struct AppleAccountView: View {
 private struct PersonalProfileView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.profileContactNote) private var contactNote = ""
+    @Environment(\.modelContext) private var context
+    @Query private var members: [LocalFamilyMember]
 
     var body: some View {
         Form {
             Section("顯示資訊") {
                 TextField("顯示名稱", text: $displayName)
-                Text("顯示名稱會用在安否回報的署名。請只填寫家人辨識所需的資訊。")
+                Text("顯示名稱會用在安否回報的署名，家人會看到這個名稱。請只填寫家人辨識所需的資訊。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            .onChange(of: displayName) { _, newValue in
+                // 同步到本人的家庭成員資料：安否回報署名（senderName）與家人清單都靠它，
+                // 不同步的話改了名字、家人收到的回報還是舊署名
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, let me = members.first(where: \.isCurrentUser), me.name != trimmed else { return }
+                me.name = trimmed
+                context.saveReporting()
             }
             Section("緊急聯絡備註") {
                 TextField("備註（選填）", text: $contactNote, axis: .vertical)
