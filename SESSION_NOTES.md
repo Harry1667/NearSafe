@@ -234,3 +234,50 @@
 2. 即時圈仍需兩台不同 iCloud 帳號的實機完成 CKShare 跨帳號、停止分享、過期與背景／鎖屏更新證據；對外不得承諾固定秒數更新。
 - 雙機第一次掃描 QR 出現系統「Item Unavailable」：根因是 App 把 `publicPermission = .none` 的一般 `share.url` 直接編成 QR，未被圈主預先加入的 Apple 帳號依法無權開啟。已改為 iOS 26 的一次性私人參與者網址，加入並驗證 `InProcessOneTimeLinks` entitlement／自動簽章 profile；舊 QR 不會自動修復，必須由新版重新產生。
 - 接受家庭邀請時會記住該 shared zone 並優先讀寫；修掉「成員手機加入前曾建立自己的 private 家庭圈，接受後仍把定位寫回自己圈」的跨帳號路由問題。成員端也不再能誤產生自己空圈的邀請，會明示僅圈主可邀請。
+
+## 2026-07-17 上架前清理封版 + 黑客松落選複盤 + 監控/熱更決策
+
+### 已完成：上架前程式碼清理（全部實 build 驗證過）
+
+- **審查**：兩組偵查兵掃過（debug/placeholder、Info.plist/權限/隱私）＋跑 `submission/verify_submission.sh`。結論：程式本體幾乎就緒，閘門 26 項過 25，唯一 FAIL 是 Pitch 缺 Demo 影片連結。
+- **demoSection 包 `#if DEBUG`**：`SettingsView.swift:154` 的三顆示範按鈕（模擬警報／載入歷史示範／重設 Demo）原本會編進正式版，已收進 DEBUG。
+- **新增 `PrivacyInfo.xcprivacy`（App + Widget 各一份）**：App 申報 UserDefaults=CA92.1（唯一 required-reason API；已 grep 確認無 systemUptime/檔案時間戳/磁碟/鍵盤）；Widget 是空殼（只讀 App Group 容器 JSON 檔，無 required-reason API）。**已用 build 產物確認兩份都入包**（同步資料夾自動納入，不用改 pbxproj）。
+- **刪唯一會上架的測試遺留物**：DrillView「手動新增測試事件」按鈕（四處連動）+ 整檔 `EventEditorView.swift`。
+- **依使用者要求刪除 Debug 診斷/測試碼**（使用者已知情這些本來就是 `#if DEBUG` 不會上架，仍選擇刪乾淨原始碼）：刪 `DeviceDiagnostics.swift`／`DeviceDiagnosticsView.swift`／`SmokeTest.swift` 三檔 + 散落在 7 個 Service 檔的約 52 個診斷呼叫點（純 log，不影響邏輯；由一個有編輯權的 general-purpose agent 精確切除並自我 build 驗證）。`DemoSeed.swift` **保留**（被 DEBUG-only 的 demoSection 依賴）。
+- **修 `verify_submission.sh`**：移除「要求 DeviceDiagnostics.swift 存在」的兩個過時檢查（原本設計是確保有做過實機診斷，與「上架前移除」目標相反）。
+- **驗證（我自己跑、非採信 agent 自報）**：`xcodebuild` Debug 模擬器 build → `** BUILD SUCCEEDED **`（含 Widget extension）；grep 診斷/測試符號零殘留；閘門重跑仍只剩 Demo 影片一項 FAIL。
+
+### 已完成：整包封版 commit
+
+- 使用者選「整包可建置狀態一起提交」。開分支 **`chore/app-store-prep`**、commit **`b679b5b`**、**112 檔**（6912+/1033-）。**main 未動**。
+- **排除的垃圾檔**（仍在工作區未追蹤，之後可考慮 `.gitignore`）：`HavenCircle-video.mp4`（Demo 影片本體）、根目錄三張 UUID 截圖 + 一張 `Screenshot …png`、`.scc/`。
+- ⚠️ 這個 commit 一次收進了**多天累積、session 前就未 commit 的整個工作區**（不只本次清理）——SESSION_NOTES.md 也在裡面，本 session 前 git log 只有 5 個 commit 但工作區有 ~110 項變更，兩者對不上，改由「能建置就整包收進」處理。
+
+### 已完成：黑客松落選複盤（studentcreator.tw）
+
+- 活動＝「iOS AI Summer Camp 2026」（就是本專案 iosaicamp）。安心圈在「所有團隊」展示頁，但**不在評審選出的 10 組「決選/上台簡報」名單**。決選是評審討論選的，不是公開投票（票數軌道另計、皆剩 0 票）。
+- 逐一讀完 10 組決選（練舞人、吃菜啦、第一幀、Packmon、PillScan、句源、雷包點點名、Snoots!、TrailUp、VocabStash）+ 安心圈自家詳情頁 + 官網 + Pitch。
+- **診斷（呈現層落後，非產品層）**：決選作品全是「一人一件事、一句話懂」，且 **5/10 附 YouTube Demo 影片**；安心圈**無 Demo 影片**、概念先行（同意式邊界/即時圈vs固定圈/CKShare/NCDR 要讀三段才懂）、且官網/Pitch 到處「驗證中／展示版本」自曝未完成。安心圈技術完成度其實高於多數決選，但被包裝成難懂又自稱沒做完。
+- 使用者決定：比賽結束，不再管，轉向真實 App Store。
+
+### 已盤點：距離真實 App Store 上架還差的（給下次）
+
+- 🔴 **CloudKit schema 從 Development 部署到 Production**（`FamilyLiveLocation`/`SafetyPing` 等；不做真實使用者家庭同步會壞）— 最易漏的致命項。
+- 🔴 **App Privacy 問卷**（App Store Connect 內，與 `PrivacyInfo.xcprivacy` 是兩回事）。
+- 🔴 **商店規格截圖**（6.9"/6.7"，Pitch 截圖尺寸不符，要用模擬器重截）。
+- 🟡 Archive 後驗 `aps-environment` 是否被改寫成 `production`；AppIcon 的 dark/tinted 插槽仍空。
+- ⚠️ **App Review 兩大風險**：背景定位（Guideline 2.5.4 要在送審備註說明必要性）、CKShare 跨帳號審查員測不了（要附備註/影片）。建議先上 **TestFlight** 補實機證據（雙機 CKShare、鎖屏 APNs、背景定位過期）再送審。
+- ⏸️ Demo 影片（硬碟已有 `HavenCircle-video.mp4`，未上傳/未接進 Pitch）。
+
+### 進行中：監控 + 熱更（決策已收斂、尚未動工）
+
+- 使用者原要「加 Firebase 後臺監視」+「用 Firebase 熱更 API、免再送審」。
+- 我已釐清紅線：iOS **禁止熱更程式邏輯/可執行碼（Guideline 2.5.2）**，只能熱更設定/資料/開關/端點；**祕密金鑰不可放** Remote Config（客戶端可讀）。Firebase Analytics 會觸發「Data Used to Track You」隱私標籤，重傷安心圈唯一還在的「零追蹤」差異化。
+- **我的建議（使用者傾向採納）＝自建在既有 Oracle，不用 Firebase**：① 熱更＝`havencircle.looptw.com/config/app.json`（App 啟動抓＋離線兜底＋密碼保護後臺編輯），與現有 NCDR JSON serving 同模式；② 分析＝匿名 `events.php`（仿現有 APNs `register.php`）+ 簡單後臺看板；不想做看板才退而用 TelemetryDeck（隱私優先第三方），別用 Firebase。
+- **下一步待使用者點頭**：是否要我把 `config/app.json` + `events.php` + 密碼保護後臺 + App 端（啟動抓設定、送匿名事件）整套搭起來；或先只做熱更那塊。
+
+### 下次起點
+
+1. 決定 `chore/app-store-prep` 是否併回 main（`git checkout main && git merge --ff-only chore/app-store-prep`）；順手考慮把垃圾檔加進 `.gitignore`。
+2. 若要繼續監控/熱更：照上面「自建在 Oracle」的方案動工。
+3. 真實上架優先序：CloudKit schema→Production、商店截圖、App Privacy 問卷、TestFlight 補實機證據。

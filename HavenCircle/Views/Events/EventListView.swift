@@ -93,6 +93,16 @@ struct EventListView: View {
         }
         // 手動下拉刷新：重跑一次資料管線
         .refreshable { await EventPipeline.refresh(context: context) }
+        // 通知深連結：帶事件 key 進來就直接打開那一則詳情，使用者不必在清單裡自己找。
+        // 本機通知一定源自本機已存在的事件，找不到（例如已被刪除）就靜默留在清單。
+        .task(id: router.pendingEventKey) {
+            guard let key = router.pendingEventKey else { return }
+            router.pendingEventKey = nil
+            guard let match = visibleEvents.first(where: { $0.eventKey == key }) else { return }
+            // 等 push 導航動畫完成再出 sheet，避免兩種轉場互相打斷（同 DEBUG 自動開啟的考量）
+            try? await Task.sleep(for: .milliseconds(450))
+            selected = match
+        }
         .sheet(isPresented: $showDrill) { DrillView() }
         .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
         .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }

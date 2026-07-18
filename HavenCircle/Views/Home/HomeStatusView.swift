@@ -290,7 +290,7 @@ struct HomeStatusView: View {
             HStack {
                 Image(systemName: "clock.arrow.circlepath")
                     .foregroundStyle(HCColor.brand)
-                Text("回顧過去 7 天")
+                Text("回顧過去 30 天")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()

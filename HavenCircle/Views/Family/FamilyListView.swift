@@ -7,6 +7,8 @@ struct FamilyListView: View {
     @Query private var members: [LocalFamilyMember]
     @State private var adding = false
     @State private var addingPlace = false
+    /// 剛儲存的家人/地點：編輯器收合後接著替它開固定圈編輯器（兩段式流程合併成一段）
+    @State private var newMemberForCircle: LocalFamilyMember?
 
     var body: some View {
         List {
@@ -67,8 +69,20 @@ struct FamilyListView: View {
                 Label("新增", systemImage: "plus")
             }
         }
-        .sheet(isPresented: $adding) { MemberEditorView() }
-        .sheet(isPresented: $addingPlace) { MemberEditorView(kind: "place") }
+        .sheet(isPresented: $adding) { MemberEditorView(onSaved: scheduleCircleEditor) }
+        .sheet(isPresented: $addingPlace) { MemberEditorView(kind: "place", onSaved: scheduleCircleEditor) }
+        .sheet(item: $newMemberForCircle) { member in
+            CircleEditorView(member: member)
+        }
+    }
+
+    /// 等前一張 sheet 的收合動畫結束再開固定圈編輯器；
+    /// 立刻 present 會撞上仍在收合中的 sheet 而被系統丟棄
+    private func scheduleCircleEditor(_ member: LocalFamilyMember) {
+        Task {
+            try? await Task.sleep(for: .milliseconds(550))
+            newMemberForCircle = member
+        }
     }
 }
 

@@ -20,3 +20,13 @@ tools/news-crawler/seen.json
 
 # APNs 私鑰絕不進 git（外洩＝任何人可對使用者發推播）
 *.p8
+
+# Claude Code 本機設定（settings.local.json 是個人權限清單）
+.claude/
+
+# 黑客松提交工具產物（比賽已結束）
+.scc/
+
+# 根目錄的臨時截圖與 Demo 影片（正式素材放 website/ 或 design/）
+/*.png
+/*.mp4

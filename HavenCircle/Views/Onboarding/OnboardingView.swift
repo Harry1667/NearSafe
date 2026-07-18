@@ -146,17 +146,20 @@ struct OnboardingView: View {
             .padding(.horizontal, 24)
 
             Spacer()
-            Text("即時圈只有本人在自己的手機上主動開啟後才會分享，並可隨時停止；固定圈與事件資料保存在這支手機。家庭位置透過你的 iCloud 家庭圈同步。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
             Label("安心圈不是緊急服務；遇立即危險請撥打 110 或 119。", systemImage: "phone.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(HCColor.danger)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            primaryButton("開始設定") { withAnimation { step = .signIn } }
+            // 法律同意放在流程起點：使用者在填任何資料、授任何權限之前先決定要不要同意，
+            // 不同意就不會發生「輸入都填了、權限都給了才被條款卡住」的先斬後奏
+            if !isReplay {
+                legalAgreementBlock
+                    .padding(.horizontal, 24)
+            }
+            primaryButton("同意並開始設定", disabled: !isReplay && !legalAccepted) {
+                withAnimation { step = .signIn }
+            }
         }
         .padding(.bottom, 24)
     }
@@ -238,6 +241,15 @@ struct OnboardingView: View {
                                 found = nil
                                 searchFailed = false
                             }
+                            // 停止輸入 0.7 秒自動搜尋（與固定圈編輯器同一套行為）；按鈕保留供立即搜尋
+                            .task(id: address) {
+                                let query = address.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !isReplay, !query.isEmpty,
+                                      address != pickedLabel,
+                                      found == nil, picked == nil else { return }
+                                do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
+                                await search()
+                            }
                         Button("使用 Apple Maps 搜尋位置", systemImage: "magnifyingglass") {
                             Task { await search() }
                         }
@@ -267,15 +279,13 @@ struct OnboardingView: View {
                             }
                         }
                 } footer: {
-                    Text("開啟後，警戒圈會跟著這支手機移動，並在加入家庭 iCloud 後分享給家人。按下一步時才會要求升級為「永遠允許」定位；可隨時在家人頁停止，畫面會標示最後更新時間。")
+                    Text("開啟後，警戒圈會跟著這支手機移動，並在加入家庭 iCloud 後分享給家人。設定完成後會再詢問是否升級為「永遠允許」定位，讓離開 App 後也能更新；可隨時在家人頁停止，畫面會標示最後更新時間。")
                 }
             }
             .scrollContentBackground(.hidden)
+            // 這一步只用到「使用期間」定位；Always 升級留到完成頁——
+            // 同一步連跳兩次系統定位彈窗會讓第二窗直接被系統吞掉（使用者選過「僅使用期間」後不再詢問）
             primaryButton("下一步", disabled: !circleCanAdvance) {
-                if isFollowMe && !isReplay {
-                    // 使用者已看過用途並確認起點後，才要求背景即時圈所需的 Always 權限。
-                    LocationService.shared.requestAlwaysPermission()
-                }
                 advanceFromCircle()
             }
         }
@@ -357,12 +367,18 @@ struct OnboardingView: View {
                 setupSummaryCard
                 if !isReplay, isFollowMe, LocationService.shared.authorization != .authorizedAlways {
                     VStack(spacing: 8) {
-                        Label("即時圈尚未取得「永遠允許」定位，離開 App 後的位置更新可能中斷。", systemImage: "location.slash.fill")
+                        Label("即時圈需要「永遠允許」定位，離開 App 後才能持續更新位置。", systemImage: "location.slash.fill")
                             .font(.caption)
                             .foregroundStyle(HCColor.attention)
                             .multilineTextAlignment(.center)
-                        Button("前往系統設定完成定位", systemImage: "gearshape") { openSystemSettings() }
-                            .font(.subheadline.weight(.semibold))
+                        // Always 的系統升級彈窗只有一次機會，留到使用者看完摘要、理解用途的這一刻；
+                        // LocationService 是 @Observable，授權成功後這整塊會自動消失
+                        Button("允許背景定位", systemImage: "location.fill") {
+                            LocationService.shared.requestAlwaysPermission()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        Button("或前往系統設定開啟", systemImage: "gearshape") { openSystemSettings() }
+                            .font(.caption)
                     }
                     .padding(.horizontal, 32)
                 }
@@ -375,19 +391,13 @@ struct OnboardingView: View {
                     .foregroundStyle(HCColor.danger)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
-                if !isReplay {
-                    legalAgreementBlock
-                        .padding(.horizontal, 24)
-                }
             }
             .padding(.top, 20)
             .padding(.bottom, 12)
         }
         .safeAreaInset(edge: .bottom) {
-            primaryButton(
-                isReplay ? "完成" : "同意並前往地圖確認",
-                disabled: !isReplay && !legalAccepted
-            ) { finishSetup() }
+            // 法律同意已在第一步完成，這裡直接放行
+            primaryButton(isReplay ? "完成" : "前往地圖確認") { finishSetup() }
                 .padding(.vertical, 8)
                 .background(.bar)
         }

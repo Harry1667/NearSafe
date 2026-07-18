@@ -21,8 +21,10 @@ struct AppTabs: View {
     // 功能導覽：黑幕聚光燈跨分頁介紹主要功能（nil＝未進行）
     @AppStorage(SettingsKeys.homeTourPending) private var homeTourPending = false
     @State private var tourStep: Int?
-    /// Onboarding 完成後先讓地圖的守護圈確認儀式播完，再開始四步功能導覽。
+    /// Onboarding 完成後先讓地圖的守護圈確認儀式播完，再開始功能導覽。
     @State private var shouldConfirmCircleOnMap = UserDefaults.standard.bool(forKey: SettingsKeys.guardianIntroPending)
+    /// 守護圈確認動效播放中（等待期間顯示「跳過」；設回 false 即中止等待）
+    @State private var isPlayingGuardianIntro = false
 
     private static func initialTab() -> Int {
         #if DEBUG
@@ -59,6 +61,24 @@ struct AppTabs: View {
             // Coach marks 顯示時，VoiceOver 只應讀到導覽卡，不可穿透到背景按鈕。
             .accessibilityHidden(tourStep != nil)
             .allowsHitTesting(tourStep == nil)
+
+            // 守護圈確認動效期間給「跳過」：儀式感只該演給想看的人
+            if isPlayingGuardianIntro {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button("跳過") { isPlayingGuardianIntro = false }
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.regularMaterial, in: Capsule())
+                            .accessibilityLabel("跳過地圖確認動畫")
+                    }
+                    .padding(.trailing, HCSpacing.x4)
+                    .padding(.bottom, 64) // 避開分頁列
+                }
+            }
         }
         // 功能導覽遮罩：主要內容使用實際 anchor，只有 TabView 私有結構才做安全區域降級推算
         .overlayPreferenceValue(TourAnchorKey.self) { anchors in
@@ -81,7 +101,15 @@ struct AppTabs: View {
             if shouldConfirmCircleOnMap {
                 router.selection = TabRouter.mapTab
                 // 等地圖框住剛建立的圈並顯示名稱／半徑；Reduce Motion 時只需短暫停留。
-                try? await Task.sleep(for: reduceMotion ? .milliseconds(900) : .milliseconds(3_100))
+                // 分段睡：使用者按「跳過」（isPlayingGuardianIntro 設回 false）就提前結束等待。
+                isPlayingGuardianIntro = true
+                let totalMilliseconds = reduceMotion ? 900 : 3_100
+                var elapsed = 0
+                while elapsed < totalMilliseconds && isPlayingGuardianIntro {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    elapsed += 100
+                }
+                isPlayingGuardianIntro = false
                 shouldConfirmCircleOnMap = false
             } else {
                 try? await Task.sleep(for: .milliseconds(900))
@@ -109,12 +137,15 @@ struct AppTabs: View {
         }
     }
 
-    /// havencircle://alerts｜map｜family｜refresh
-    /// 分頁減編後 alerts/refresh 改為「安心頁＋push 提醒中心」，widget 與通知不用改 URL
+    /// havencircle://alerts[?event=<eventKey>]｜map｜family｜refresh
+    /// 分頁減編後 alerts/refresh 改為「安心頁＋push 提醒中心」，widget 與通知不用改 URL；
+    /// 通知另帶 event 參數時，提醒中心會直接打開那一則的詳情
     private func route(_ url: URL) {
         guard url.scheme == "havencircle" else { return }
         switch url.host {
-        case "alerts": router.openHome(.events)
+        case "alerts":
+            router.pendingEventKey = eventKey(from: url)
+            router.openHome(.events)
         case "map": router.selection = TabRouter.mapTab
         case "family": router.selection = TabRouter.familyTab
         case "refresh":
@@ -122,6 +153,13 @@ struct AppTabs: View {
             Task { await EventPipeline.refresh(context: context) }
         default: break
         }
+    }
+
+    private func eventKey(from url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == "event" }?
+            .value
     }
 }
 

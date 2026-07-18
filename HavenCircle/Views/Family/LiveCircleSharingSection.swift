@@ -4,6 +4,7 @@ import SwiftData
 /// 本人裝置的即時圈控制。分享必須在每位家人的手機上各自開啟，其他人不能代開。
 struct LiveCircleSharingSection: View {
     @Environment(FamilySyncService.self) private var sync
+    @Environment(TabRouter.self) private var router
     @Environment(\.modelContext) private var context
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.liveLocationSharingEnabled) private var isSharing = false
@@ -26,6 +27,10 @@ struct LiveCircleSharingSection: View {
                 Label("請先登入 iCloud，才能與家庭成員分享即時位置", systemImage: "icloud.slash")
                     .font(.caption)
                     .foregroundStyle(HCColor.attention)
+                // 與 InviteFamilySection 同一套引導：原地給入口，不把人丟到別處自己想辦法
+                Button("查看 Apple 帳號狀態", systemImage: "gearshape") {
+                    router.showSettings = true
+                }
             }
 
             if isSharing {

@@ -22,6 +22,9 @@ final class TabRouter {
     var homePath: [HomeDestination] = []
     /// 設定改為全域 sheet（掛在 AppTabs 層，任何頁面都能打開）
     var showSettings = false
+    /// 通知深連結指定的事件：提醒中心出現後直接打開這一則的詳情，
+    /// 使用者不必在清單裡自己找剛剛通知講的是哪一件
+    var pendingEventKey: String?
 
     init(selection: Int = TabRouter.homeTab) {
         self.selection = selection

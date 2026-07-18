@@ -9,17 +9,20 @@ struct MemberDetailView: View {
 
     var body: some View {
         List {
-            Section("即時圈") {
-                let liveCircles = member.lifeCircles.filter { $0.kind == .live }
-                if liveCircles.isEmpty {
-                    Text(member.isCurrentUser
-                         ? "可在家人頁開啟這支手機的即時圈"
-                         : "等待這位家人在自己的手機上開啟位置分享")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(liveCircles) { circle in
-                        circleRow(circle)
+            if member.isCurrentUser {
+                // 自己的詳情頁直接放即時圈控制，不再是「請回家人頁開啟」的死路文字
+                LiveCircleSharingSection()
+            } else {
+                Section("即時圈") {
+                    let liveCircles = member.lifeCircles.filter { $0.kind == .live }
+                    if liveCircles.isEmpty {
+                        Text("等待這位家人在自己的手機上開啟位置分享")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(liveCircles) { circle in
+                            circleRow(circle)
+                        }
                     }
                 }
             }

@@ -2,22 +2,39 @@ import SwiftUI
 import CoreLocation
 
 struct EventRow: View {
+    enum Style {
+        case standard
+        case mapCompact
+    }
+
     let event: LocalSafetyEvent
     let members: [LocalFamilyMember]
+    let style: Style
+
+    init(event: LocalSafetyEvent, members: [LocalFamilyMember], style: Style = .standard) {
+        self.event = event
+        self.members = members
+        self.style = style
+    }
 
     /// 可信度顏色（官方確認＝危險紅、確認中＝琥珀）；事件類型交給圖示表達
     private var trustColor: Color {
         event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention
     }
 
+    @ViewBuilder
     var body: some View {
+        switch style {
+        case .standard:
+            standardRow
+        case .mapCompact:
+            mapCompactRow
+        }
+    }
+
+    private var standardRow: some View {
         HStack(spacing: HCSpacing.x3) {
-            Image(systemName: iconName)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(trustColor)
-                .frame(width: 34, height: 34)
-                .background(trustColor.opacity(0.12), in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous))
-                .accessibilityHidden(true)
+            eventIcon(size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.isDrill ? "【演練】\(event.title)" : event.title)
                     .lineLimit(2) // 卡片定高：超長標題（媒體事件偶有）截斷，不撐爆版面
@@ -39,6 +56,46 @@ struct EventRow: View {
                 .background(trustColor.opacity(0.12), in: Capsule())
         }
         .hcCard()
+    }
+
+    /// 地圖底部只保留事件判讀所需的資訊層級，避免小螢幕被卡片遮住。
+    private var mapCompactRow: some View {
+        HStack(spacing: 10) {
+            eventIcon(size: 32)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(event.isDrill ? "【演練】\(event.title)" : event.title)
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
+                Text(eventSeverityAndTrust(event))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(trustColor)
+                    .lineLimit(1)
+                Text("\(relativeTime(event.occurredAt))・\(relativeDistance(event, members))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, HCSpacing.x3)
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func eventIcon(size: CGFloat) -> some View {
+        Image(systemName: iconName)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(trustColor)
+            .frame(width: size, height: size)
+            .background(
+                trustColor.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+            )
+            .accessibilityHidden(true)
     }
 
     private var iconName: String {
@@ -78,6 +135,13 @@ func relativeTime(_ date: Date) -> String {
     let hours = minutes / 60
     if hours < 24 { return "\(hours) 小時前" }
     return "\(hours / 24) 天前"
+}
+
+/// 部分來源會把嚴重程度與驗證狀態填成同一句，顯示時合併避免重複。
+func eventSeverityAndTrust(_ event: LocalSafetyEvent) -> String {
+    event.severity == event.trustStatus
+        ? event.severity
+        : "\(event.severity)・\(event.trustStatus)"
 }
 
 /// 「附近」的距離語意：離所有有效警戒圈超過這個距離的事件不算「附近」。

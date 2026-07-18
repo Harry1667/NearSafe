@@ -55,6 +55,17 @@ struct CircleEditorView: View {
                         searchFailed = false
                         locationNeedsConfirmation = true
                     }
+                    // 停止輸入 0.7 秒就自動搜尋（每次改字 task 會重啟，形成 debounce）；
+                    // 下方按鈕保留，給想立即搜尋或自動搜尋失敗後重試的人
+                    .task(id: address) {
+                        let query = address.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !query.isEmpty,
+                              address != circle?.encryptedAddress,
+                              address != pickedLabel,
+                              found == nil, picked == nil else { return }
+                        do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
+                        await search()
+                    }
                 Button("使用 Apple Maps 搜尋") {
                     Task { await search() }
                 }

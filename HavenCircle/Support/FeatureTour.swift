@@ -67,6 +67,10 @@ struct FeatureTourView: View {
     private static let allSteps: [TourStep] = [
         .init(target: .statusHero, tab: TabRouter.homeTab, title: "一眼看到全家狀態",
               message: "打開 App 第一眼就會用文字告訴你：警戒圈是否平安、是否有事件靠近，以及即時位置是否超過 15 分鐘未更新。"),
+        .init(target: .watchRow, tab: TabRouter.homeTab, title: "背景看守不吵你",
+              message: "未驗證線索與離警戒圈較遠的官方事件都收在提醒中心，不會推播打擾；點這一列隨時查看完整清單。"),
+        .init(target: .historyRow, tab: TabRouter.homeTab, title: "回顧過去 30 天",
+              message: "查看警戒圈周遭最近一個月的事件統計與紀錄，了解這個區域平時的安全樣貌。"),
         .init(target: .mapCanvas, tab: TabRouter.mapTab, title: "安全地圖",
               message: "地圖同時呈現家人主動分享的即時圈、你儲存的固定圈、官方警報範圍與事件位置；每個即時圈都會標示最後更新時間。"),
         .init(target: .familyContent, tab: TabRouter.familyTab, title: "管理家人與重要地點",
@@ -83,7 +87,7 @@ struct FeatureTourView: View {
     var body: some View {
         GeometryReader { proxy in
             let _ = {
-                let anchoredTargets: [TourTarget] = [.statusHero, .mapCanvas, .familyContent, .checkInButton]
+                let anchoredTargets: [TourTarget] = [.statusHero, .watchRow, .historyRow, .mapCanvas, .familyContent, .checkInButton]
                 let missing = anchoredTargets.filter { anchors[$0] == nil }
                 if !missing.isEmpty {
                     AppLog.pipeline.info("導覽缺錨點：\(missing.map(\.rawValue).joined(separator: ","))")

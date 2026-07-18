@@ -20,7 +20,8 @@ enum NotificationScheduler {
 
     /// 發送事件提醒。修正舊版問題：這裡實際檢查「啟用本機提醒」與「暫停提醒」旗標，
     /// 任一不符就不發，並記錄原因。
-    static func scheduleAlert(title: String, body: String, id: String) async {
+    /// eventKey：讓通知點擊能直達該事件詳情，不帶就只開提醒中心清單（如每日摘要）。
+    static func scheduleAlert(title: String, body: String, id: String, eventKey: String? = nil) async {
         let defaults = UserDefaults.standard
         // alertsEnabled 預設值為 true（鍵不存在時視為啟用），alertsPaused 預設 false
         let enabled = defaults.object(forKey: SettingsKeys.alertsEnabled) as? Bool ?? true
@@ -40,6 +41,9 @@ enum NotificationScheduler {
         content.title = title
         content.body = body
         content.sound = .default
+        if let eventKey {
+            content.userInfo = ["eventKey": eventKey]
+        }
         do {
             try await UNUserNotificationCenter.current()
                 .add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
@@ -64,7 +68,8 @@ enum NotificationScheduler {
         await scheduleAlert(
             title: "\(prefix)\(event.title)",
             body: "\(decision.reason)。",
-            id: event.eventKey
+            id: event.eventKey,
+            eventKey: event.eventKey
         )
         // 標記已推播：同一事件不重複打擾（通知限流的最小單位）
         event.hasNotified = true
@@ -77,7 +82,8 @@ enum NotificationScheduler {
         await scheduleAlert(
             title: "\(prefix)事件已解除：\(event.title)",
             body: "\(event.approximateLocation)的事件已標記為結束，無需進一步行動。",
-            id: "\(event.eventKey)-resolved"
+            id: "\(event.eventKey)-resolved",
+            eventKey: event.eventKey
         )
     }
 

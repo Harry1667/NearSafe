@@ -30,6 +30,7 @@ struct SafetyMapView: View {
     @State private var enabledTypes: Set<String> = Set(EventCategory.all)
     @State private var showUnverified = true
     @State private var isSummaryExpanded = false
+    @State private var isLegendExpanded = false
     /// 乾淨地圖模式：收起頂部摘要與底部卡片列，只留地圖（顯示偏好，不影響通知）
     @State private var isChromeHidden = false
 
@@ -146,12 +147,8 @@ struct SafetyMapView: View {
                     filterMenu
                     pauseButton
                 }
-                // 半版先看摘要，上拉展開全頁；半版時地圖仍可互動
                 .sheet(item: $selected) {
-                    EventDetailView(event: $0, members: members)
-                        .presentationDetents([.medium, .large])
-                        .presentationDragIndicator(.visible)
-                        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                    MapEventSheet(event: $0, members: members)
                 }
                 .sheet(item: $selectedAlert) {
                     RegionAlertDetailView(alert: $0, members: members)
@@ -566,37 +563,66 @@ struct SafetyMapView: View {
         // 資源圖層開著但鏡頭太遠時，要說明「為什麼看不到點」——不說會像壞掉
         let resourceHint = (showShelters || showHospitals) && resourceRegion == nil
         if showsSeverity || showCrimeLayer || resourceHint || showCircles {
-            VStack(alignment: .leading, spacing: 5) {
-                if showCircles {
-                    Text("警戒圈").font(.caption2.bold())
-                    legendRow(HCColor.safe.opacity(0.8), "即時圈（跟隨家人手機）")
-                    legendRow(HCColor.brand.opacity(0.8), "固定圈（住家／資產）")
-                    legendRow(Color.gray.opacity(0.8), "即時位置已過期")
-                }
-                if showsSeverity {
-                    Text("警報區").font(.caption2.bold())
-                    legendRow(RegionAlert.severityColor(rank: 3), "警戒／危急")
-                    legendRow(RegionAlert.severityColor(rank: 1), "注意")
-                    legendRow(RegionAlert.severityColor(rank: 0), "留意／提醒")
-                }
-                if showCrimeLayer {
-                    Text("治安參考").font(.caption2.bold())
-                    legendRow(HCColor.reference.opacity(0.7), "季度統計高於全國中位數（越深越多）")
-                    Text("統計≠即時安全程度，僅供參考")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if resourceHint {
-                    Label("放大地圖即可顯示避難所／醫院", systemImage: "plus.magnifyingglass")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            Group {
+                if isLegendExpanded {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Label("地圖圖例", systemImage: "info.circle.fill")
+                                .font(.caption.bold())
+                            Spacer(minLength: 12)
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = false }
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("收合地圖圖例")
+                        }
+                        if showCircles {
+                            Text("警戒圈").font(.caption2.bold())
+                            legendRow(HCColor.safe.opacity(0.8), "即時圈（跟隨家人手機）")
+                            legendRow(HCColor.brand.opacity(0.8), "固定圈（住家／資產）")
+                            legendRow(Color.gray.opacity(0.8), "即時位置已過期")
+                        }
+                        if showsSeverity {
+                            Text("警報區").font(.caption2.bold())
+                            legendRow(RegionAlert.severityColor(rank: 3), "警戒／危急")
+                            legendRow(RegionAlert.severityColor(rank: 1), "注意")
+                            legendRow(RegionAlert.severityColor(rank: 0), "留意／提醒")
+                        }
+                        if showCrimeLayer {
+                            Text("治安參考").font(.caption2.bold())
+                            legendRow(HCColor.reference.opacity(0.7), "季度統計高於全國中位數（越深越多）")
+                            Text("統計≠即時安全程度，僅供參考")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        if resourceHint {
+                            Label("放大地圖即可顯示避難所／醫院", systemImage: "plus.magnifyingglass")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(10)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottomLeading)))
+                } else {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = true }
+                    } label: {
+                        Image(systemName: "info.circle.fill")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 40, height: 40)
+                            .background(.regularMaterial, in: Circle())
+                            .overlay(Circle().stroke(.secondary.opacity(0.2), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("展開地圖圖例，查看警戒圈與警報區說明")
                 }
             }
-            .padding(10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             .padding(.leading, 12)
             .padding(.bottom, 12)
-            .accessibilityElement(children: .combine)
         }
     }
 
@@ -765,9 +791,9 @@ struct SafetyMapView: View {
                         Button {
                             selected = event
                         } label: {
-                            EventRow(event: event, members: visibleMembers)
-                                .frame(width: 320)
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+                            EventRow(event: event, members: visibleMembers, style: .mapCompact)
+                                .frame(width: 292)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
@@ -776,6 +802,87 @@ struct SafetyMapView: View {
             }
             .padding(.vertical, 8)
         }
+    }
+}
+
+/// 地圖點選事件時先顯示低高度摘要；使用者主動展開後才進完整詳情。
+private struct MapEventSheet: View {
+    private static let compactDetent: PresentationDetent = .height(220)
+
+    let event: LocalSafetyEvent
+    let members: [LocalFamilyMember]
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedDetent: PresentationDetent = .height(220)
+
+    var body: some View {
+        Group {
+            if selectedDetent == Self.compactDetent {
+                compactContent
+            } else {
+                EventDetailView(event: event, members: members)
+            }
+        }
+        .presentationDetents([Self.compactDetent, .large], selection: $selectedDetent)
+        .presentationDragIndicator(.visible)
+        .presentationBackgroundInteraction(.enabled(upThrough: Self.compactDetent))
+    }
+
+    private var compactContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: event.isDrill
+                      ? "bell.and.waves.left.and.right"
+                      : EventCategory.icon(for: event.eventType))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        (event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention).opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.isDrill ? "【演練】\(event.title)" : event.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(eventSeverityAndTrust(event))
+                        .font(.caption)
+                        .foregroundStyle(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("關閉事件摘要")
+            }
+
+            Text("\(relativeTime(event.occurredAt))・\(relativeDistance(event, members))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { selectedDetent = .large }
+            } label: {
+                Label("查看完整資訊", systemImage: "chevron.up")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Text("有立即危險請直接撥打 110 或 119。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(.horizontal, HCSpacing.x4)
+        .padding(.top, HCSpacing.x3)
     }
 }
 
