@@ -1,5 +1,37 @@
 # SESSION_NOTES
 
+## 2026-07-20
+
+### 完成事項：修復「推播完全收不到」（實機 iPhone 12 端到端驗證通過）
+
+症狀：不論官方警報或新聞危險，手機從來收不到通知。逐層排查後發現是**三個真 bug 疊加**（commit `f65068d`，只列名提交 3 檔，未動另一 session 的外來檔）：
+
+1. **Firebase AppDelegate Proxy 吞掉 APNs 註冊回呼**
+   - SwiftUI `@UIApplicationDelegateAdaptor` + Firebase swizzling 下，`didRegisterForRemoteNotificationsWithDeviceToken` 沒被轉發給 App 的方法 → APNs 權杖從未上傳中繼站 → 伺服器根本不知道這台裝置。
+   - 判斷式：log 有「已取得 FCM 註冊權杖」卻**沒有**「已取得 APNs 裝置權杖」＝ didRegister 沒觸發。
+   - 修法：`Info.plist` 設 `FirebaseAppDelegateProxyEnabled=NO`，改手動整合（`ShareAcceptance.swift` 已自設 delegate/apnsToken，並在 `didReceiveRemoteNotification` 補呼叫 `appDidReceiveMessage`）。
+
+2. **FCM 對 Debug(sandbox) 裝置用 production APNs 閘道 → 靜默丟包**
+   - FCM 回 `ok` 但收不到；原生 APNs 直發（明確走 sandbox）卻收得到 → 環境判定錯。
+   - 修法：依 build 型態 `setAPNSToken(deviceToken, type: .sandbox/.prod)`（取代 `apnsToken =` 的自動判定）。
+
+3. **FCM 訂閱快取未隨權杖更新（drift）**
+   - 權杖一換，Google 端舊主題訂閱全失效，但本機「已訂閱 hc_all」旗標還在 → `sync()` 誤判無變動跳過 → 從沒真的訂上。
+   - 判斷式：log 從頭到尾沒有「FCM 主題同步：共訂閱 N 個主題」。
+   - 修法：新增 `FCMTopicSync.resync()`，於 `didReceiveRegistrationToken`（權杖刷新）時清快取強制重訂。
+
+驗證：實機用 `xcodebuild`＋`devicectl` 乾淨重裝；盯伺服器 `tokens.json` 確認新權杖登記；hc_all 全台廣播＋文山區按區精準兩發 FCM 皆成功送達並顯示（log 見 `共訂閱 3 個主題`＋兩則到達）。HEAD 已 stash 外來檔獨立編譯通過。
+
+### 除錯環境筆記（下次可複用）
+- Oracle：`ssh -i ~/Documents/important\ file/ssh-key-2026-04-08.key ubuntu@137.131.7.230`，apns 檔在 `/www/wwwroot/havencircle.looptw.com/apns/`，`sudo -n -u www php ...` 跑腳本；發測試推播用 `_fcm_lib.php`/`_apns_lib.php`。
+- 讀裝置 log：`idevicesyslog`（brew libimobiledevice）**抓不到 os.Logger/print**；`log collect --device-udid` 要 root。最可靠是**從 Xcode 跑**看 console，或**盯伺服器 tokens.json**當註冊成功的訊號。
+- zsh 有 `log` 別名會攔截 `log` 指令，要用 `/usr/bin/log`。
+
+### 未完成 / 下次起點
+- **上架前務必驗 production 環境**：目前只驗過 Debug(sandbox)。TestFlight/App Store 版走 `.prod` 分支＋production APNs，需另測一次真的收得到。
+- 手機上跑的乾淨版建議再從 Xcode Run 一次（前一版帶過除錯 log，已移除）。
+- 天災只有縣級（無區，如堰塞湖）目前不推 → 可加縣級 FCM 主題補上（既有待辦）。
+
 ## 2026-07-15
 
 ### 完成事項
