@@ -29,5 +29,9 @@
 	     並在 didReceiveRemoteNotification 呼叫 appDidReceiveMessage）。 -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
+	<!-- 出口合規：App 只使用 iOS 系統內建的 HTTPS/TLS 標準加密（Firebase、CloudKit 皆走此），
+	     屬於非豁免加密的豁免範圍。標明 NO 後，每次上傳 TestFlight/App Store 都免再手動回答加密合規問題。 -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
