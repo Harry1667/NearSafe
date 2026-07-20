@@ -4,7 +4,7 @@ import UIKit
 import AuthenticationServices
 import UserNotifications
 
-/// 設定頁：仿 Apple 系統設定的結構——頂部大帳號卡，下方彩色圖示分組列。
+/// 設定頁：沿用 Apple 系統設定的結構，並以低彩度語意圖示維持可掃讀性。
 struct SettingsView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(\.modelContext) private var context
@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
     @AppStorage(SettingsKeys.analyticsEnabled) private var analyticsEnabled = true
     @State private var showTutorial = false
+    @State private var showPaywall = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var demoNoticeScheduled = false
@@ -49,6 +50,35 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Button {
+                        showPaywall = true
+                    } label: {
+                        HStack(spacing: 14) {
+                            settingsIcon("crown.fill", color: HCColor.notice)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("升級 Guardian+")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text("多據點、完整歷史與更多；核心警報永遠免費")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+
+                Section {
+                    settingsRow("防災問答", subtitle: "AI 助理：地震、颱風、火災怎麼辦",
+                                icon: "bubble.left.and.text.bubble.right.fill", color: HCColor.brand) {
+                        AIAssistantView()
+                    }
+                }
+
+                Section {
                     settingsRow("個人資訊", subtitle: "顯示名稱與緊急聯絡備註",
                                 icon: "person.text.rectangle.fill", color: .blue) {
                         PersonalProfileView()
@@ -65,11 +95,7 @@ struct SettingsView: View {
                         Label {
                             Text("外觀")
                         } icon: {
-                            Image(systemName: "circle.lefthalf.filled")
-                                .font(.callout)
-                                .foregroundStyle(.white)
-                                .frame(width: 29, height: 29)
-                                .background(Color.indigo.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                            settingsIcon("circle.lefthalf.filled", color: HCColor.brand)
                         }
                     }
                 }
@@ -94,15 +120,12 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         } icon: {
-                            Image(systemName: "chart.bar.fill")
-                                .font(.callout)
-                                .foregroundStyle(.white)
-                                .frame(width: 29, height: 29)
-                                .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                            settingsIcon("chart.bar.fill", color: HCColor.medical)
                         }
                     }
                     .onChange(of: analyticsEnabled) { _, enabled in
                         if !enabled { Analytics.clearQueue() } // 關閉即清空未送出的佇列
+                        Analytics.applyFirebaseCollectionSetting() // 同步 Firebase 收集開關
                     }
                     settingsRow("關於安心圈", subtitle: "版本、官網與隱私原則",
                                 icon: "info.circle.fill", color: .gray) {
@@ -115,11 +138,7 @@ struct SettingsView: View {
                             Text("重看新手教學")
                                 .foregroundStyle(.primary)
                         } icon: {
-                            Image(systemName: "book.fill")
-                                .font(.callout)
-                                .foregroundStyle(.white)
-                                .frame(width: 29, height: 29)
-                                .background(HCColor.safe.gradient, in: RoundedRectangle(cornerRadius: 7))
+                            settingsIcon("book.fill", color: HCColor.safe)
                         }
                     }
                     Button {
@@ -131,11 +150,7 @@ struct SettingsView: View {
                             Text("重看功能導覽")
                                 .foregroundStyle(.primary)
                         } icon: {
-                            Image(systemName: "sparkles.rectangle.stack.fill")
-                                .font(.callout)
-                                .foregroundStyle(.white)
-                                .frame(width: 29, height: 29)
-                                .background(HCColor.brand.gradient, in: RoundedRectangle(cornerRadius: 7))
+                            settingsIcon("sparkles.rectangle.stack.fill", color: HCColor.brand)
                         }
                     }
                 }
@@ -171,7 +186,16 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("設定")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("關閉", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                }
+            }
             .task { await sync.refreshAccountStatus() }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView()
+            }
             .fullScreenCover(isPresented: $showTutorial) {
                 OnboardingView(isReplay: true)
             }
@@ -402,7 +426,7 @@ struct SettingsView: View {
         .accessibilityHidden(true)
     }
 
-    /// 仿系統設定的列：彩色圓角方塊圖示＋標題＋副標
+    /// 仿系統設定的列：低彩度語意圖示＋標題＋副標。
     private func settingsRow(
         _ title: String,
         subtitle: String,
@@ -421,13 +445,17 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             } icon: {
-                Image(systemName: icon)
-                    .font(.callout)
-                    .foregroundStyle(.white)
-                    .frame(width: 29, height: 29)
-                    .background(color.gradient, in: RoundedRectangle(cornerRadius: 7))
+                settingsIcon(icon, color: color)
             }
         }
+    }
+
+    private func settingsIcon(_ icon: String, color: Color) -> some View {
+        Image(systemName: icon)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(color)
+            .frame(width: 29, height: 29)
+            .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: HCRadius.badge))
     }
 
     private var accountStatusText: String {
@@ -630,6 +658,7 @@ private struct AlertSettingsView: View {
     @AppStorage(SettingsKeys.alertsEnabled) private var alertsEnabled = true
     @AppStorage(SettingsKeys.alertsPaused) private var paused = false
     @AppStorage(SettingsKeys.highConfidenceOnly) private var highConfidenceOnly = true
+    @AppStorage(SettingsKeys.alertFrequencyLevel) private var alertFrequencyLevel = AlertFrequency.standard.rawValue
     @AppStorage(SettingsKeys.digestEnabled) private var digestEnabled = true
     @AppStorage(SettingsKeys.digestHour) private var digestHour = 20
     @Query private var events: [LocalSafetyEvent]
@@ -641,6 +670,15 @@ private struct AlertSettingsView: View {
         Form {
             Section("提醒偏好") {
                 Toggle("啟用本機提醒", isOn: $alertsEnabled)
+                Picker("通知頻率", selection: $alertFrequencyLevel) {
+                    ForEach(AlertFrequency.allCases) { level in
+                        Text(level.shortLabel).tag(level.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text((AlertFrequency(rawValue: alertFrequencyLevel) ?? .standard).explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("公共安全事件僅高可信度提醒", isOn: $highConfidenceOnly)
                 Toggle("暫停提醒", isOn: $paused)
                 Button("允許通知") {

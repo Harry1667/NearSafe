@@ -26,7 +26,8 @@ enum AlertPolicy {
     static func evaluate(
         event: LocalSafetyEvent,
         members: [LocalFamilyMember],
-        at date: Date = .now
+        at date: Date = .now,
+        frequency: AlertFrequency = .current
     ) -> AlertDecision {
         let point = CLLocation(latitude: event.latitude, longitude: event.longitude)
         var matches: [CircleMatch] = []
@@ -56,7 +57,13 @@ enum AlertPolicy {
         guard !matches.isEmpty else {
             return AlertDecision(shouldPush: false, matches: [], reason: "事件不在任何有效警戒圈的提醒範圍內")
         }
-        guard event.isOfficiallyConfirmed else {
+        // 通知頻率「小」：只推危險級事件；提醒級（高溫、降雨、停水…）僅在 App 內顯示，不發通知
+        if frequency == .low && !RemoteConfig.isDangerKind(event.eventType) {
+            return AlertDecision(shouldPush: false, matches: matches, reason: "通知頻率設為「小」，此類一般提醒僅在 App 內顯示")
+        }
+        // 可信度門檻：未經官方／多來源確認的線索一般不推播；
+        // 但通知頻率「大」時放寬，讓更早期的單一來源消息也能通知（代價是可能偶有誤報）
+        guard event.isOfficiallyConfirmed || frequency == .high else {
             return AlertDecision(shouldPush: false, matches: matches, reason: "未驗證線索僅在 App 內顯示，不會推播")
         }
         let inSchedule = matches.filter(\.withinSchedule)

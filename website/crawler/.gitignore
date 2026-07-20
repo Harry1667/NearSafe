@@ -1,3 +1,7 @@
 # 密鑰與執行期資料，不進 git（避免以後 git add website/ 時外洩）
 api/_config.php
+api/_keys.php
+api/_keys.php.bak
+api/_keys.php.tmp
+api/keys_admin.log
 data/*.json

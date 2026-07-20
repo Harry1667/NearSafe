@@ -20,6 +20,7 @@ struct OnboardingView: View {
     @AppStorage(SettingsKeys.liveLocationSharingEnabled) private var liveLocationSharingEnabled = false
     @AppStorage(SettingsKeys.liveCircleRadiusMeters) private var liveCircleRadiusMeters = 1_000
     @AppStorage(SettingsKeys.legalAcceptanceVersion) private var legalAcceptanceVersion = ""
+    @AppStorage(SettingsKeys.alertFrequencyLevel) private var alertFrequencyLevel = AlertFrequency.standard.rawValue
 
     @State private var step: Step = .welcome
     @State private var name = ""
@@ -315,6 +316,27 @@ struct OnboardingView: View {
                 .foregroundStyle(HCColor.brand)
             stepHeader("打開通知，關鍵時刻才收得到",
                        "只有「落在有效警戒圈內、且可信度足夠」的事件才會推播；未驗證線索只在 App 內顯示，不會吵你。")
+
+            // 通知頻率：讓使用者一開始就決定要收多少通知（小／中／大，依事件嚴重度）
+            VStack(alignment: .leading, spacing: 8) {
+                Text("通知頻率")
+                    .font(.subheadline.weight(.semibold))
+                Picker("通知頻率", selection: $alertFrequencyLevel) {
+                    ForEach(AlertFrequency.allCases) { level in
+                        Text(level.shortLabel).tag(level.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text((AlertFrequency(rawValue: alertFrequencyLevel) ?? .standard).explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            .padding(.horizontal, 24)
+
             if notificationGranted == true {
                 Label("通知已允許", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(HCColor.safe)

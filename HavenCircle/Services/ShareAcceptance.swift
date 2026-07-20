@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import CloudKit
+import FirebaseCore
 import os // Swift 6.2 MemberImportVisibility：直接使用 os.Logger 插值的檔案必須自行 import
 
 /// CKShare 邀請接受的處理鏈。
@@ -32,6 +33,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Firebase 要在任何 Firebase 呼叫前初始化；緊接著套用「匿名使用統計」開關，
+        // 使用者若關閉統計，Firebase 也不收集（不含 IDFA，用的是 FirebaseAnalytics 無廣告識別碼版）。
+        FirebaseApp.configure()
+        Analytics.applyFirebaseCollectionSetting()
         if let container = AppRuntime.container {
             LocationService.shared.onFollowLocationUpdate = { location in
                 Task { @MainActor in

@@ -56,7 +56,23 @@ Apple 定義的「收集（collect）」＝資料**離開裝置**且**開發者�
 
 依據：新上線的 `analytics/events.php` 匿名統計。只收「事件名 × 次數 ＋ App 版本 ＋ iOS 大版本」，伺服器端只累加當日計數器：不存 IP、不存識別碼、不發 cookie、無任何跨日可關聯的 ID。「不與身分連結」完全站得住腳。
 
-### 4. 不申報的類型（以及為什麼）
+### 4. Firebase Analytics 相關【2026-07-19 新增，接了 Firebase 就必報】
+
+接入 Firebase Analytics（**無廣告識別碼版**，已於執行期 log 確認 `IDFA will not be accessible`）後，**多了一個第三方（Google）收資料**，問卷要補：
+
+| 資料類型 | 填答 | 說明 |
+|---|---|---|
+| 識別碼 → **其他識別碼**（Firebase App Instance ID） | 收集：是／用途：分析／連結身分：**否**／追蹤：**否**（見下方條件） | Firebase 產生的偽匿名 instance ID，非 IDFA、非帳號 |
+| 使用資料 → 產品互動 | 同第 3 節，但**收方多了 Google** | app_open、畫面停留等 |
+| 診斷（Diagnostics） | 收集：是／用途：分析／連結身分：否／追蹤：否 | Firebase 會收當機/效能類基本診斷 |
+
+**維持「不用於追蹤」的兩個必要條件（缺一就得改標成 Tracking）**：
+1. **IDFA 不收**——已用 `FirebaseAnalytics`（非 `FirebaseAnalyticsIdentitySupport`）做到，log 已證實。
+2. **Firebase console 要關掉廣告相關功能**：進 Firebase console →（分析）設定，關閉 **Google Signals／廣告個人化（Ad Personalization）**。只要開了廣告個人化，資料就被視為跨情境追蹤，**必須**改標「Data Used to Track You」。⚠️ 這一步要你去 console 確認，我看不到也點不到。
+
+> Google 的 Firebase SDK 自帶隱私宣告檔（`PrivacyInfo.xcprivacy`），Apple 會一併讀取；但**你自己 App 的問卷仍要如上補齊**，兩者不互相取代。
+
+### 5. 不申報的類型（以及為什麼）
 
 | 類型 | 為什麼不報 |
 |---|---|
@@ -67,7 +83,7 @@ Apple 定義的「收集（collect）」＝資料**離開裝置**且**開發者�
 
 ## 問卷第二題：是否用於追蹤（Tracking）？
 
-**答：否。** 沒有任何資料跨 App／網站用於廣告或資料仲介。這是安心圈的核心賣點，隱私標籤會顯示「Data Not Linked to You」，沒有「Data Used to Track You」區塊。
+**答：否——但有一個前提條件。** 沒有任何資料跨 App／網站用於廣告或資料仲介。**前提：Firebase console 的 Google Signals／廣告個人化必須維持關閉**（見第 4 節），且已用無 IDFA 版。只要滿足這兩點，仍可答「否」。**若日後在 Firebase 開了廣告功能，這題就要改成「是」、隱私標籤會出現「Data Used to Track You」**——那等於放棄安心圈的零追蹤賣點，非必要別開。
 
 ---
 

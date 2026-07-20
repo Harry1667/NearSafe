@@ -1,5 +1,6 @@
 import Foundation
 import os
+import FirebaseAnalytics
 
 /// 匿名使用統計：只累計「事件名 × 次數」，送出時附 App 版本與 iOS 版本。
 /// 不含任何識別碼、位置或個人資料；伺服器端（analytics/events.php）同樣不存 IP、
@@ -21,6 +22,16 @@ enum Analytics {
         var queue = pendingQueue()
         queue[name, default: 0] += count
         UserDefaults.standard.set(queue, forKey: queueKey)
+        // 同步送 Firebase Analytics（無廣告識別碼版，一樣受此開關控制）。
+        // 用模組限定名避免與本 enum「Analytics」撞名。
+        FirebaseAnalytics.Analytics.logEvent(name, parameters: count > 1 ? ["count": count] : nil)
+    }
+
+    /// 把「匿名使用統計」開關套用到 Firebase：關閉時停止收集。
+    /// App 啟動（configure 後）與使用者切換開關時都要呼叫，讓 Firebase 的自動事件
+    /// （app_open、session 等）也真的服從使用者的隱私選擇。
+    static func applyFirebaseCollectionSetting() {
+        FirebaseAnalytics.Analytics.setAnalyticsCollectionEnabled(isEnabled)
     }
 
     /// 把佇列一次送出；失敗整批保留，下次啟動再送（伺服器端是累加計數，重送順序無所謂）。

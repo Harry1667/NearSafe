@@ -12,6 +12,10 @@ struct EventDetailView: View {
     @State private var showResolveConfirmation = false
     @State private var checkInFeedback: String?
     @State private var isReporting = false
+    // AI 影響分析：只在使用者主動點按時才呼叫，結果存行程內快取避免重複計費
+    @State private var aiImpact: String?
+    @State private var aiImpactLoading = false
+    @State private var aiImpactError: String?
 
     private var decision: AlertDecision {
         AlertPolicy.evaluate(event: event, members: members)
@@ -28,6 +32,7 @@ struct EventDetailView: View {
                 statusSection
                 detailSection
                 whySection
+                aiImpactSection
                 checkInSection
                 infoSection
                 sourceSection
@@ -47,6 +52,118 @@ struct EventDetailView: View {
             } message: {
                 Text("這只會更新此裝置的顯示與解除通知，不會改變官方來源。")
             }
+            .onAppear {
+                // 重開同一事件時，若行程內已有分析結果就直接顯示，不再打 AI
+                if aiImpact == nil { aiImpact = AIImpactCache.store[impactCacheKey] }
+            }
+        }
+    }
+
+    /// AI 個人化影響分析：結合這起事件與使用者的警戒圈命中狀況，說明「對我的影響」。
+    /// 成本/延遲控制：僅在使用者主動點按時才呼叫；結果快取在行程內（同一事件重開不重複計費）；
+    /// 用低運算強度（effort=low）壓延遲。刻意不寫進 SwiftData，避免為快取改 schema 觸發遷移風險。
+    @ViewBuilder
+    private var aiImpactSection: some View {
+        Section {
+            if let aiImpact {
+                Text(aiImpact)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+                Text("AI 生成，僅供參考，不取代官方指示；有立即危險請直接撥 119 或 110。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Button {
+                    Task { await runImpactAnalysis(force: true) }
+                } label: {
+                    Label("重新分析", systemImage: "arrow.clockwise")
+                }
+                .font(.caption)
+                .disabled(aiImpactLoading)
+            } else {
+                Button {
+                    Task { await runImpactAnalysis(force: false) }
+                } label: {
+                    HStack {
+                        Label("AI 分析：這起事件對我的影響", systemImage: "sparkles")
+                            .foregroundStyle(HCColor.brand)
+                        if aiImpactLoading {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(aiImpactLoading)
+            }
+            if let aiImpactError {
+                Text(aiImpactError)
+                    .font(.caption)
+                    .foregroundStyle(HCColor.danger)
+            }
+        } header: {
+            Text("AI 影響分析")
+        } footer: {
+            if aiImpact == nil && !aiImpactLoading {
+                Text("依你設定的警戒圈與這起事件的位置、類型，產生個人化的影響說明。")
+            }
+        }
+    }
+
+    /// 這起事件在行程內快取的鍵：以事件本身＋命中圈的簽章組合，
+    /// 圈設定改變（距離/時段/成員）時 key 就變，會重新分析而非給舊結果。
+    private var impactCacheKey: String {
+        let signature = decision.matches
+            .map { "\($0.memberName):\($0.circleName):\($0.distanceMeters):\($0.withinSchedule)" }
+            .joined(separator: ",")
+        return "\(event.eventType)|\(Int(event.occurredAt.timeIntervalSince1970))|\(event.approximateLocation)|\(signature)"
+    }
+
+    /// 組給 AI 的提示詞：只帶「概略」位置與距離（已取整到百公尺），不外洩精確座標。
+    private var impactPrompt: String {
+        var lines: [String] = [
+            "你是台灣的防災助理。根據以下災害事件與使用者的守護設定，用繁體中文寫一段 100–150 字的「這起事件對我的影響」個人化說明。",
+            "要求：具體、冷靜、不誇大；聚焦(1)是否可能影響到使用者或其家人／據點(2)建議的下一步（留意／遠離／聯繫家人）。若有立即危險請提醒直接撥 119 或 110，不要提供其他電話號碼。不要重複事件標題，直接輸出說明本文、不要開場白。",
+            "",
+            "【事件】",
+            "類型：\(event.eventType)",
+            "概略位置：\(event.approximateLocation)",
+            "發生時間：\(localizedDate(event.occurredAt))",
+            "嚴重程度：\(event.severity)",
+            "狀態：\(event.isOfficiallyConfirmed ? "官方已確認" : "未驗證線索，仍在確認中")",
+        ]
+        if let detail = event.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+            lines.append("說明：\(detail)")
+        }
+        lines.append("")
+        lines.append("【我的守護設定】")
+        if decision.matches.isEmpty {
+            lines.append("目前沒有任何警戒圈直接落在事件影響範圍內，但使用者仍在關注此類事件。")
+        } else {
+            for match in decision.matches {
+                let who = match.isCurrentUser ? "我" : match.memberName
+                let schedule = match.withinSchedule ? "提醒時段內" : "提醒時段外"
+                lines.append("- \(who)的「\(match.circleName)」約 \(match.distanceMeters) 公尺（\(schedule)）")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runImpactAnalysis(force: Bool) async {
+        // 非強制且已有快取：直接用，不計費
+        if !force, let cached = AIImpactCache.store[impactCacheKey] {
+            aiImpact = cached
+            return
+        }
+        aiImpactLoading = true
+        aiImpactError = nil
+        defer { aiImpactLoading = false }
+        do {
+            let result = try await AIService.complete(prompt: impactPrompt, effort: "low")
+            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            aiImpact = trimmed
+            AIImpactCache.store[impactCacheKey] = trimmed
+        } catch {
+            aiImpactError = "分析失敗：\(error.localizedDescription)"
+            AppLog.cloudError("AI 影響分析失敗：\(error.localizedDescription)")
         }
     }
 
@@ -266,4 +383,11 @@ struct EventDetailView: View {
     private func localizedDate(_ date: Date) -> String {
         date.formatted(.dateTime.locale(Locale(identifier: "zh_TW")).year().month().day().hour().minute())
     }
+}
+
+/// 事件 AI 影響分析的行程內快取：同一事件重開不重複計費（重啟 App 即清空）。
+/// 刻意不落地到 SwiftData——避免為快取欄位改 @Model schema 觸發遷移風險（見 LESSONS）。
+@MainActor
+enum AIImpactCache {
+    static var store: [String: String] = [:]
 }
