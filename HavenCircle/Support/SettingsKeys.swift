@@ -12,8 +12,12 @@ enum SettingsKeys {
     static let liveCircleRadiusMeters = "liveCircleRadiusMeters"
     static let liveLocationDeviceID = "liveLocationDeviceID"
     /// 接受 CKShare 後目前選用的家庭圈 zone；避免本機曾建立過空白家庭圈時又切回 private zone。
+    /// （CloudKit 舊架構遺留，Firebase 版改用 currentFamilyID；保留鍵名供舊資料清理）
     static let activeFamilyZoneName = "activeFamilyZoneName"
     static let activeFamilyOwnerName = "activeFamilyOwnerName"
+    /// 目前所屬家庭圈的 Firestore familyId（取代上面兩個 CloudKit zone 鍵）。
+    /// 本機快取；換裝置／重裝時由 Firebase uid 反查還原。
+    static let currentFamilyID = "currentFamilyID"
     static let profileContactNote = "profileContactNote"
     /// 最後一次資料更新時間（timeIntervalSince1970；0 表示尚未更新過）
     static let lastDataRefresh = "lastDataRefresh"

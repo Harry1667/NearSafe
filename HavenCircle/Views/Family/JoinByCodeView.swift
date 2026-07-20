@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 用 8 位邀請碼加入家庭圈：兌換連結 → 抓分享 metadata → 接受。
+/// 用 8 位邀請碼加入家庭圈：查 Firestore 邀請碼索引 → 加入該家庭的成員。
 struct JoinByCodeView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(\.dismiss) private var dismiss
@@ -68,14 +68,8 @@ struct JoinByCodeView: View {
         joinError = nil
         defer { isJoining = false }
         do {
-            let shareURL = try await JoinCodeService.redeem(code: code)
-            try await sync.acceptShare(from: shareURL)
-            // 接受階段的錯誤寫在 sync.state（沿用既有慣例），這裡讀出來呈現
-            if case .error(let message) = sync.state {
-                joinError = "加入失敗：\(message)"
-            } else {
-                joined = true
-            }
+            try await sync.joinFamily(code: code)
+            joined = true
         } catch {
             joinError = error.localizedDescription
         }

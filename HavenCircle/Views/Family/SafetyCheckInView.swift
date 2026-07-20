@@ -1,5 +1,4 @@
 import SwiftUI
-import CloudKit
 import CoreLocation
 
 /// 安否回報中心：雙向閉環的回報端。
@@ -11,19 +10,13 @@ struct SafetyCheckInView: View {
     @Environment(TabRouter.self) private var router
     let myName: String
 
-    @State private var shareSheet: ShareBundle?
+    @State private var showInviteOptions = false
     @State private var note = ""
     @State private var isWorking = false
     /// 回報時附上目前位置（自願、一次性）。用 AppStorage 記住偏好，預設關（隱私優先）
     @AppStorage("checkInAttachLocation") private var attachLocation = false
     /// 邀請失敗時的可見錯誤——只寫 log 的話，使用者看到的是「按了沒反應＝App 壞了」
     @State private var shareError: String?
-
-    struct ShareBundle: Identifiable {
-        let id = UUID()
-        let share: CKShare
-        let container: CKContainer
-    }
 
     var body: some View {
         // 由 FamilyHubView 承載（提供 NavigationStack 與分段切換）
@@ -52,8 +45,8 @@ struct SafetyCheckInView: View {
         } message: {
             Text(shareError ?? "")
         }
-        .sheet(item: $shareSheet) { bundle in
-            InviteOptionsView(share: bundle.share, container: bundle.container)
+        .sheet(isPresented: $showInviteOptions) {
+            InviteOptionsView()
         }
         .task {
             await sync.refreshAccountStatus()
@@ -168,11 +161,14 @@ struct SafetyCheckInView: View {
         isWorking = true
         defer { isWorking = false }
         do {
-            let (share, container) = try await sync.makeShare()
-            shareSheet = ShareBundle(share: share, container: container)
+            // 已在家庭圈就沿用現有邀請碼；還沒有就建立一個新家庭圈
+            if sync.currentInviteCode == nil {
+                _ = try await sync.createFamily()
+            }
+            showInviteOptions = true
         } catch {
-            AppLog.cloudError("建立分享失敗：\(error.localizedDescription)")
-            shareError = "無法建立家庭圈邀請：\(error.localizedDescription)\n請確認已登入 iCloud 且網路正常後再試一次。"
+            AppLog.cloudError("建立家庭圈失敗：\(error.localizedDescription)")
+            shareError = "無法建立家庭圈邀請：\(error.localizedDescription)\n請確認已登入且網路正常後再試一次。"
         }
     }
 

@@ -1,0 +1,65 @@
+rules_version = '2';
+
+// HavenCircle 家庭圈 Firestore 安全規則。
+// 核心原則：只有「同一家庭圈的成員」才能讀寫彼此的家庭資料、位置、安否回報。
+// 位置是敏感個資，這條規則寫錯＝任何人可讀到別人的精確位置，務必謹慎。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 判斷 request.auth.uid 是否為某家庭圈的成員（用根文件的 memberUids 陣列）
+    function isMember(familyId) {
+      return request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.memberUids;
+    }
+
+    match /families/{familyId} {
+      // 讀：只有家庭成員能讀家庭根文件
+      allow read: if isMember(familyId);
+
+      // 建立：登入者建立自己擁有的家庭圈（擁有者與唯一初始成員都是自己）
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid];
+
+      // 更新：已是成員可更新；或「新成員用邀請碼加入」——只允許把自己加進 memberUids，不能動別的欄位、不能刪掉既有成員
+      allow update: if isMember(familyId)
+        || (
+          request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
+          && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+          && request.resource.data.memberUids.hasOnly(resource.data.memberUids.concat([request.auth.uid]))
+        );
+
+      // 刪除：只有圈主能解散家庭圈
+      allow delete: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid;
+
+      // 成員：家庭成員可讀；每人只能寫自己的成員文件
+      match /members/{uid} {
+        allow read: if isMember(familyId);
+        allow write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // 即時位置：家庭成員可讀；每人只能寫自己的位置（同意式分享的技術保證）
+      match /locations/{uid} {
+        allow read: if isMember(familyId);
+        allow write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // 安否回報：家庭成員可讀、可發、可標記已讀（更新）；不開放刪除
+      match /pings/{pingId} {
+        allow read: if isMember(familyId);
+        allow create: if isMember(familyId);
+        allow update: if isMember(familyId);
+        allow delete: if false;
+      }
+    }
+
+    // 邀請碼索引：登入者可讀（輸碼加入時查 familyId）與建立；不可竄改或刪除
+    match /inviteCodes/{code} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+  }
+}

@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import CloudKit
 import FirebaseCore
 import FirebaseMessaging
 import os // Swift 6.2 MemberImportVisibility：直接使用 os.Logger 插值的檔案必須自行 import
@@ -151,15 +150,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
 }
 
 final class ShareSceneDelegate: NSObject, UIWindowSceneDelegate {
-    func windowScene(
-        _ windowScene: UIWindowScene,
-        userDidAcceptCloudKitShareWith cloudKitShareMetadata: CKShare.Metadata
-    ) {
-        NotificationCenter.default.post(
-            name: .didAcceptFamilyShare,
-            object: cloudKitShareMetadata
-        )
-    }
+    // Firebase 邀請碼取代 CKShare 後，家庭加入改由 JoinByCodeView 輸碼完成，
+    // 不再需要系統的 userDidAcceptCloudKitShareWith 分享接受回呼。
 
     // 設了自訂 scene delegate 後，SwiftUI 的 .onOpenURL 收不到 URL（系統改送這裡），
     // Widget deep link 必須在此接手轉交。

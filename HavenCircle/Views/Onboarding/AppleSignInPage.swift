@@ -28,7 +28,8 @@ struct AppleSignInPage: View {
             .padding(.horizontal, 32)
 
             SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName, .email]
+                // nonce + requestedScopes 由 AuthService 統一設定（Firebase 憑證交換需要 nonce）
+                AuthService.shared.prepareAppleRequest(request)
             } onCompletion: { result in
                 handleSignIn(result)
             }
@@ -53,12 +54,14 @@ struct AppleSignInPage: View {
         }
     }
 
-    /// Apple 只在首次授權提供姓名與 email；只在拿到非空值時覆寫
+    /// Apple 只在首次授權提供姓名與 email；只在拿到非空值時覆寫。
+    /// 拿到憑證後，再用 idToken 換 Firebase Auth 憑證登入，取得穩定的 uid（家庭圈身份主鍵）。
     private func handleSignIn(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .success(let auth):
             guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else { return }
             signInError = nil
+            // 先存本機顯示資訊（Apple 只在首次授權給 email／姓名，錯過不再有）
             if let email = credential.email, !email.isEmpty {
                 appleEmail = email
             }
@@ -68,7 +71,15 @@ struct AppleSignInPage: View {
                     displayName = formatted
                 }
             }
-            onSignedIn()
+            // 用 idToken + nonce 換 Firebase 憑證登入；成功才算真的登入
+            Task {
+                do {
+                    _ = try await AuthService.shared.completeAppleSignIn(credential)
+                    onSignedIn()
+                } catch {
+                    signInError = "登入失敗：\(error.localizedDescription)。請重試一次。"
+                }
+            }
         case .failure(let error):
             // 使用者按取消不當錯誤吵他
             if (error as? ASAuthorizationError)?.code != .canceled {

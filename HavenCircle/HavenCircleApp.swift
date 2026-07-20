@@ -6,7 +6,6 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
-import CloudKit
 import os
 
 @main
@@ -129,11 +128,6 @@ struct HavenCircleApp: App {
                         }
                         await familySync.fetchLiveLocations(context: modelContainer.mainContext)
                     }
-                }
-                // 家人接受 CKShare 邀請後，由 scene delegate 經 NotificationCenter 轉交處理
-                .onReceive(NotificationCenter.default.publisher(for: .didAcceptFamilyShare)) { note in
-                    guard let metadata = note.object as? CKShare.Metadata else { return }
-                    Task { await familySync.accept(metadata) }
                 }
         }
         .modelContainer(modelContainer)

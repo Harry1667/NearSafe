@@ -1,0 +1,338 @@
+import Foundation
+import FirebaseFirestore
+
+// MARK: - Firestore 家庭圈資料模型（純 struct，Firestore 文件的 Swift 投影）
+
+/// 家庭圈根文件（Firestore: families/{familyId}）
+struct FamilyCircleDoc: Identifiable, Equatable {
+    let id: String            // = familyId（Firestore 文件 ID）
+    var name: String
+    var ownerUid: String
+    var inviteCode: String    // 8 碼邀請碼（取代 CKShare 連結）
+    var memberUids: [String]  // 冗餘存成員 uid 陣列，供 Security Rules 快速判斷成員身份
+    var createdAt: Date
+}
+
+/// 家庭成員文件（Firestore: families/{familyId}/members/{uid}）
+struct FamilyMemberDoc: Identifiable, Equatable {
+    let id: String            // = 成員 uid
+    var displayName: String
+    var role: String          // "owner" / "member"
+    var joinedAt: Date
+
+    var isOwner: Bool { role == "owner" }
+}
+
+// MARK: - 錯誤
+
+enum FamilyBackendError: LocalizedError {
+    case notSignedIn
+    case invalidInviteCode
+    case familyNotFound
+
+    var errorDescription: String? {
+        switch self {
+        case .notSignedIn:
+            return "請先用 Apple 帳號登入，才能建立或加入家庭圈。"
+        case .invalidInviteCode:
+            return "邀請碼不正確或已失效，請向家人確認後重新輸入。"
+        case .familyNotFound:
+            return "找不到對應的家庭圈，可能已被解散。"
+        }
+    }
+}
+
+// MARK: - Firestore 家庭圈後端
+
+/// 家庭圈的 Firestore 資料層（無狀態的操作集合）。
+///
+/// 身份一律用呼叫端傳入的 Firebase uid（來自 [AuthService]），這一層不自己碰 AuthService，
+/// 方便測試與非 MainActor 呼叫。所有讀寫都透過 [FirestoreConfig.store] 指向具名資料庫 default。
+enum FirestoreFamilyBackend {
+
+    /// 建立家庭圈：產生 familyId 與 8 碼邀請碼，寫入根文件、擁有者成員、邀請碼索引。
+    /// 回傳建立好的家庭圈文件。
+    static func createFamily(
+        ownerUid: String,
+        ownerDisplayName: String,
+        familyName: String
+    ) async throws -> FamilyCircleDoc {
+        let db = FirestoreConfig.store()
+        let familyRef = db.collection(FirestoreConfig.Path.families).document()
+        let code = generateInviteCode()
+        let now = Date()
+
+        try await familyRef.setData([
+            "name": familyName,
+            "ownerUid": ownerUid,
+            "inviteCode": code,
+            "memberUids": [ownerUid],
+            "createdAt": Timestamp(date: now)
+        ])
+        try await familyRef.collection(FirestoreConfig.Path.members).document(ownerUid).setData([
+            "displayName": ownerDisplayName,
+            "role": "owner",
+            "joinedAt": Timestamp(date: now)
+        ])
+        // 邀請碼索引：家人輸入碼 → 查到 familyId。獨立 collection 讓「用碼查家庭」不必掃全表。
+        try await db.collection(FirestoreConfig.Path.inviteCodes).document(code).setData([
+            "familyId": familyRef.documentID,
+            "createdAt": Timestamp(date: now)
+        ])
+
+        return FamilyCircleDoc(
+            id: familyRef.documentID,
+            name: familyName,
+            ownerUid: ownerUid,
+            inviteCode: code,
+            memberUids: [ownerUid],
+            createdAt: now
+        )
+    }
+
+    /// 用邀請碼加入家庭圈。回傳加入的 familyId。
+    static func joinFamily(
+        code: String,
+        uid: String,
+        displayName: String
+    ) async throws -> String {
+        let db = FirestoreConfig.store()
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+
+        let codeDoc = try await db.collection(FirestoreConfig.Path.inviteCodes).document(normalized).getDocument()
+        guard codeDoc.exists, let familyId = codeDoc.data()?["familyId"] as? String else {
+            throw FamilyBackendError.invalidInviteCode
+        }
+        let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
+        // 併發安全：arrayUnion 不會重複加入同一個 uid。
+        try await familyRef.updateData([
+            "memberUids": FieldValue.arrayUnion([uid])
+        ])
+        try await familyRef.collection(FirestoreConfig.Path.members).document(uid).setData([
+            "displayName": displayName,
+            "role": "member",
+            "joinedAt": Timestamp(date: Date())
+        ], merge: true)
+        return familyId
+    }
+
+    /// 離開家庭圈：從 memberUids 移除自己，並刪掉自己的成員與位置文件。
+    static func leaveFamily(familyId: String, uid: String) async throws {
+        let db = FirestoreConfig.store()
+        let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
+        try await familyRef.updateData(["memberUids": FieldValue.arrayRemove([uid])])
+        try? await familyRef.collection(FirestoreConfig.Path.members).document(uid).delete()
+        try? await familyRef.collection(FirestoreConfig.Path.locations).document(uid).delete()
+    }
+
+    /// 讀取家庭圈根文件。
+    static func fetchFamily(familyId: String) async throws -> FamilyCircleDoc {
+        let db = FirestoreConfig.store()
+        let doc = try await db.collection(FirestoreConfig.Path.families).document(familyId).getDocument()
+        guard doc.exists, let family = family(from: doc) else {
+            throw FamilyBackendError.familyNotFound
+        }
+        return family
+    }
+
+    /// 讀取家庭圈所有成員。
+    static func fetchMembers(familyId: String) async throws -> [FamilyMemberDoc] {
+        let db = FirestoreConfig.store()
+        let snapshot = try await db.collection(FirestoreConfig.Path.families)
+            .document(familyId)
+            .collection(FirestoreConfig.Path.members)
+            .getDocuments()
+        return snapshot.documents.compactMap(member(from:))
+            .sorted { $0.joinedAt < $1.joinedAt }
+    }
+
+    /// 找出這個 uid 目前所屬的家庭圈（用 memberUids 陣列查詢）。
+    /// 回傳第一個符合的家庭圈；沒有則 nil。用於換裝置或本機沒存 familyId 時的還原。
+    static func findFamily(forUid uid: String) async throws -> FamilyCircleDoc? {
+        let db = FirestoreConfig.store()
+        let snapshot = try await db.collection(FirestoreConfig.Path.families)
+            .whereField("memberUids", arrayContains: uid)
+            .limit(to: 1)
+            .getDocuments()
+        return snapshot.documents.first.flatMap(family(from:))
+    }
+
+    // MARK: - 邀請碼
+
+    /// 產生 8 碼邀請碼。刻意排除易混淆字元（0/O、1/I、Z/2 等），家人口頭或手抄不易出錯。
+    static func generateInviteCode() -> String {
+        let charset = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        return String((0..<8).map { _ in charset.randomElement()! })
+    }
+
+    // MARK: - 即時位置（同意式：只有開啟分享的人才會被寫入 locations 子集合）
+
+    /// 寫入／更新這個成員的即時位置。merge 讓重複更新只改動座標欄位。
+    static func publishLocation(
+        familyId: String,
+        uid: String,
+        displayName: String,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Int,
+        district: String
+    ) async throws {
+        let db = FirestoreConfig.store()
+        try await db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.locations).document(uid).setData([
+                "displayName": displayName,
+                "latitude": latitude,
+                "longitude": longitude,
+                "radiusMeters": radiusMeters,
+                "district": district,
+                "updatedAt": Timestamp(date: Date()),
+                "isSharing": true
+            ], merge: true)
+    }
+
+    /// 停止分享：標記 isSharing=false（家人下次刷新會移除此人的即時圈）。
+    static func stopLocation(familyId: String, uid: String) async throws {
+        let db = FirestoreConfig.store()
+        try await db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.locations).document(uid).setData([
+                "isSharing": false,
+                "updatedAt": Timestamp(date: Date())
+            ], merge: true)
+    }
+
+    /// 讀取家庭圈所有成員的即時位置。
+    static func fetchLocations(familyId: String) async throws -> [FamilyLiveLocation] {
+        let db = FirestoreConfig.store()
+        let snap = try await db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.locations).getDocuments()
+        return snap.documents.compactMap(liveLocation(from:))
+    }
+
+    // MARK: - 安否回報
+
+    @discardableResult
+    static func postPing(
+        familyId: String,
+        senderUid: String,
+        senderName: String,
+        status: SafetyStatus,
+        note: String,
+        latitude: Double?,
+        longitude: Double?,
+        placeName: String?
+    ) async throws -> String {
+        let db = FirestoreConfig.store()
+        let ref = db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.pings).document()
+        var data: [String: Any] = [
+            "senderUid": senderUid,
+            "senderName": senderName,
+            "status": status.rawValue,
+            "note": note,
+            "createdAt": Timestamp(date: Date()),
+            "readBy": [String]()
+        ]
+        // 位置為回報者「自願附上」的一次性座標，nil＝沒附
+        if let latitude, let longitude {
+            data["latitude"] = latitude
+            data["longitude"] = longitude
+            data["placeName"] = placeName ?? ""
+        }
+        try await ref.setData(data)
+        return ref.documentID
+    }
+
+    /// 讀取家庭圈所有安否回報（依時間新到舊；單欄排序不需複合索引）。
+    static func fetchPings(familyId: String) async throws -> [SafetyPing] {
+        let db = FirestoreConfig.store()
+        let snap = try await db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.pings)
+            .order(by: "createdAt", descending: true)
+            .getDocuments()
+        return snap.documents.compactMap(ping(from:))
+    }
+
+    /// 標記某則回報為「某家人已讀」（已讀回條）。arrayUnion 天然去重。
+    static func markPingRead(familyId: String, pingId: String, readerName: String) async throws {
+        let db = FirestoreConfig.store()
+        try await db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.pings).document(pingId).updateData([
+                "readBy": FieldValue.arrayUnion([readerName])
+            ])
+    }
+
+    // MARK: - 文件 → struct
+
+    private static func family(from doc: DocumentSnapshot) -> FamilyCircleDoc? {
+        guard let data = doc.data(),
+              let name = data["name"] as? String,
+              let ownerUid = data["ownerUid"] as? String,
+              let inviteCode = data["inviteCode"] as? String,
+              let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
+        else { return nil }
+        return FamilyCircleDoc(
+            id: doc.documentID,
+            name: name,
+            ownerUid: ownerUid,
+            inviteCode: inviteCode,
+            memberUids: data["memberUids"] as? [String] ?? [],
+            createdAt: createdAt
+        )
+    }
+
+    private static func member(from doc: QueryDocumentSnapshot) -> FamilyMemberDoc? {
+        let data = doc.data()
+        guard let displayName = data["displayName"] as? String,
+              let role = data["role"] as? String,
+              let joinedAt = (data["joinedAt"] as? Timestamp)?.dateValue()
+        else { return nil }
+        return FamilyMemberDoc(
+            id: doc.documentID,
+            displayName: displayName,
+            role: role,
+            joinedAt: joinedAt
+        )
+    }
+
+    /// Firestore 位置文件 → FamilyLiveLocation（文件 ID = 成員 uid，同時當 participantID）
+    private static func liveLocation(from doc: QueryDocumentSnapshot) -> FamilyLiveLocation? {
+        let data = doc.data()
+        guard let displayName = data["displayName"] as? String,
+              let latitude = data["latitude"] as? Double,
+              let longitude = data["longitude"] as? Double,
+              let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue()
+        else { return nil }
+        return FamilyLiveLocation(
+            id: doc.documentID,
+            participantID: doc.documentID,
+            displayName: displayName,
+            latitude: latitude,
+            longitude: longitude,
+            radiusMeters: (data["radiusMeters"] as? Int) ?? 1_000,
+            district: data["district"] as? String ?? Districts.unspecified,
+            updatedAt: updatedAt,
+            isSharing: data["isSharing"] as? Bool ?? false
+        )
+    }
+
+    /// Firestore 回報文件 → SafetyPing
+    private static func ping(from doc: QueryDocumentSnapshot) -> SafetyPing? {
+        let data = doc.data()
+        guard let senderName = data["senderName"] as? String,
+              let statusRaw = data["status"] as? String,
+              let status = SafetyStatus(rawValue: statusRaw),
+              let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
+        else { return nil }
+        return SafetyPing(
+            id: doc.documentID,
+            senderName: senderName,
+            status: status,
+            note: data["note"] as? String ?? "",
+            createdAt: createdAt,
+            readBy: data["readBy"] as? [String] ?? [],
+            latitude: data["latitude"] as? Double,
+            longitude: data["longitude"] as? Double,
+            placeName: (data["placeName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        )
+    }
+}
