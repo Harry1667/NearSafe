@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import CloudKit
 import FirebaseCore
+import FirebaseMessaging
 import os // Swift 6.2 MemberImportVisibility：直接使用 os.Logger 插值的檔案必須自行 import
 
 /// CKShare 邀請接受的處理鏈。
@@ -26,7 +27,7 @@ enum AppRuntime {
     @MainActor static var familySync: FamilySyncService?
 }
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
     /// 跟隨圈的監聽必須在這裡掛（而不是只在 SwiftUI .task）：
     /// 顯著位置變更在背景重啟 App 時，scene 不一定會連接，.task 可能永遠不跑
     func application(
@@ -37,6 +38,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // 使用者若關閉統計，Firebase 也不收集（不含 IDFA，用的是 FirebaseAnalytics 無廣告識別碼版）。
         FirebaseApp.configure()
         Analytics.applyFirebaseCollectionSetting()
+        Messaging.messaging().delegate = self // FCM 行政區主題訂閱（地區性推播）
         if let container = AppRuntime.container {
             LocationService.shared.onFollowLocationUpdate = { location in
                 Task { @MainActor in
@@ -88,7 +90,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         UserDefaults.standard.set(token, forKey: SettingsKeys.apnsDeviceToken)
         AppLog.notifications.info("已取得 APNs 裝置權杖")
+        // FCM 需要原始 APNs 權杖才能把主題推播轉送到這台 iOS 裝置
+        Messaging.messaging().apnsToken = deviceToken
         Task { await APNsRegistrar.upload(token: token) }
+    }
+
+    // MARK: - FCM 註冊權杖
+
+    /// FCM 權杖就緒後，主題訂閱才會真正生效——此時觸發一次行政區主題同步。
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        AppLog.notifications.info("已取得 FCM 註冊權杖")
+        Task { @MainActor in
+            if let container = AppRuntime.container {
+                FCMTopicSync.sync(container: container)
+            }
+        }
     }
 
     func application(

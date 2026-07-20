@@ -56,6 +56,13 @@ if (file_put_contents($tmpFile, json_encode($payload, JSON_UNESCAPED_UNICODE | J
 }
 rename($tmpFile, $finalFile); // 同檔案系統內 rename 是原子操作，讀取端不會讀到寫一半的檔案
 
+// 新 NCDR 示警一落地就立刻觸發 APNs 檢查（背景、不阻塞回應），
+// 讓推播不必等 cron 每分鐘輪詢——把警報偵測延遲砍到接近爬蟲間隔。
+// exec 若被停用會靜默失敗，仍有 crontab 的定時 cron_check 兜底，不影響正確性。
+if ($dataset === 'ncdr') {
+    @exec('php ' . escapeshellarg(__DIR__ . '/../../apns/cron_check.php') . ' > /dev/null 2>&1 &');
+}
+
 echo json_encode([
     'status'      => 'ok',
     'received_at' => $payload['received_at'],

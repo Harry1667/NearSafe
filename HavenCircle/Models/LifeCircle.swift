@@ -24,7 +24,9 @@ enum LifeCircleKind: String, CaseIterable {
 final class LocalLifeCircle {
     @Attribute(.unique) var circleKey: String
     var name: String
-    /// 精確住址（上線前應加密保存；原型先以明文欄位佔位）
+    /// 精確住址，以 AES-GCM 加密後儲存（見 AddressCrypto）。
+    /// 請勿直接讀寫此欄位；改用 `addressText`（解密讀取）與 `setAddress(_:)`（加密寫入）。
+    /// 相容：無密文前綴的舊明文/即時圈固定文案會被原樣回傳。
     var encryptedAddress: String
     var latitude: Double
     var longitude: Double
@@ -108,6 +110,17 @@ extension LocalLifeCircle {
         let names = ["日", "一", "二", "三", "四", "五", "六"]
         let days = scheduleWeekdays.sorted().compactMap { $0 >= 1 && $0 <= 7 ? names[$0 - 1] : nil }
         return "週\(days.joined(separator: "、")) \(scheduleStartHour):00–\(scheduleEndHour):00"
+    }
+
+    /// 住址明文存取：底層 `encryptedAddress` 存密文，這裡負責解密。
+    /// 相容舊明文與即時圈固定文案（無密文前綴者原樣回傳），詳見 AddressCrypto。
+    var addressText: String {
+        AddressCrypto.decrypt(encryptedAddress)
+    }
+
+    /// 寫入使用者輸入的住址（加密後存入 `encryptedAddress`）。
+    func setAddress(_ plaintext: String) {
+        encryptedAddress = AddressCrypto.encrypt(plaintext)
     }
 }
 

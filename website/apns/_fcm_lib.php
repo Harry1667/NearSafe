@@ -1,0 +1,112 @@
+<?php
+// FCM HTTP v1 發送函式庫：用服務帳戶私鑰簽 RS256 JWT → 換 OAuth2 access token → 對「主題」發推播。
+// 服務帳戶檔 _fcm_service_account.json 只存伺服器（gitignore），此檔本身是程式碼、可進 git。
+// 被 cron_check.php 引用：全台有感事件發 REGION_TOPIC_ALL，地區性事件發對應行政區主題。
+// 走 FCM 的好處：訂閱關係（誰關心哪一區）存在 Google，這台伺服器完全不掌握，被駭也洩不出。
+
+function fcm_service_account(): ?array {
+    $f = __DIR__ . '/_fcm_service_account.json';
+    if (!is_file($f)) { return null; }
+    $j = json_decode(file_get_contents($f), true);
+    return is_array($j) ? $j : null;
+}
+
+function fcm_base64url(string $raw): string {
+    return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
+}
+
+/// 取得 OAuth2 access token（服務帳戶 JWT 換取，快取到過期前）。失敗回 null。
+function fcm_access_token(): ?string {
+    $sa = fcm_service_account();
+    if ($sa === null || empty($sa['client_email']) || empty($sa['private_key'])) { return null; }
+
+    $cacheFile = __DIR__ . '/data/fcm_token_cache.json';
+    if (is_file($cacheFile)) {
+        $c = json_decode(file_get_contents($cacheFile), true);
+        if (is_array($c) && isset($c['exp'], $c['token']) && time() < ($c['exp'] - 60)) {
+            return $c['token'];
+        }
+    }
+
+    $now = time();
+    $header = fcm_base64url(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+    $claims = fcm_base64url(json_encode([
+        'iss'   => $sa['client_email'],
+        'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
+        'aud'   => 'https://oauth2.googleapis.com/token',
+        'iat'   => $now,
+        'exp'   => $now + 3600,
+    ]));
+    $input = $header . '.' . $claims;
+    $key = openssl_pkey_get_private($sa['private_key']);
+    if ($key === false) { return null; }
+    if (!openssl_sign($input, $sig, $key, OPENSSL_ALGO_SHA256)) { return null; }
+    $jwt = $input . '.' . fcm_base64url($sig);
+
+    $ch = curl_init('https://oauth2.googleapis.com/token');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => http_build_query([
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion'  => $jwt,
+        ]),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+    ]);
+    $resp = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    if ($resp === false) { return null; }
+    $data = json_decode($resp, true);
+    if ($status !== 200 || !isset($data['access_token'])) { return null; }
+
+    $token = $data['access_token'];
+    $exp = $now + (int)($data['expires_in'] ?? 3600);
+    @file_put_contents($cacheFile, json_encode(['exp' => $exp, 'token' => $token]), LOCK_EX);
+    return $token;
+}
+
+/// 對主題或 condition 發可見推播。
+/// $target = ['topic' => 'hc_all'] 或 ['condition' => "'hc_r_x' in topics || 'hc_r_y' in topics"]。
+/// 回 ['ok' => bool, 'status' => int, 'name' => ?string, 'error' => ?string]。
+function fcm_send(array $target, string $title, string $body, array $data = []): array {
+    $sa = fcm_service_account();
+    $token = fcm_access_token();
+    if ($sa === null || $token === null) {
+        return ['ok' => false, 'status' => 0, 'name' => null, 'error' => 'no-token'];
+    }
+    $message = [
+        'notification' => ['title' => $title, 'body' => $body],
+        'apns' => [
+            'headers' => ['apns-priority' => '10'],
+            'payload' => ['aps' => ['sound' => 'default', 'interruption-level' => 'time-sensitive']],
+        ],
+    ];
+    if (!empty($data)) { $message['data'] = array_map('strval', $data); }
+    if (isset($target['topic'])) {
+        $message['topic'] = $target['topic'];
+    } elseif (isset($target['condition'])) {
+        $message['condition'] = $target['condition'];
+    } else {
+        return ['ok' => false, 'status' => 0, 'name' => null, 'error' => 'no-target'];
+    }
+
+    $url = 'https://fcm.googleapis.com/v1/projects/' . $sa['project_id'] . '/messages:send';
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode(['message' => $message], JSON_UNESCAPED_UNICODE),
+        CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $token, 'Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+    ]);
+    $resp = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    $decoded = json_decode($resp ?: '', true);
+    if ($status === 200 && isset($decoded['name'])) {
+        return ['ok' => true, 'status' => 200, 'name' => $decoded['name'], 'error' => null];
+    }
+    return ['ok' => false, 'status' => $status, 'name' => null,
+            'error' => $decoded['error']['message'] ?? ($resp ?: 'unknown')];
+}

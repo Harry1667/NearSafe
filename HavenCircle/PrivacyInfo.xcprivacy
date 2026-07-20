@@ -8,13 +8,42 @@
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 	<!--
-	  資料蒐集：家庭最新位置只寫入使用者自己的 iCloud（CKShare），開發者伺服器不留存；
-	  APNs 中繼伺服器僅保存無聲推播用的裝置權杖，不含位置、住址或姓名。
-	  依 Apple 定義，寫入使用者自有 iCloud 不算「開發者蒐集」，故此處留空；
-	  App Store Connect 隱私問卷才是對外揭露的權威來源（見交付說明）。
+	  申報原則＝「是否傳離裝置到開發者/第三方」。
+	  ・裝置 ID：APNs 裝置權杖會上傳開發者的中繼伺服器（供無聲推播），故申報。
+	  ・產品互動：匿名事件計數會上傳自建 analytics 端點，故申報。
+	  ・精確位置「不」申報：家庭位置只寫入使用者自己的 iCloud（CKShare），
+	    開發者伺服器與 Firebase 皆收不到；AI 功能送出的是去識別化的概略距離、非座標。
+	    依 Apple 定義（傳離裝置到開發者/第三方才算蒐集）此項未蒐集。
+	  ・Firebase Analytics 的 SDK 層蒐集由 FirebaseAnalytics 框架自帶的隱私宣告涵蓋，Apple 會自動合併。
+	  三類皆「不連結身分、不用於追蹤」。
 	-->
 	<key>NSPrivacyCollectedDataTypes</key>
-	<array/>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeDeviceID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeProductInteraction</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+			</array>
+		</dict>
+	</array>
 	<!-- 必要理由 API：僅使用 UserDefaults 儲存 App 自身設定與 App Group 共享狀態 -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>

@@ -1,10 +1,14 @@
 <?php
 // 建立 8 位邀請碼：收 CKShare 連結，發一組短碼，存成檔案（碼→連結，含效期）。
 // 公開端點（App 端無法保管密鑰），防濫用手段：只收 icloud.com 分享連結、
-// 72 小時效期、總量上限、每次建立順手清掉過期檔。
+// 24 小時效期、總量上限、每次建立順手清掉過期檔。
+// 連結以 AES-256-GCM 加密後才落地，檔案單獨外洩無金鑰仍還原不出可用邀請連結。
 header('Content-Type: application/json; charset=utf-8');
+require __DIR__ . '/_join_lib.php';
 
-const CODE_TTL_SECONDS = 72 * 3600;
+// 效期由 72 小時收緊為 24 小時：CKShare 連結存在伺服器的曝光窗越短越好，
+// 24 小時足夠邀家人加入，過期後 create/redeem 都會順手清掉。
+const CODE_TTL_SECONDS = 24 * 3600;
 const MAX_ACTIVE_CODES = 10000;
 // 不含 0/O/1/I/L 的字元表，避免唸給家人聽時搞混
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -65,9 +69,15 @@ if ($code === '') {
     exit;
 }
 
+$storedUrl = join_encrypt($url);
+if ($storedUrl === null) {
+    http_response_code(500);
+    echo json_encode(['error' => 'encryption unavailable']);
+    exit;
+}
 $expiresAt = time() + CODE_TTL_SECONDS;
 file_put_contents($dataDir . '/' . $code . '.json', json_encode([
-    'url'        => $url,
+    'url'        => $storedUrl,
     'created_at' => time(),
     'expires_at' => $expiresAt,
 ]));

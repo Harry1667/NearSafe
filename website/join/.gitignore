@@ -1,2 +1,4 @@
 # 執行期資料（邀請碼對照檔），不進 git
 data/*.json
+# 邀請碼加密金鑰，只存伺服器
+api/_config.php

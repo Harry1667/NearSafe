@@ -30,3 +30,7 @@ tools/news-crawler/seen.json
 # 根目錄的臨時截圖與 Demo 影片（正式素材放 website/ 或 design/）
 /*.png
 /*.mp4
+
+# Firebase 服務帳戶私鑰（機密），只存伺服器與本機機密夾，絕不進 git
+*firebase-adminsdk*.json
+_fcm_service_account.json

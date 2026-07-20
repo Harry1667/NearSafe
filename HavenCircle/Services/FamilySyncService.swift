@@ -278,6 +278,10 @@ final class FamilySyncService {
             func applyLatestValues(to target: CKRecord) {
                 target[FamilyLiveLocation.Field.participantID] = participantID
                 target[FamilyLiveLocation.Field.displayName] = trimmedName
+                // 隱私與救援的取捨：即時位置寫入的是原始座標，「刻意不再加雜訊模糊化」——
+                // 這是家人要據以趕去救人的位置，模糊化反而傷害用途。降低暴露改用其他手段：
+                // 擷取端已設 ~100m 精度（kCLLocationAccuracyHundredMeters）、資料只進使用者自己的
+                // iCloud（僅受邀家人可讀、開發者拿不到）、預設關閉且可隨時停止分享。
                 target[FamilyLiveLocation.Field.latitude] = location.coordinate.latitude
                 target[FamilyLiveLocation.Field.longitude] = location.coordinate.longitude
                 target[FamilyLiveLocation.Field.radiusMeters] = max(300, min(radiusMeters, 3_000))

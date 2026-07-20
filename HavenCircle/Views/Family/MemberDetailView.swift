@@ -70,7 +70,7 @@ struct MemberDetailView: View {
                         in: Capsule()
                     )
             }
-            Text("\(circle.encryptedAddress) · 警戒半徑 \(circle.radiusMeters) 公尺")
+            Text("\(circle.addressText) · 警戒半徑 \(circle.radiusMeters) 公尺")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             if circle.kind == .live {

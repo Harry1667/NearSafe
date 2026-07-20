@@ -30,7 +30,7 @@ struct CircleEditorView: View {
         self.member = member
         self.circle = circle
         _name = State(initialValue: circle?.name ?? "")
-        _address = State(initialValue: circle?.encryptedAddress ?? "")
+        _address = State(initialValue: circle?.addressText ?? "")
         _radius = State(initialValue: circle?.radiusMeters ?? 1_000)
         _district = State(initialValue: circle?.district ?? Districts.unspecified)
         _scheduleEnabled = State(initialValue: circle?.scheduleEnabled ?? false)
@@ -47,7 +47,7 @@ struct CircleEditorView: View {
                 TextField("地址或地標", text: $address)
                     .onChange(of: address) { oldValue, newValue in
                         guard oldValue != newValue,
-                              newValue != circle?.encryptedAddress,
+                              newValue != circle?.addressText,
                               newValue != pickedLabel else { return }
                         found = nil
                         picked = nil
@@ -60,7 +60,7 @@ struct CircleEditorView: View {
                     .task(id: address) {
                         let query = address.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !query.isEmpty,
-                              address != circle?.encryptedAddress,
+                              address != circle?.addressText,
                               address != pickedLabel,
                               found == nil, picked == nil else { return }
                         do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
@@ -214,7 +214,7 @@ struct CircleEditorView: View {
             member: member
         )
         target.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "固定圈" : name
-        target.encryptedAddress = pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel
+        target.setAddress(pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel)
         target.latitude = coordinate.latitude
         target.longitude = coordinate.longitude
         target.radiusMeters = radius

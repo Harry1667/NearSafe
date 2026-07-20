@@ -135,13 +135,15 @@ struct EventDetailView: View {
         }
         lines.append("")
         lines.append("【我的守護設定】")
+        // 隱私：送到外部 AI 的內容「去識別化」——不送使用者自訂圈名（如「阿嬤家」）與家人真實稱謂，
+        // 只送「我／一位家人」＋已取整到百公尺的概略距離。保留空間個人化，但不外洩可識別的名稱與關係細節。
         if decision.matches.isEmpty {
-            lines.append("目前沒有任何警戒圈直接落在事件影響範圍內，但使用者仍在關注此類事件。")
+            lines.append("目前沒有任何警戒範圍直接落在事件影響範圍內，但使用者仍在關注此類事件。")
         } else {
             for match in decision.matches {
-                let who = match.isCurrentUser ? "我" : match.memberName
+                let who = match.isCurrentUser ? "我" : "一位家人"
                 let schedule = match.withinSchedule ? "提醒時段內" : "提醒時段外"
-                lines.append("- \(who)的「\(match.circleName)」約 \(match.distanceMeters) 公尺（\(schedule)）")
+                lines.append("- \(who)的警戒範圍約 \(match.distanceMeters) 公尺（\(schedule)）")
             }
         }
         return lines.joined(separator: "\n")

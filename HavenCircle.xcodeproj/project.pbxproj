@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		8F742774300D115C0095D6CE /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 8F742773300D115C0095D6CE /* FirebaseAnalytics */; };
+		8F742781300E02230095D6CE /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 8F742780300E02230095D6CE /* FirebaseMessaging */; };
 		C17535F13008C645003BEC75 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C17535F03008C645003BEC75 /* WidgetKit.framework */; };
 		C17535F33008C645003BEC75 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C17535F23008C645003BEC75 /* SwiftUI.framework */; };
 		C17536003008C647003BEC75 /* HavenCircleWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C17535EE3008C645003BEC75 /* HavenCircleWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -85,6 +86,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8F742781300E02230095D6CE /* FirebaseMessaging in Frameworks */,
 				8F742774300D115C0095D6CE /* FirebaseAnalytics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -152,6 +154,7 @@
 			name = HavenCircle;
 			packageProductDependencies = (
 				8F742773300D115C0095D6CE /* FirebaseAnalytics */,
+				8F742780300E02230095D6CE /* FirebaseMessaging */,
 			);
 			productName = HavenCircle;
 			productReference = C15F63CC3007348F00E2194F /* HavenCircle.app */;
@@ -566,6 +569,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8F742772300D115C0095D6CE /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAnalytics;
+		};
+		8F742780300E02230095D6CE /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8F742772300D115C0095D6CE /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

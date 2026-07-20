@@ -140,6 +140,45 @@ function apns_broadcast(array $payload, string $pushType = 'background'): array 
     return ['sent' => $sent, 'failed' => $failed, 'removed' => $removed, 'errors' => $errors];
 }
 
+// MARK: - 危險級判定
+
+/// 判斷單一 NCDR 事件是否屬於「危險級、需對所有裝置發可見推播」。
+/// 危險級＝全區有感或立即致命的災型（地震/海嘯/火災/土石流/颱風）；
+/// 已結案/已解除者不推（避免為非緊急事件對全國亂轟）。
+/// 回傳可見推播 payload，非危險級或已結案回 null。
+/// 產品取捨：這條路對所有裝置廣播、無法在顯示前依「你的生活圈」本機過濾，
+/// 是「危險寧可多送不可漏」換來的——僅套用於少數危險級災型，其餘維持 App 內顯示。
+function apns_danger_payload(array $e): ?array {
+    static $DANGER = [
+        '地震' => '⚠️ 地震速報', '海嘯' => '🌊 海嘯警報', '火災' => '🔥 火災警報',
+        '土石流' => '⛰️ 土石流警戒', '颱風' => '🌀 颱風警報',
+    ];
+    $kind = (string)($e['category'] ?? $e['event'] ?? '');
+    $title = null;
+    foreach ($DANGER as $k => $t) {
+        if ($kind !== '' && strpos($kind, $k) !== false) { $title = $t; break; }
+    }
+    if ($title === null) { return null; } // 非危險級
+
+    // 已結案/已解除：不對全國廣播
+    $text = ($e['headline'] ?? '') . ' ' . ($e['description'] ?? '');
+    foreach (['已結案', '結案', '已解除', '解除'] as $m) {
+        if (strpos($text, $m) !== false) { return null; }
+    }
+
+    $area = (string)($e['areaDesc'] ?? '');
+    $body = trim(($e['headline'] ?? $kind) . ($area !== '' ? ' · ' . $area : ''));
+    return [
+        'aps' => [
+            'alert' => ['title' => $title, 'body' => $body],
+            'sound' => 'default',
+            'interruption-level' => 'time-sensitive', // 危險級可穿過專注模式
+        ],
+        'kind' => 'danger-alert',
+        'identifier' => (string)($e['identifier'] ?? ''),
+    ];
+}
+
 // MARK: - 記錄
 
 function apns_log(string $message): void {

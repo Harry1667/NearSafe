@@ -13,12 +13,35 @@ struct DistrictBoundaries {
         let rings: [[CLLocationCoordinate2D]]
     }
 
+    /// 外接矩形：點面內判前先用它快速排除大多數不可能的區（O(1) 比對）
+    private struct BBox {
+        let minLat, maxLat, minLon, maxLon: Double
+        init?(rings: [[CLLocationCoordinate2D]]) {
+            let points = rings.flatMap { $0 }
+            guard let first = points.first else { return nil }
+            var mnLa = first.latitude, mxLa = first.latitude
+            var mnLo = first.longitude, mxLo = first.longitude
+            for p in points {
+                mnLa = min(mnLa, p.latitude);  mxLa = max(mxLa, p.latitude)
+                mnLo = min(mnLo, p.longitude); mxLo = max(mxLo, p.longitude)
+            }
+            minLat = mnLa; maxLat = mxLa; minLon = mnLo; maxLon = mxLo
+        }
+        func contains(_ p: CLLocationCoordinate2D) -> Bool {
+            p.latitude >= minLat && p.latitude <= maxLat &&
+            p.longitude >= minLon && p.longitude <= maxLon
+        }
+    }
+
     static let shared = DistrictBoundaries()
 
     /// 以區名索引（例「大雅區」→ 各縣市同名區的清單）。
     /// 已知限制：RegionAlert 只存區名不含縣市，同名區（如各縣市的「東區」）會一起亮，
     /// 寧可多塗不漏塗——這是安全 App 的正確取捨方向。
     private let byTown: [String: [District]]
+
+    /// 扁平清單＋每區外接矩形（bounding box），供「座標→縣市+區」的點面內判快速篩選。
+    private let indexed: [(district: District, bbox: BBox)]
 
     /// 全國鄉鎮市區名清單（排序去重），供生活圈行政區選單與警報比對使用
     var allTownNames: [String] { byTown.keys.sorted() }
@@ -29,9 +52,11 @@ struct DistrictBoundaries {
               let collection = try? JSONDecoder().decode(FeatureCollection.self, from: data) else {
             AppLog.dataError("TaiwanDistricts.json 載入失敗，區域警報塗層停用")
             byTown = [:]
+            indexed = []
             return
         }
         var index: [String: [District]] = [:]
+        var flat: [(District, BBox)] = []
         for feature in collection.features {
             let rings: [[CLLocationCoordinate2D]]
             switch feature.geometry.type {
@@ -44,17 +69,70 @@ struct DistrictBoundaries {
             default:
                 continue
             }
+            let cleaned = rings.filter { $0.count >= 4 }
             let district = District(county: feature.properties.county,
                                     town: feature.properties.town,
-                                    rings: rings.filter { $0.count >= 4 })
+                                    rings: cleaned)
             index[feature.properties.town, default: []].append(district)
+            if let bbox = BBox(rings: cleaned) {
+                flat.append((district, bbox))
+            }
         }
         byTown = index
+        indexed = flat
     }
 
     /// 依區名找邊界（可能對到多個縣市的同名區）
     func districts(named town: String) -> [District] {
         byTown[town] ?? []
+    }
+
+    /// 座標落在哪個「縣市＋區」——點面內判（先用 bounding box 篩，再對外框做射線法）。
+    /// 這是把生活圈精確座標對應到唯一行政區（含縣市，解決同名區歧義）的入口。
+    func district(at coord: CLLocationCoordinate2D) -> District? {
+        for entry in indexed where entry.bbox.contains(coord) {
+            for ring in entry.district.rings where Self.ringContains(ring, coord) {
+                return entry.district
+            }
+        }
+        return nil
+    }
+
+    /// 圈心＋半徑「碰到」的所有行政區（圈心那一區＋四周取樣點落到的鄰區），用來解邊界漏接：
+    /// 圈壓在區界時，隔壁區的事件也該通知。以圈心與八方位取樣點做點面內判，去重回傳。
+    func districtsTouching(center: CLLocationCoordinate2D, radiusMeters: Double) -> [District] {
+        let dLat = radiusMeters / 111_320.0
+        let dLon = radiusMeters / (111_320.0 * max(cos(center.latitude * .pi / 180), 0.01))
+        let offsets: [(Double, Double)] = [
+            (0, 0), (-1, 0), (1, 0), (0, -1), (0, 1),
+            (-0.7, -0.7), (-0.7, 0.7), (0.7, -0.7), (0.7, 0.7),
+        ]
+        var seen = Set<String>()
+        var result: [District] = []
+        for (oLat, oLon) in offsets {
+            let sample = CLLocationCoordinate2D(latitude: center.latitude + oLat * dLat,
+                                                longitude: center.longitude + oLon * dLon)
+            if let d = district(at: sample), seen.insert(d.county + d.town).inserted {
+                result.append(d)
+            }
+        }
+        return result
+    }
+
+    /// 射線法（even-odd）判斷點是否在外框內
+    nonisolated private static func ringContains(_ ring: [CLLocationCoordinate2D], _ p: CLLocationCoordinate2D) -> Bool {
+        guard ring.count >= 3 else { return false }
+        var inside = false
+        var j = ring.count - 1
+        for i in 0..<ring.count {
+            let a = ring[i], b = ring[j]
+            if (a.latitude > p.latitude) != (b.latitude > p.latitude) {
+                let x = a.longitude + (p.latitude - a.latitude) / (b.latitude - a.latitude) * (b.longitude - a.longitude)
+                if p.longitude < x { inside.toggle() }
+            }
+            j = i
+        }
+        return inside
     }
 
     nonisolated private static func ring(_ coords: [[Double]]) -> [CLLocationCoordinate2D] {

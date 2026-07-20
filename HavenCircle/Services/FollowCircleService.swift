@@ -35,7 +35,7 @@ enum FollowCircleService {
             let label = place.approximateLabel(district: district)
             for circle in circles {
                 if district != Districts.unspecified { circle.district = district }
-                if let label { circle.encryptedAddress = label }
+                if let label { circle.setAddress(label) } // 反查地名也走加密，與手動輸入住址一致
             }
         }
 

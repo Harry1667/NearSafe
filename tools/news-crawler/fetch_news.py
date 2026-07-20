@@ -344,7 +344,7 @@ LLM_PROMPT_TEMPLATE = """你是災害事故新聞分類器。判斷下面這則�
 描述：{description}
 
 只回覆一行 JSON，不要任何其他文字，格式：
-{{"is_incident": true或false, "county": "縣市全名（如 台中市）或null", "district": "鄉鎮市區或null", "place": "地點簡述或null", "category": "火災|交通|天災|公共安全|民生 其中之一", "confidence": 0到1的數字, "summary": "10至12個中文字的事件重點（只寫地點＋發生什麼事，如「板橋警匪追逐警破窗逮人」；不要標點、驚嘆號與媒體渲染詞；一律使用台灣繁體中文，禁止任何簡體字）", "detail": "30到60字的事件詳細說明，用中性平實的語氣重新整理（地點＋發生什麼＋目前現況或影響），不要媒體渲染詞、不要驚嘆號、不要記者名或報社名；一律使用台灣繁體中文，禁止任何簡體字"}}"""
+{{"is_incident": true或false, "county": "縣市全名（如 台中市）或null", "district": "鄉鎮市區或null", "place": "地點簡述或null", "category": "火災|交通|天災|公共安全|民生 其中之一", "confidence": 0到1的數字, "summary": "10至12個中文字的事件重點（只寫地點＋發生什麼事，如「板橋警匪追逐警破窗逮人」；不要標點、驚嘆號與媒體渲染詞；一律使用台灣繁體中文，禁止任何簡體字）", "detail": "30到60字的事件詳細說明，用中性平實的語氣重新整理（地點＋發生什麼＋目前現況或影響），不要媒體渲染詞、不要驚嘆號、不要記者名或報社名；一律使用台灣繁體中文，禁止任何簡體字", "severity": "high或medium或low 其中之一（high＝立即致命或需疏散，如大火困人、氣爆、槍擊或天災正在發生；medium＝局部危險需注意；low＝輕微、已受控或影響很小）", "is_ongoing": true或false（事件是否仍在發生或剛發生、需要人即時反應；已撲滅／已獲救／已落幕／純事後回顧或司法後續都為 false）}}"""
 
 
 def call_proxy_llm(prompt):
@@ -460,6 +460,11 @@ def llm_classify(title, description):
     for key in ("district", "place"):
         if isinstance(result.get(key), str):
             result[key] = to_traditional(result[key])
+    # 嚴重度與是否進行中（推播分級用）：只收白名單值，其餘給保守預設，不讓壞值誤觸推播
+    sev = str(result.get("severity", "")).strip().lower()
+    result["severity"] = sev if sev in ("high", "medium", "low") else "low"
+    ongoing = result.get("is_ongoing")
+    result["is_ongoing"] = ongoing is True or (isinstance(ongoing, str) and ongoing.strip().lower() == "true")
     return result
 
 
@@ -497,6 +502,12 @@ def merge_duplicate(existing, new_event):
     for key in ("county", "district", "place", "summary", "detail"):
         if not existing.get(key) and new_event.get(key):
             existing[key] = new_event[key]
+    # 嚴重度取較高、是否進行中取「任一為真」：多來源中以最嚴重、最即時者為準
+    _order = {"low": 0, "medium": 1, "high": 2}
+    if _order.get(new_event.get("severity", "low"), 0) > _order.get(existing.get("severity", "low"), 0):
+        existing["severity"] = new_event["severity"]
+    if new_event.get("is_ongoing"):
+        existing["is_ongoing"] = True
 
 
 # ---------------------------------------------------------------------------
@@ -636,8 +647,10 @@ def main(feeds=None, out_dir=None):
                 "summary": None,            # 短摘要只有 LLM 路徑會產生；App 端 null 時退回原標題
                 "detail": None,             # 詳細描述同樣只有 LLM 路徑會產生；App 端 null 時退回其他欄位
                 "extraction": "rules",
-                "trust": "media-report",    # 媒體報導層：只進「持續確認中」，永不推播
+                "trust": "media-report",    # 媒體報導層
                 "corroboration": 1,
+                "severity": "low",          # 嚴重度（推播分級用）；規則路徑保守給 low，不會觸發推播
+                "is_ongoing": False,        # 是否仍在發生需即時反應；規則路徑保守給 False
             }
 
             # 第二段：LLM（有 token 才跑；失敗/低信心 → 保留規則結果）
@@ -656,6 +669,8 @@ def main(feeds=None, out_dir=None):
                         "summary": llm.get("summary"),
                         "detail": llm.get("detail"),
                         "extraction": "llm",
+                        "severity": llm.get("severity", "low"),
+                        "is_ongoing": bool(llm.get("is_ongoing")),
                     })
 
             # 跨來源去重：同一事件合併、corroboration +1

@@ -687,7 +687,7 @@ struct OnboardingView: View {
             name: isFollowMe ? "我的即時圈" : (placeName.isEmpty ? "住家" : placeName),
             encryptedAddress: isFollowMe
                 ? "位置由這支手機分享"
-                : (pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel),
+                : AddressCrypto.encrypt(pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel),
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
             radiusMeters: radius,

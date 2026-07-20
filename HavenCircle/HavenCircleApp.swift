@@ -145,6 +145,8 @@ struct HavenCircleApp: App {
                 Task {
                     await familySync.fetchLiveLocations(context: modelContainer.mainContext)
                 }
+                // 回前景時同步 FCM 行政區主題訂閱（生活圈可能已新增/編輯/刪除）
+                FCMTopicSync.sync(container: modelContainer)
             }
         }
     }
