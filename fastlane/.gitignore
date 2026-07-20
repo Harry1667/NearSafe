@@ -1,0 +1,6 @@
+# fastlane 產生的暫存/報告，不進 git
+report.xml
+Preview.html
+screenshots/**/*.png
+test_output/
+../build/

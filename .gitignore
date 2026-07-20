@@ -4,8 +4,15 @@
 
 # Xcode / Swift build 產物
 .build/
+build/
 DerivedData/
 xcuserdata/
+
+# fastlane 打包/簽章產物：.ipa、dSYM、佈建描述檔、憑證檔（每次打包重新產生；憑證私鑰絕不入庫）
+*.mobileprovision
+*.p12
+*.cer
+*.certSigningRequest
 
 # 本機審查截圖（session 產物，不入庫）
 .audit/

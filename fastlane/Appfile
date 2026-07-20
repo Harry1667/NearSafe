@@ -1,0 +1,4 @@
+# HavenCircle 的 App 識別設定（給 fastlane 使用）
+# team_id 是 Apple Developer 團隊 ID（簽章用），與程式碼裡的 DEVELOPMENT_TEAM 一致。
+app_identifier("com.gomiigo.HavenCircleApp")
+team_id("Q377MM9X45")

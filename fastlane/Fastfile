@@ -1,0 +1,114 @@
+# HavenCircle 自動化打包上傳（fastlane）
+#
+# 設計原則：任何機密（App Store Connect API 私鑰、Key ID、Issuer ID）都不寫死在檔案裡，
+# 一律從環境變數讀，私鑰檔放在 repo 外的 ~/.appstoreconnect/private_keys/。
+# 這樣這個 Fastfile 可以安全地留在共用 repo，不會外洩憑證。
+#
+# 需要的環境變數（跑之前先 export）：
+#   ASC_KEY_ID      —— App Store Connect API 金鑰的 Key ID（10 碼）
+#   ASC_ISSUER_ID   —— 團隊共用的 Issuer ID（UUID 格式）
+#   ASC_KEY_PATH    —— .p8 私鑰路徑（預設 ~/.appstoreconnect/private_keys/AuthKey_<KeyID>.p8）
+
+require "shellwords"
+
+default_platform(:ios)
+
+APP_SCHEME = "HavenCircle"
+
+platform :ios do
+  # 載入 App Store Connect API 金鑰（上傳與雲端簽章都靠它，免 Apple ID 2FA）
+  def asc_api_key
+    key_id = ENV["ASC_KEY_ID"]
+    issuer_id = ENV["ASC_ISSUER_ID"]
+    key_path = ENV["ASC_KEY_PATH"] || File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
+    UI.user_error!("缺少 ASC_KEY_ID 環境變數") if key_id.nil? || key_id.empty?
+    UI.user_error!("缺少 ASC_ISSUER_ID 環境變數") if issuer_id.nil? || issuer_id.empty?
+    UI.user_error!("找不到 API 私鑰檔：#{key_path}") unless File.exist?(key_path)
+
+    app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: issuer_id,
+      key_filepath: key_path,
+      in_house: false
+    )
+  end
+
+  desc "預檢：驗證 API 金鑰可登入，並查 App 記錄與 TestFlight 最新建置號"
+  lane :check do
+    api_key = asc_api_key
+    build = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: "com.gomiigo.HavenCircleApp",
+      initial_build_number: 0
+    )
+    UI.success("金鑰可用；TestFlight 目前最新建置號：#{build}（0 代表尚無建置或 App 剛建立）")
+  end
+
+  desc "探針：測這把 API 金鑰能否在本機建立發布憑證（traditional signing）"
+  lane :mkcert do
+    api_key = asc_api_key
+    cert(api_key: api_key) # 預設建 distribution 憑證；私鑰留在本機 keychain
+    UI.success("發布憑證就緒")
+  end
+
+  desc "打 Release 包並上傳 TestFlight（正式 APNs 環境）"
+  lane :beta do
+    api_key = asc_api_key
+
+    # 建置號用「本機當下時間戳」，確保每次上傳都比上一個大（TestFlight 不接受重複建置號）。
+    # 用 UTC 時間的 MMddHHmm，避免與 marketing version 衝突。
+    # 刻意「不」用 increment_build_number——那會改動 project.pbxproj（共用 repo 不該動）；
+    # 改用 xcargs 在打包當下把 CURRENT_PROJECT_VERSION 覆蓋成時間戳，App 與 Widget 兩個 target 一致。
+    build_number = Time.now.utc.strftime("%m%d%H%M")
+
+    # 傳統簽章（不用 Apple 雲端簽章，因為那要 API 金鑰有 Admin 權限；這把是 App Manager）：
+    # 1) 在本機建/取發布憑證（私鑰留本機 keychain）
+    # 2) 為 App 與 Widget 各抓一個 App Store 佈建描述檔
+    # 3) 匯出時用「手動簽章」+ 明確的 bundle→描述檔對應
+    # output_path 指到 build/（已忽略），避免 .cer/.p12/.csr 憑證檔掉進 repo 根目錄
+    cert(api_key: api_key, output_path: "./build")
+
+    app_id = "com.gomiigo.HavenCircleApp"
+    widget_id = "com.gomiigo.HavenCircleApp.HavenCircleWidget"
+
+    # output_path 指到 build/（已被 .gitignore 忽略），避免描述檔掉進 repo 根目錄污染版控
+    app_profile = get_provisioning_profile(api_key: api_key, app_identifier: app_id, output_path: "./build")
+    app_profile_name = lane_context[SharedValues::SIGH_NAME] || app_profile
+    widget_profile = get_provisioning_profile(api_key: api_key, app_identifier: widget_id, output_path: "./build")
+    widget_profile_name = lane_context[SharedValues::SIGH_NAME] || widget_profile
+
+    # archive 用自動簽章（開發憑證即可）；帶認證旗標讓 xcodebuild 需要時能更新開發描述檔。
+    key_id = ENV["ASC_KEY_ID"]
+    issuer_id = ENV["ASC_ISSUER_ID"]
+    key_path = ENV["ASC_KEY_PATH"] || File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
+    archive_auth = "-allowProvisioningUpdates -authenticationKeyPath #{key_path.shellescape} " \
+                   "-authenticationKeyID #{key_id} -authenticationKeyIssuerID #{issuer_id}"
+
+    # export 再用上面抓到的發布描述檔手動重簽。
+    build_app(
+      scheme: APP_SCHEME,
+      export_method: "app-store",
+      xcargs: "#{archive_auth} CURRENT_PROJECT_VERSION=#{build_number}",
+      export_options: {
+        method: "app-store",
+        signingStyle: "manual",
+        provisioningProfiles: {
+          app_id => app_profile_name,
+          widget_id => widget_profile_name
+        }
+      },
+      clean: true,
+      output_directory: "./build",
+      output_name: "HavenCircle.ipa"
+    )
+
+    # 上傳到 TestFlight；不等 Apple 端處理完成（處理要幾分鐘，不阻塞這支指令）。
+    upload_to_testflight(
+      api_key: api_key,
+      skip_waiting_for_build_processing: true,
+      skip_submission: true
+    )
+
+    UI.success("已上傳 TestFlight（建置號 #{build_number}）。到 App Store Connect → TestFlight 查處理進度，處理完會出現在 TestFlight App 可安裝。")
+  end
+end
