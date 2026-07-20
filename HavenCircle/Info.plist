@@ -23,5 +23,11 @@
 		<string>remote-notification</string>
 		<string>location</string>
 	</array>
+	<!-- 關閉 Firebase 的 AppDelegate swizzling：在 SwiftUI @UIApplicationDelegateAdaptor 環境下，
+	     Firebase proxy 攔截 didRegisterForRemoteNotificationsWithDeviceToken 卻不轉發給 App 自己的方法，
+	     導致 APNs 權杖不會上傳到中繼站。改為手動整合（App 已自行設定 apnsToken 與 delegate、
+	     並在 didReceiveRemoteNotification 呼叫 appDidReceiveMessage）。 -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 </dict>
 </plist>

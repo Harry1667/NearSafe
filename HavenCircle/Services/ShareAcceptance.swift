@@ -90,8 +90,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         UserDefaults.standard.set(token, forKey: SettingsKeys.apnsDeviceToken)
         AppLog.notifications.info("已取得 APNs 裝置權杖")
-        // FCM 需要原始 APNs 權杖才能把主題推播轉送到這台 iOS 裝置
-        Messaging.messaging().apnsToken = deviceToken
+        // FCM 需要原始 APNs 權杖才能把主題推播轉送到這台 iOS 裝置。
+        // proxy 關閉後 FCM 的環境自動判定不可靠，必須明確指定 sandbox/prod，
+        // 否則 FCM 會用 production 閘道去送 sandbox(Debug) 權杖 → APNs 靜默丟包（發送端回 ok 但收不到）。
+        #if DEBUG
+        Messaging.messaging().setAPNSToken(deviceToken, type: .sandbox)
+        #else
+        Messaging.messaging().setAPNSToken(deviceToken, type: .prod)
+        #endif
         Task { await APNsRegistrar.upload(token: token) }
     }
 
@@ -102,7 +108,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
         AppLog.notifications.info("已取得 FCM 註冊權杖")
         Task { @MainActor in
             if let container = AppRuntime.container {
-                FCMTopicSync.sync(container: container)
+                // 權杖（可能）換新 → 強制清快取重訂，避免舊「已訂閱」旗標讓新權杖漏訂主題
+                FCMTopicSync.resync(container: container)
             }
         }
     }
@@ -125,6 +132,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        // Firebase proxy 已關閉：手動把收到的推播轉交 FCM（資料訊息追蹤／分析所需）
+        Messaging.messaging().appDidReceiveMessage(userInfo)
         guard let container = AppRuntime.container else {
             completionHandler(.noData)
             return

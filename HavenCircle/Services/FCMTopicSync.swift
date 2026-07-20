@@ -39,10 +39,19 @@ enum FCMTopicSync {
         AppLog.notifications.info("FCM 主題同步：共訂閱 \(desired.count) 個主題")
     }
 
-    /// 便利版：自己從容器抓生活圈再同步（供 App 回前景、FCM 權杖就緒等時機呼叫）。
+    /// 便利版：自己從容器抓生活圈再同步（供 App 回前景等時機呼叫）。
     @MainActor
     static func sync(container: ModelContainer) {
         let circles = (try? container.mainContext.fetch(FetchDescriptor<LocalLifeCircle>())) ?? []
         sync(circles: circles)
+    }
+
+    /// FCM 權杖刷新時呼叫：權杖一換，Google 端的舊主題訂閱全部失效，
+    /// 但本機「已訂閱」快取還記著舊狀態，會讓 sync 誤判「無變動」而跳過重訂，
+    /// 導致新權杖其實沒訂上任何主題、收不到地區推播。故先清快取，強制全部重新訂閱。
+    @MainActor
+    static func resync(container: ModelContainer) {
+        UserDefaults.standard.removeObject(forKey: storeKey)
+        sync(container: container)
     }
 }
