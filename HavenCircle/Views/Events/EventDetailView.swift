@@ -11,6 +11,8 @@ struct EventDetailView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var profileName = ""
     @State private var showResolveConfirmation = false
     @State private var checkInFeedback: String?
+    /// 「這類警報以後不吵醒我」按過後的回饋文字（nil＝尚未按過）
+    @State private var wakeMuteFeedback: String?
     @State private var isReporting = false
     // AI 影響分析：只在使用者主動點按時才呼叫，結果存行程內快取避免重複計費
     @State private var aiImpact: String?
@@ -353,6 +355,16 @@ struct EventDetailView: View {
             Button("隱藏此裝置的相似提醒", systemImage: "hand.thumbsdown") {
                 EventVisibility.suppressSimilar(to: event)
                 dismiss()
+            }
+            // 降級只影響「吵不吵醒」，不影響通知送不送達——scheduleAlert 的 effectiveTimeSensitive 規則 f 讀同一集合
+            Button("這類警報以後不吵醒我", systemImage: "moon.zzz") {
+                AlertWakePrefs.mute(event.eventType)
+                wakeMuteFeedback = "已設定，這類警報以後不會吵醒你"
+            }
+            if let wakeMuteFeedback {
+                Label(wakeMuteFeedback, systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             if !event.isEnded {
                 Button("回報此事件在我這裡已解除") {

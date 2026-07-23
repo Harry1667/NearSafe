@@ -226,7 +226,8 @@ enum EventPipeline {
                         body: "影響 \(names) 所在行政區。\(raw.guidance)\(callToAction)",
                         id: raw.alertKey,
                         interaction: interaction,
-                        timeSensitive: isDanger
+                        timeSensitive: isDanger,
+                        kind: raw.kind
                     )
                 }
             }

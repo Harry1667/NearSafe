@@ -23,6 +23,20 @@ enum SettingsKeys {
     static let lastDataRefresh = "lastDataRefresh"
     /// 新手設定是否完成（獨立旗標，不再以「有沒有家人資料」推斷）
     static let onboardingCompleted = "onboardingCompleted"
+    /// App 冷啟動累計次數（HavenCircleApp.init 每次 +1）；用來判定「第二次開 App」的時機
+    static let launchCount = "launchCount"
+    /// 尚未選家庭身分的待辦旗標：新手第一次開 App 只走地圖著陸就種下，
+    /// 待「第二次開 App 或點家人分頁」時跳出身分選擇；選完清除（仿 guardianIntroPending 消耗式旗標）
+    static let roleSelectionPending = "roleSelectionPending"
+    /// 第一次進主畫面的地圖親切帶領待播旗標：第一次開 App 完成著陸就種下，
+    /// 讓首次落在地圖頁並播放「這是安全地圖／你的警戒圈」等教學卡，播完消耗。
+    static let firstRunCoachingPending = "firstRunCoachingPending"
+    /// 是否已看過「安心」分頁的一句話介紹（第一次切到就顯示一次）
+    static let seenHomeIntro = "seenHomeIntro"
+    /// 是否已看過「家人」分頁的一句話介紹（第一次切到就顯示一次）
+    static let seenFamilyIntro = "seenFamilyIntro"
+    /// 是否已看過「警戒圈可拖動調整」的提示（第一次點開事件、關掉詳情後顯示一次）
+    static let seenCircleAdjustHint = "seenCircleAdjustHint"
     /// Sign in with Apple 授權後存下的帳號 email（僅本機顯示用；CloudKit 拿不到 email）
     static let appleAccountEmail = "appleAccountEmail"
     /// APNs 裝置權杖（十六進位字串）：設定頁「示範與開發」區顯示，供 Push Console 推播測試
@@ -39,6 +53,56 @@ enum SettingsKeys {
     static let analyticsEnabled = "analyticsEnabled"
     /// 通知頻率等級（AlertFrequency 的 rawValue）：小＝只推危險級／中＝標準（預設）／大＝連早期未確認線索也推
     static let alertFrequencyLevel = "alertFrequencyLevel"
+
+    // MARK: - 吵醒門檻與勿擾時段（D4：通知自主權）
+
+    /// 吵醒門檻（WakeThreshold 的 rawValue）：標準（現行）／僅重大／絕不吵醒。預設 standard
+    static let wakeThreshold = "wakeThreshold"
+    /// 是否啟用安靜時段（預設關）
+    static let quietHoursEnabled = "quietHoursEnabled"
+    /// 安靜時段開始時（0-23，預設 22）
+    static let quietStartHour = "quietStartHour"
+    /// 安靜時段結束時（0-23，預設 7）；可能小於開始時＝跨夜區間
+    static let quietEndHour = "quietEndHour"
+    /// 情境式通知權限卡（帶領結束後）是否被使用者按過「先不用」；按過就不再出現這張卡
+    static let notificationPromptDeclined = "notificationPromptDeclined"
+}
+
+/// 吵醒門檻：勿擾／靜音下，時效性通知能不能突破。使用者在設定頁「勿擾與吵醒」調整；
+/// 實際攔截集中在 NotificationScheduler.effectiveTimeSensitive（單一收斂點），
+/// 降級只影響 interruptionLevel（時效性→一般），**不擋通知本身**——訊息仍會送達，只是不吵醒人。
+enum WakeThreshold: String, CaseIterable, Identifiable {
+    case standard   // 標準：危險警報都可突破靜音（現行行為）
+    case majorOnly  // 僅重大才吵：只有地震／海嘯／火災（家人安否視同重大）才吵醒
+    case never      // 絕不吵醒：一律降為一般通知，仍會送達只是不亮屏不出聲
+
+    var id: String { rawValue }
+
+    /// 目前設定值（鍵不存在時預設「標準」，與舊版行為一致）
+    static var current: WakeThreshold {
+        let raw = UserDefaults.standard.string(forKey: SettingsKeys.wakeThreshold)
+        return raw.flatMap(WakeThreshold.init(rawValue:)) ?? .standard
+    }
+
+    /// 分段控制顯示的短標籤
+    var shortLabel: String {
+        switch self {
+        case .standard: return "標準"
+        case .majorOnly: return "重大才吵"
+        case .never: return "絕不吵醒"
+        }
+    }
+
+    /// 「重大」的硬性集合：比 RemoteConfig.dangerKinds（決定要不要推播）更窄，
+    /// 這裡決定的是「推播了以後能不能吵醒人」——只有危及生命的災型才有資格突破勿擾。
+    /// 刻意寫死不走遠端熱更：吵醒門檻是使用者對 App 的信任紅線，不該被伺服器端設定意外放寬。
+    static let majorKinds: Set<String> = ["地震", "海嘯", "火災"]
+
+    /// 是否屬於「重大」：「家人安否」不在字面集合裡，但視同重大——家人不平安值得吵醒。
+    static func isMajor(kind: String?) -> Bool {
+        guard let kind else { return false }
+        return kind == "家人安否" || majorKinds.contains(kind)
+    }
 }
 
 /// 通知頻率（依事件嚴重度分級）。使用者在 Onboarding 與設定頁可調；

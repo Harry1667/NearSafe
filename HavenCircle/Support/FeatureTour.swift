@@ -10,7 +10,6 @@ import os // Swift 6.2 MemberImportVisibility：用 os.Logger 插值的檔案必
 enum TourTarget: String {
     case statusHero
     case familyList
-    case watchRow
     case historyRow
     case checkInButton
     /// 分頁列是 TabView 私有結構拿不到 anchor，用畫面底部矩形近似
@@ -18,7 +17,6 @@ enum TourTarget: String {
     /// Map 與主要內容使用實際 anchor；系統 toolbar 無法直接取 anchor 時才用安全區域降級推算
     case mapCanvas
     case mapControls
-    case familyModes
     case familyContent
 }
 
@@ -88,14 +86,14 @@ struct FeatureTourView: View {
     private static let allSteps: [TourStep] = [
         .init(target: .statusHero, tab: TabRouter.homeTab, title: "一眼看到全家狀態",
               message: "打開 App 第一眼就會用文字告訴你：警戒圈是否平安、是否有事件靠近，以及即時位置是否超過 15 分鐘未更新。"),
-        .init(target: .watchRow, tab: TabRouter.homeTab, title: "背景看守不吵你",
-              message: "未驗證線索與離警戒圈較遠的官方事件都收在提醒中心，不會推播打擾；點這一列隨時查看完整清單。"),
+        // 背景看守列已被安心頁事件串取代，2026-07-23：這一步整步移除，不再介紹「背景看守」，
+        // 事件串本身用途夠直覺（點列開詳情），不需要專門一步導覽
         .init(target: .historyRow, tab: TabRouter.homeTab, title: "回顧過去 30 天",
               message: "查看警戒圈周遭最近一個月的事件統計與紀錄，了解這個區域平時的安全樣貌。"),
         .init(target: .mapCanvas, tab: TabRouter.mapTab, title: "安全地圖",
               message: "地圖同時呈現家人主動分享的即時圈、你儲存的固定圈、官方警報範圍與事件位置；每個即時圈都會標示最後更新時間。"),
         .init(target: .familyContent, tab: TabRouter.familyTab, title: "管理家人與重要地點",
-              message: "在「警戒圈」開啟自己的即時圈，或新增住家、倉庫、家人的家等固定圈；每位家人都必須在自己的手機上同意位置分享。"),
+              message: "邀請家人加入、開啟自己的即時位置分享，或新增住家、倉庫等固定圈；每位家人都必須在自己的手機上同意位置分享。"),
         .init(target: .checkInButton, tab: TabRouter.homeTab, title: "回報平安，完成導覽",
               message: "一鍵告訴全家「我平安」，也可只在送出當下附上一次位置。完成後會留在安心總覽；下一步可到「家人」邀請成員。"),
     ]
@@ -108,7 +106,7 @@ struct FeatureTourView: View {
     var body: some View {
         GeometryReader { proxy in
             let _ = {
-                let anchoredTargets: [TourTarget] = [.statusHero, .watchRow, .historyRow, .mapCanvas, .familyContent, .checkInButton]
+                let anchoredTargets: [TourTarget] = [.statusHero, .historyRow, .mapCanvas, .familyContent, .checkInButton]
                 let missing = anchoredTargets.filter { anchors[$0] == nil }
                 if !missing.isEmpty {
                     AppLog.pipeline.info("導覽缺錨點：\(missing.map(\.rawValue).joined(separator: ","))")
@@ -193,12 +191,6 @@ struct FeatureTourView: View {
             let controlWidth = min(236, width - 24)
             return clamped(
                 CGRect(x: width - controlWidth - 8, y: safeTop, width: controlWidth, height: 48),
-                in: proxy
-            )
-        case .familyModes:
-            let controlWidth = min(244, width - 32)
-            return clamped(
-                CGRect(x: (width - controlWidth) / 2, y: safeTop, width: controlWidth, height: 48),
                 in: proxy
             )
         case .familyContent:

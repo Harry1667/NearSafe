@@ -300,6 +300,21 @@ struct SettingsView: View {
                         .background(Color.gray.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
                 }
             }
+            // 重跑新手流程：清空本機家庭資料＋重置旗標，讓完整新手流程（地圖著陸→帶領→第二次選身分）當場重來
+            Button {
+                resetOnboarding()
+            } label: {
+                Label {
+                    Text("重跑新手流程（清空本機家庭資料）")
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "figure.walk.arrival")
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .frame(width: 29, height: 29)
+                        .background(HCColor.brand.gradient, in: RoundedRectangle(cornerRadius: HCRadius.badge))
+                }
+            }
             if let demoSeedFeedback {
                 Label(demoSeedFeedback, systemImage: "checkmark.circle.fill")
                     .font(.footnote)
@@ -334,6 +349,27 @@ struct SettingsView: View {
             Text("模擬通知為本機發送的示範內容（標題含【示範】字樣），非真實災害警報。歷史事件示範重播的是 NCDR 實際發布過的官方示警原文（標題含【歷史示範】，僅顯示效期經過調整）。")
             #endif
         }
+    }
+
+    /// 開發用：清空本機家庭資料＋重置所有新手旗標，讓完整新手流程（地圖著陸→帶領卡→第二次選身分）當場重來。
+    /// launchCount 設回 1，模擬「這是第一次開 App」；下次重開就會走到「第二次＝選身分」。
+    private func resetOnboarding() {
+        for member in (try? context.fetch(FetchDescriptor<LocalFamilyMember>())) ?? [] {
+            context.delete(member)
+        }
+        for circle in (try? context.fetch(FetchDescriptor<LocalLifeCircle>())) ?? [] {
+            context.delete(circle)
+        }
+        context.saveReporting()
+        let defaults = UserDefaults.standard
+        for key in [SettingsKeys.onboardingCompleted, SettingsKeys.roleSelectionPending,
+                    SettingsKeys.firstRunCoachingPending, SettingsKeys.seenHomeIntro,
+                    SettingsKeys.seenFamilyIntro, SettingsKeys.seenCircleAdjustHint] {
+            defaults.set(false, forKey: key)
+        }
+        defaults.set(1, forKey: SettingsKeys.launchCount)
+        defaults.set("", forKey: SettingsKeys.profileDisplayName)
+        dismiss() // 收起設定 → ContentView 監看旗標，立刻換回地圖著陸頁重跑
     }
     #endif
 
@@ -487,9 +523,10 @@ private struct AppleAccountView: View {
                 if !appleEmail.isEmpty {
                     LabeledContent("Email", value: appleEmail)
                 }
-                // CloudKit 依隱私政策拿不到帳號 email；用 Sign in with Apple 授權一次帶入
+                // 真登入：nonce/scopes 由 AuthService 統一設定，換到 Firebase uid 才是家庭圈能用的身份
+                // （原本這顆按鈕只寫本機 @AppStorage，從不呼叫 AuthService，是一顆假登入按鈕）
                 SignInWithAppleButton(.continue) { request in
-                    request.requestedScopes = [.fullName, .email]
+                    AuthService.shared.prepareAppleRequest(request)
                 } onCompletion: { result in
                     handleSignIn(result)
                 }
@@ -500,12 +537,12 @@ private struct AppleAccountView: View {
                         .font(.caption)
                         .foregroundStyle(HCColor.danger)
                 }
-                Text("授權一次即可把名稱與 email 帶入設定頁。Apple 只在首次授權時提供這些資料，資料只存在這支手機。")
+                Text("用 Apple 帳號登入安心圈：免費，只用來讓家人找到彼此、同步安否回報與即時位置。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("iCloud 同步狀態") {
+            Section("登入狀態") {
                 LabeledContent("目前狀態", value: statusTitle)
                 Text(statusDescription)
                     .font(.caption)
@@ -515,22 +552,8 @@ private struct AppleAccountView: View {
                 }
             }
 
-            if sync.state == .noAccount {
-                Section("登入流程") {
-                    Label("開啟 iPhone 的「設定」", systemImage: "1.circle.fill")
-                    Label("登入 Apple 帳號並啟用 iCloud", systemImage: "2.circle.fill")
-                    Label("回到安心圈後重新檢查狀態", systemImage: "3.circle.fill")
-                    // 系統沒有直達 iCloud 登入頁的公開深連結，開本 App 的設定頁是最近的合法入口
-                    Button("開啟系統設定", systemImage: "gear") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    }
-                }
-            }
-
             Section("資料範圍") {
-                Text("Apple 帳號用於家人安否回報與即時圈位置的 iCloud 同步。固定圈與事件資料仍保存在此裝置。")
+                Text("Apple 帳號登入用於同步家人安否回報與即時位置給家庭圈。固定圈與事件資料仍保存在此裝置。")
                     .font(.footnote)
             }
 
@@ -539,7 +562,7 @@ private struct AppleAccountView: View {
                     showLogoutConfirm = true
                 }
             } footer: {
-                Text("登出會清除此裝置顯示的名稱與 email；固定圈與事件資料不受影響。請先在家人頁停止即時位置分享，iCloud 帳號本身由系統設定管理。")
+                Text("登出會登出 Apple 帳號並清除此裝置顯示的名稱與 email；固定圈與事件資料不受影響。請先在家人頁停止即時位置分享。")
             }
         }
         .navigationTitle("Apple 帳號")
@@ -553,22 +576,27 @@ private struct AppleAccountView: View {
                     if UserDefaults.standard.string(forKey: SettingsKeys.liveLocationDeviceID) != nil {
                         await sync.stopLiveLocationSharing(context: context)
                     }
+                    // 真登出：一併清掉 Firebase session，否則下次啟動 AuthService 又會還原成舊帳號，
+                    // 跟畫面上「已登出」的狀態互相矛盾
+                    AuthService.shared.signOut()
                     appleEmail = ""
                     displayName = ""
+                    await sync.refreshAccountStatus()
                     showSignIn = true
                 }
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("只會清除本機顯示的帳號資訊，不會刪除任何資料。")
+            Text("會登出 Apple 帳號並清除本機顯示的資訊，不會刪除任何資料。")
         }
         .fullScreenCover(isPresented: $showSignIn) {
             AppleSignInSheet()
         }
     }
 
-    /// Sign in with Apple 只在「首次授權」提供姓名與 email，之後都是 nil——
-    /// 所以只在拿到非空值時覆寫，重按不會把已存的資料洗掉。
+    /// Apple 只在首次授權提供姓名與 email；先存本機顯示欄位，再用 idToken＋nonce 換 Firebase
+    /// 憑證真正登入——這一步才是關鍵，之前的版本只做了前半段，從沒呼叫過 AuthService，
+    /// 所以按了按鈕畫面看似登入、其實 Firebase 端仍是未登入狀態。
     private func handleSignIn(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .success(let auth):
@@ -584,13 +612,18 @@ private struct AppleAccountView: View {
                     displayName = formatted
                 }
             }
-            if appleEmail.isEmpty {
-                signInError = "Apple 只在首次授權時提供 email。若要重新帶入：iPhone 設定 → Apple 帳號 → 登入與安全性 → 使用 Apple 登入的 App → 移除安心圈後再授權一次。"
+            Task {
+                do {
+                    _ = try await AuthService.shared.completeAppleSignIn(credential)
+                    await sync.refreshAccountStatus()
+                } catch {
+                    signInError = "登入失敗：\(error.localizedDescription)。請重試一次。"
+                }
             }
         case .failure(let error):
             // 使用者按取消也會走到這裡，不當成錯誤吵他
             if (error as? ASAuthorizationError)?.code != .canceled {
-                signInError = "授權失敗：\(error.localizedDescription)"
+                signInError = "登入失敗：\(error.localizedDescription)"
             }
         }
     }
@@ -599,7 +632,7 @@ private struct AppleAccountView: View {
         switch sync.state {
         case .ready: "已登入，可建立家庭圈"
         case .sharing: "已登入，家庭圈同步中"
-        case .noAccount: "尚未登入 iCloud"
+        case .noAccount: "尚未登入"
         case .error: "目前無法使用"
         case .unknown: "檢查中"
         }
@@ -608,13 +641,13 @@ private struct AppleAccountView: View {
     private var statusDescription: String {
         switch sync.state {
         case .noAccount:
-            "安心圈無法代替你登入 Apple 帳號；請在系統設定完成登入後再回來。"
+            "用上方按鈕登入 Apple 帳號，即可建立或加入家庭圈。"
         case .error(let message):
             message
         case .ready, .sharing:
-            "你可以在「家人 > 安否回報」邀請家人加入。"
+            "你可以在「家人」分頁邀請家人加入。"
         case .unknown:
-            "正在確認這台裝置的 iCloud 狀態。"
+            "正在確認登入狀態。"
         }
     }
 }
@@ -661,6 +694,11 @@ private struct AlertSettingsView: View {
     @AppStorage(SettingsKeys.alertFrequencyLevel) private var alertFrequencyLevel = AlertFrequency.standard.rawValue
     @AppStorage(SettingsKeys.digestEnabled) private var digestEnabled = true
     @AppStorage(SettingsKeys.digestHour) private var digestHour = 20
+    // D4：通知自主權——吵醒門檻與安靜時段（實際攔截在 NotificationScheduler.effectiveTimeSensitive）
+    @AppStorage(SettingsKeys.wakeThreshold) private var wakeThresholdRaw = WakeThreshold.standard.rawValue
+    @AppStorage(SettingsKeys.quietHoursEnabled) private var quietHoursEnabled = false
+    @AppStorage(SettingsKeys.quietStartHour) private var quietStartHour = 22
+    @AppStorage(SettingsKeys.quietEndHour) private var quietEndHour = 7
     @Query private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
     /// 「允許通知」按下後的結果（nil＝尚未按過）——按了沒反應等於壞掉，必須有可見回饋
@@ -691,6 +729,25 @@ private struct AlertSettingsView: View {
                     )
                     .font(.caption)
                     .foregroundStyle(granted ? HCColor.safe : HCColor.attention)
+                }
+            }
+            Section("勿擾與吵醒") {
+                Picker("吵醒門檻", selection: $wakeThresholdRaw) {
+                    ForEach(WakeThreshold.allCases) { level in
+                        Text(level.shortLabel).tag(level.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("吵醒＝突破靜音與勿擾的時效性通知；降級後通知仍會送達，只是不亮屏、不出聲。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("安靜時段", isOn: $quietHoursEnabled)
+                if quietHoursEnabled {
+                    Stepper("開始：\(quietStartHour):00", value: $quietStartHour, in: 0...23)
+                    Stepper("結束：\(quietEndHour):00", value: $quietEndHour, in: 0...23)
+                    Text("時段內僅地震・海嘯・火災與家人安否會吵醒你。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             Section("每日安全摘要") {

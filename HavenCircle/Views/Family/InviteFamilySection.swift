@@ -1,36 +1,36 @@
 import SwiftUI
+import SwiftData
 
-/// 邀請家人的共用區塊：一鍵建立家庭圈並顯示邀請碼。
-/// 存在理由：舊流程是「生活圈清單的按鈕 → 切到安否回報段 → 再點工具列第二顆按鈕」
-/// 的雙層間接，使用者找不到真正的邀請入口；現在任何畫面嵌這個 Section 就能直接邀請。
-/// 未登入時原地顯示引導，不把人丟到別的分頁自己想辦法。
+/// 邀請家人的共用區塊：已入圈時是單獨一列「邀請更多家人」；未登入時走 SignInPreflight
+/// 預告卡（不再是「查看 Apple 帳號狀態」把人丟去設定頁的死路——那顆按鈕連到的
+/// AppleAccountView 舊版還是顆假登入按鈕，使用者點了也回不來）。
 struct InviteFamilySection: View {
     @Environment(FamilySyncService.self) private var sync
-    @Environment(TabRouter.self) private var router
+    @Environment(\.modelContext) private var context
+    @Query private var members: [LocalFamilyMember]
+    @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
 
+    @State private var signInGate = SignInGate()
     @State private var showInviteOptions = false
+    @State private var showRoleSelect = false
     @State private var isWorking = false
     @State private var shareError: String?
-    @State private var showJoinByCode = false
 
     var body: some View {
         Section {
             switch sync.state {
             case .noAccount:
-                Label("家庭功能需要登入 iCloud", systemImage: "icloud.slash")
-                    .foregroundStyle(HCColor.attention)
-                Text("登入後可邀請家人、同步安否回報，並自行選擇是否分享即時位置。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("查看 Apple 帳號狀態", systemImage: "gearshape") {
-                    router.showSettings = true
+                Button {
+                    signInGate.perform { await startInvite() }
+                } label: {
+                    Label("邀請更多家人", systemImage: "person.crop.circle.badge.plus")
                 }
             default:
                 Button {
                     Task { await startInvite() }
                 } label: {
                     HStack {
-                        Label("邀請家人加入安心圈", systemImage: "person.crop.circle.badge.plus")
+                        Label("邀請更多家人", systemImage: "person.crop.circle.badge.plus")
                         if isWorking {
                             Spacer()
                             ProgressView()
@@ -38,43 +38,61 @@ struct InviteFamilySection: View {
                     }
                 }
                 .disabled(isWorking || sync.state == .unknown)
-                Button("用邀請碼加入家庭圈", systemImage: "textformat.123") {
-                    showJoinByCode = true
-                }
-                if let shareError {
-                    Text(shareError)
-                        .font(.caption)
-                        .foregroundStyle(HCColor.danger)
-                }
-                Text("邀請支援 QR code、8 位邀請碼或訊息連結；家人輸入邀請碼後就能互相回報平安。")
+            }
+            if let shareError {
+                Text(shareError)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(HCColor.danger)
             }
         }
+        .signInPreflight(signInGate)
         .sheet(isPresented: $showInviteOptions) {
             InviteOptionsView()
         }
-        .sheet(isPresented: $showJoinByCode) {
-            JoinByCodeView()
+        .fullScreenCover(isPresented: $showRoleSelect) {
+            RoleSelectView(
+                onSelect: { role in
+                    applyRole(role)
+                    showRoleSelect = false
+                    showInviteOptions = true
+                },
+                onSkip: {
+                    showRoleSelect = false
+                    showInviteOptions = true
+                }
+            )
         }
         .task { await sync.refreshAccountStatus() }
     }
 
-    /// 建立家庭圈（若尚未建立）並開啟邀請碼畫面。
+    /// 建立家庭圈（若尚未建立）並開啟邀請碼畫面。首次建立家庭圈成功後先接身分選擇（C3），
+    /// 選完／略過再開邀請碼畫面，避免使用者一直沒被問過「你在家裡是誰」。
     private func startInvite() async {
         isWorking = true
         shareError = nil
         defer { isWorking = false }
         do {
-            // 已在家庭圈就沿用現有邀請碼；還沒有就建立一個新家庭圈
-            if sync.currentInviteCode == nil {
+            let isFirstFamily = sync.currentInviteCode == nil
+            if isFirstFamily {
                 _ = try await sync.createFamily()
+                showRoleSelect = true
+            } else {
+                // 已在家庭圈就沿用現有邀請碼，直接開邀請畫面
+                showInviteOptions = true
             }
-            showInviteOptions = true
         } catch {
             // 失敗要讓使用者看到，不能只寫 log（silent fail 禁令）
             shareError = "建立家庭圈失敗：\(error.localizedDescription)"
             AppLog.cloudError("建立家庭圈失敗：\(error.localizedDescription)")
         }
+    }
+
+    private func applyRole(_ role: FamilyRole) {
+        displayName = role.label
+        if let me = members.first(where: \.isCurrentUser) {
+            me.name = role.label
+            context.saveReporting()
+        }
+        Analytics.track("role_selected")
     }
 }

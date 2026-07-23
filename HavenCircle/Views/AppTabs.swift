@@ -21,6 +21,13 @@ struct AppTabs: View {
     // 功能導覽：黑幕聚光燈跨分頁介紹主要功能（nil＝未進行）
     @AppStorage(SettingsKeys.homeTourPending) private var homeTourPending = false
     @State private var tourStep: Int?
+    // 註：選家庭身分已從新手自動流程解耦，改由未來重寫的「家人介面」再接回
+    // （RoleSelectView／FamilyRole 保留為獨立元件）。此處不再自動觸發。
+    // 第一次進地圖的帶領已改為「目標自己動」的動畫，改在 SafetyMapView 消耗 firstRunCoachingPending 播放。
+    /// 第一次切到某分頁時的一句話介紹（nil＝不顯示）
+    @State private var tabIntro: TabIntro?
+    @AppStorage(SettingsKeys.seenHomeIntro) private var seenHomeIntro = false
+    @AppStorage(SettingsKeys.seenFamilyIntro) private var seenFamilyIntro = false
     /// Onboarding 完成後先讓地圖的守護圈確認儀式播完，再開始功能導覽。
     @State private var shouldConfirmCircleOnMap = UserDefaults.standard.bool(forKey: SettingsKeys.guardianIntroPending)
     /// 守護圈確認動效播放中（等待期間顯示「跳過」；設回 false 即中止等待）
@@ -36,6 +43,10 @@ struct AppTabs: View {
         }
         #endif
         if UserDefaults.standard.bool(forKey: SettingsKeys.guardianIntroPending) {
+            return TabRouter.mapTab
+        }
+        // 第一次開 App 完成著陸後：直接落在地圖頁，展開親切帶領（看見自己的警戒圈）
+        if UserDefaults.standard.bool(forKey: SettingsKeys.firstRunCoachingPending) {
             return TabRouter.mapTab
         }
         return TabRouter.homeTab  // 打開就是安心頁：3 秒讀完「家人都平安嗎」
@@ -144,6 +155,33 @@ struct AppTabs: View {
                 DeepLinkStore.pending = nil
                 route(url)
             }
+        }
+        // 切分頁：第一次切到某頁時浮一張一句話介紹（點畫面任意處就關）
+        .onChange(of: router.selection) { _, newTab in
+            if newTab == TabRouter.homeTab && !seenHomeIntro {
+                seenHomeIntro = true
+                Analytics.track("tab_intro_home") // 漏斗：首次到安心頁
+                withAnimation { tabIntro = .home }
+            } else if newTab == TabRouter.familyTab && !seenFamilyIntro {
+                seenFamilyIntro = true
+                Analytics.track("tab_intro_family") // 漏斗：首次到家人頁
+                withAnimation { tabIntro = .family }
+            }
+        }
+        // 分頁一句話介紹浮層（地圖的第一次帶領已改為動畫，在 SafetyMapView 內處理）
+        .overlay { coachOverlay }
+    }
+
+    /// 分頁一句話介紹（點畫面任意處就關）。
+    @ViewBuilder
+    private var coachOverlay: some View {
+        if let intro = tabIntro {
+            CoachCard(
+                icon: intro.icon,
+                text: intro.text,
+                progress: nil,
+                onTap: { withAnimation { tabIntro = nil } }
+            )
         }
     }
 

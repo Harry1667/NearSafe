@@ -400,7 +400,8 @@ final class FamilySyncService {
             let urgent = ping.status != .safe
             await NotificationScheduler.scheduleAlert(
                 title: title, body: body, id: "ping-\(ping.id)",
-                timeSensitive: urgent
+                timeSensitive: urgent,
+                kind: "家人安否" // 家人安否視同重大：吵醒門檻設「僅重大」或安靜時段內仍會吵醒
             )
         }
 

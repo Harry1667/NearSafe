@@ -58,12 +58,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
                     )
                 }
             }
-            LocationService.shared.syncFollowMonitoring(
-                hasFollowCircle: FollowCircleService.hasFollowCircle(context: container.mainContext)
-            )
+            let hasFollow = FollowCircleService.hasFollowCircle(context: container.mainContext)
+            LocationService.shared.syncFollowMonitoring(hasFollowCircle: hasFollow)
             LocationService.shared.syncLiveLocationSharing(
                 isEnabled: UserDefaults.standard.bool(forKey: SettingsKeys.liveLocationSharingEnabled)
             )
+            // 前景啟動即校正一次跟隨圈：顯著位置變更（SLC）要走約 500 公尺才觸發，
+            // 只靠它的話「出遠門後第一次開 App」圈還停在舊位置，警報比對用錯地點。
+            // 開 App 當下主動取一次位（已授權才會有結果），把圈先搬到人所在的地方。
+            if hasFollow {
+                Task { @MainActor in
+                    guard let location = await LocationService.shared.currentLocation() else { return }
+                    await FollowCircleService.handle(location: location, container: container)
+                }
+            }
         }
         return true
     }

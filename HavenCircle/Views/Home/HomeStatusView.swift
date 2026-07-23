@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 /// 安心頁——App 的第一畫面。
 /// 90% 的開啟只為確認一件事：「家人都平安嗎」。這頁把答案做成 3 秒可讀完的三段式：
@@ -10,17 +11,30 @@ struct HomeStatusView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(TabRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // PlaceSelectView 選定後要直接建立地點成員，這裡才需要 modelContext（原本這件事都在
+    // MemberEditorView 內部完成，這頁只負責呈現 sheet）
+    @Environment(\.modelContext) private var context
     @Query private var members: [LocalFamilyMember]
     @Query private var events: [LocalSafetyEvent]
     @Query private var regionAlerts: [RegionAlert]
     @State private var showCheckIn = false
     @State private var selectedEvent: LocalSafetyEvent?
     @State private var breathing = false
+    /// 單人態「守護更多地方卡」：兩段式流程（先存地點、sheet 收合後再開固定圈編輯器）
+    @State private var addingPlace = false
+    @State private var newPlaceForCircle: LocalFamilyMember?
 
     /// 與地圖頁共用同一個聚合（SafetyStatus）：兩頁對「平安與否」的說法永遠一致，
     /// 且一律以未過濾事件計算——假性安心是這頁最不可犯的錯
     private var status: SafetyOverview {
         SafetyOverview.compute(events: events, regionAlerts: regionAlerts, members: members)
+    }
+
+    /// 單人／多人判斷：只算「人」不算「重要地點」——LocalFamilyMember.isPlace（kind == "place"）
+    /// 建立的重要地點不是會互報平安的對象，不該撐大分母。familySection、checkInButton、
+    /// 單人專屬卡片全部共用這一個判斷，避免各處各自寫一份計數邏輯而養出兩套真相。
+    private var isSoloUser: Bool {
+        members.filter { !$0.isPlace }.count < 2
     }
 
     private var staleLiveCircleCount: Int {
@@ -43,26 +57,32 @@ struct HomeStatusView: View {
                     statusHero
                         .tourAnchor(.statusHero)
                         .id(TourTarget.statusHero)
-                    if !members.isEmpty {
+                    // 單人時 members 只有自己＋重要地點，一張「全家名單」對一個人沒有意義
+                    if !isSoloUser {
                         familySection
                             .tourAnchor(.familyList)
                             .id(TourTarget.familyList)
                     }
-                    watchSummaryRow
-                        .tourAnchor(.watchRow)
-                        .id(TourTarget.watchRow)
+                    eventFeedSection
+                    // 單人態：沒有家人可看，事件串後面補兩張引導卡，取代原本按了沒人看見的回報鈕
+                    if isSoloUser {
+                        guardMorePlacesCard
+                        inviteFamilyCard
+                    }
                     historyRow
                         .tourAnchor(.historyRow)
                         .id(TourTarget.historyRow)
                 }
                 .padding(.horizontal, HCSpacing.x4)
                 .padding(.top, HCSpacing.x4)
+                // 單人態沒有底部回報鈕的 safeAreaInset 墊高，內容會被浮動分頁列遮住尾巴，補等量留白
+                .padding(.bottom, isSoloUser ? 96 : 0)
             }
             // 功能導覽介紹到的列可能在摺疊線以下（小螢幕尤其）：先捲進畫面再讓聚光燈框住，
             // 否則錨點矩形在螢幕外，裁切後聚光燈會框到不相干的位置
             .onReceive(NotificationCenter.default.publisher(for: .tourStepTargetChanged)) { note in
                 guard let target = note.object as? TourTarget,
-                      [.statusHero, .familyList, .watchRow, .historyRow].contains(target) else { return }
+                      [.statusHero, .familyList, .historyRow].contains(target) else { return }
                 withAnimation(.easeInOut(duration: 0.3)) {
                     scrollProxy.scrollTo(target, anchor: .center)
                 }
@@ -92,12 +112,24 @@ struct HomeStatusView: View {
                 case .history: HistoryView()
                 }
             }
-            .safeAreaInset(edge: .bottom) { checkInButton }
+            // 單人時按了沒人看見，「回報我平安」直接不出現，不留一顆死路按鈕
+            .safeAreaInset(edge: .bottom) { if !isSoloUser { checkInButton } }
             .sheet(isPresented: $showCheckIn) {
                 NavigationStack { SafetyCheckInView(myName: myName) }
             }
             .sheet(item: $selectedEvent) {
                 EventDetailView(event: $0, members: members)
+            }
+            .sheet(isPresented: $addingPlace) {
+                // 名字用點擊選擇取代打字（少一步輸入畫面）；選定後直接建立地點成員，
+                // 沿用既有的兩段式時序接固定圈編輯器
+                PlaceSelectView { name, _ in
+                    addingPlace = false
+                    createPlace(name: name)
+                }
+            }
+            .sheet(item: $newPlaceForCircle) { member in
+                CircleEditorView(member: member)
             }
         }
     }
@@ -131,11 +163,17 @@ struct HomeStatusView: View {
                 .onAppear { breathing = true }
                 .accessibilityHidden(true)
 
-                Text(needsLocationUpdate ? "部分即時圈待更新" : "警戒圈一切平安")
+                // 單人態不能說「全家」——這行只顯示一個人的警戒圈，說「全家」是謊言；
+                // 待更新那句沒有「全家」字眼，兩態文字相同即可
+                Text(needsLocationUpdate ? "部分即時圈待更新" : (isSoloUser ? "守護中：你" : "警戒圈一切平安"))
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                // 單人副句跟著事件串的口徑走：串裡有事件卻說「附近無事件」是自打嘴巴，
+                // 有事件時改說「你的圈平安」——附近有事 ≠ 圈被影響，兩件事分開講才誠實
                 Text(needsLocationUpdate
                      ? "\(staleLiveCircleCount) 個即時圈超過 15 分鐘未更新，舊位置不會用來判斷警報。"
-                     : "目前沒有需要注意的事件，安心圈持續看守中。")
+                     : (isSoloUser
+                        ? (eventFeed.isEmpty ? "附近 24 小時無事件" : "附近有 \(eventFeed.count) 件事件，你的警戒圈平安")
+                        : "目前沒有需要注意的事件，安心圈持續看守中。"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -214,9 +252,20 @@ struct HomeStatusView: View {
                     .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(member.displayName).font(.body.weight(.medium))
-                    Text(memberStatusText(member, nearbyEvent: nearbyEvent, ping: ping))
-                        .font(.caption)
-                        .foregroundStyle(hasNearbyEvent || hasStaleLiveCircle ? rowColor : .secondary)
+                    if let nearbyEvent {
+                        Text(nearbyEvent.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(rowColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(memberEventMetadata(member, event: nearbyEvent))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(memberStatusText(member, nearbyEvent: nil, ping: ping))
+                            .font(.caption)
+                            .foregroundStyle(hasStaleLiveCircle ? rowColor : .secondary)
+                    }
                 }
                 Spacer()
                 // 狀態點：文字＋顏色雙通道（色弱可辨靠文字，不只靠這顆點）
@@ -287,27 +336,211 @@ struct HomeStatusView: View {
         return parts.joined(separator: "・")
     }
 
-    // MARK: - 背景看守摘要
+    /// 事件標題只回答「發生什麼」；地點、距離、時間與狀態降到次要資訊，
+    /// 小螢幕不必在同一長句裡找重點，也不會用省略號截掉事件結論。
+    private func memberEventMetadata(_ member: LocalFamilyMember, event: LocalSafetyEvent) -> String {
+        var parts = ["需要注意"]
+        if let match = AlertPolicy.evaluate(event: event, members: [member])
+            .matches.min(by: { $0.distanceMeters < $1.distanceMeters }) {
+            let distance = match.distanceMeters >= 1_000
+                ? String(format: "約 %.1f 公里", Double(match.distanceMeters) / 1_000)
+                : "約 \(match.distanceMeters) 公尺"
+            parts.append("「\(match.circleName)」\(distance)")
+        }
+        parts.append(relativeTime(event.occurredAt))
+        if let liveCircle = member.lifeCircles.first(where: { $0.kind == .live }) {
+            parts.append(liveCircle.locationFreshnessText)
+        }
+        return parts.joined(separator: " · ")
+    }
 
-    private var watchSummaryRow: some View {
-        Button {
-            router.openHome(.events)
+    // MARK: - 事件串（取代原本的背景看守摘要）
+
+    /// 平時打開安心頁要有東西看：一行「背景看守中」的字太薄，換成可點開的事件清單。
+    /// 只取近距（30 公里內）＋未封存＋未被使用者略過的事件，進行中優先、再依時間新到舊，
+    /// 最多 5 筆——第一屏不塞全國事件，細節仍可從「查看全部」下鑽到提醒中心。
+    private var eventFeed: [LocalSafetyEvent] {
+        events
+            .filter { !$0.isArchived && !EventVisibility.isSuppressed($0) }
+            .filter { nearestCircleDistance($0, members) <= NearbyScope.maxMeters }
+            .sorted { lhs, rhs in
+                if lhs.isEnded != rhs.isEnded { return !lhs.isEnded } // 進行中排前面
+                return lhs.occurredAt > rhs.occurredAt
+            }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    private var eventFeedSection: some View {
+        VStack(alignment: .leading, spacing: HCSpacing.x2) {
+            if eventFeed.isEmpty {
+                quietFeedRow
+                nearestShelterRow
+            } else {
+                // D4 重問通道：曾拒絕過情境式權限卡、但通知仍未開啟時，事件串頂部再給一次機會
+                NotificationReaskRow()
+                ForEach(eventFeed) { event in
+                    eventFeedRow(event)
+                }
+            }
+            Divider()
+            Button {
+                router.openHome(.events)
+            } label: {
+                HStack {
+                    Text("查看全部")
+                        .font(.footnote.weight(.semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                }
+                .foregroundStyle(HCColor.brand)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .hcCard()
+    }
+
+    /// D4 重問通道：情境式權限卡（A4）被按過「先不用」之後，通知就永遠沒有回頭路——
+    /// 這裡是唯一的補救：事件串頂部再問一次。notDetermined 直接跳系統框；已被系統拒絕過
+    /// 就只能靠使用者自己去系統設定開，這裡負責把人帶過去。授權成功後這列自然消失。
+    private struct NotificationReaskRow: View {
+        @State private var status: UNAuthorizationStatus = .notDetermined
+        @AppStorage(SettingsKeys.notificationPromptDeclined) private var declined = false
+
+        var body: some View {
+            Group {
+                if declined, status != .authorized {
+                    Button {
+                        Task {
+                            if status == .notDetermined {
+                                _ = await NotificationScheduler.requestPermission()
+                            } else if let url = URL(string: UIApplication.openSettingsURLString) {
+                                await UIApplication.shared.open(url) // 已被系統拒絕過，只能引導到系統設定重新開啟
+                            }
+                            status = await NotificationScheduler.authorizationStatus()
+                        }
+                    } label: {
+                        HStack(spacing: HCSpacing.x3) {
+                            Image(systemName: "bell.slash.fill")
+                                .foregroundStyle(HCColor.attention)
+                                .accessibilityHidden(true)
+                            Text("通知未開啟，圈內有狀況不會提醒你")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("開啟")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(HCColor.brand)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .task {
+                status = await NotificationScheduler.authorizationStatus()
+            }
+        }
+    }
+
+    /// 單筆事件列：已結束的整列灰階，色弱／可信度仍靠圖示顏色＋文字雙通道判讀
+    private func eventFeedRow(_ event: LocalSafetyEvent) -> some View {
+        let ended = event.isEnded
+        let trustColor = event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention
+        return Button {
+            selectedEvent = event
+            Analytics.track("event_feed_item_opened") // 漏斗：安心頁事件串點開
         } label: {
-            HStack {
-                Image(systemName: "eye.fill")
-                    .foregroundStyle(HCColor.brand)
-                Text("背景看守中：未驗證線索 \(status.confirmingCount)・其他區域 \(status.elsewhereCount)・區域警報 \(status.regionAlertCount)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
+            HStack(spacing: HCSpacing.x3) {
+                Image(systemName: EventCategory.icon(for: event.eventType))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(ended ? .secondary : trustColor)
+                    .frame(width: 28, height: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.isDrill ? "【演練】\(event.title)" : event.title)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text("\(relativeDistance(event, members)) · \(relativeTime(event.occurredAt))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
-            .hcCard()
+            .opacity(ended ? 0.55 : 1) // 已結束事件整列降低存在感，但不隱藏（歷史仍可查）
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 事件串全空時的安心行：告訴使用者「不是沒東西顯示，是真的平靜」
+    private var quietFeedRow: some View {
+        HStack(spacing: HCSpacing.x3) {
+            Image(systemName: "checkmark.shield.fill")
+                .foregroundStyle(HCColor.safe)
+                .accessibilityHidden(true)
+            Text("這 24 小時你附近很平靜")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(minHeight: 44)
+    }
+
+    /// 全空狀態退而求其次：給一個「就算沒事，這附近有這個避難所」的實用資訊，
+    /// 而不是留一片空白。座標取本人（isCurrentUser）成員的圈心；本人還沒設圈就不顯示這列。
+    @ViewBuilder
+    private var nearestShelterRow: some View {
+        if let center = currentUserCircleCenter,
+           let nearest = EmergencyResourceStore.nearest(kind: ResourceKind.shelter, latitude: center.latitude, longitude: center.longitude),
+           // 資料只涵蓋台灣：人在境外（或模擬器預設舊金山）時最近避難所會是「10,344 公里外的鼻頭國小」，
+           // 誠實但荒謬——超過 50 公里就不顯示這列，而不是顯示一個沒人走得到的建議
+           nearest.distanceMeters <= 50_000 {
+            Button {
+                router.selection = TabRouter.mapTab
+            } label: {
+                HStack(spacing: HCSpacing.x3) {
+                    Image(systemName: "tent.fill")
+                        .foregroundStyle(HCColor.brand)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(nearest.resource.name)
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
+                        Text(shelterDistanceText(nearest.distanceMeters))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+        }
+    }
+
+    /// 本人成員的第一個生活圈中心點（不分即時／固定圈；取不到就回 nil，呼叫端據此隱藏避難所列）
+    private var currentUserCircleCenter: (latitude: Double, longitude: Double)? {
+        guard let circle = members.first(where: \.isCurrentUser)?.lifeCircles.first else { return nil }
+        return (circle.latitude, circle.longitude)
+    }
+
+    private func shelterDistanceText(_ meters: Int) -> String {
+        meters >= 1_000
+            ? String(format: "距離約 %.1f 公里", Double(meters) / 1_000)
+            : "距離約 \(meters) 公尺"
     }
 
     /// 回顧入口：低頻查閱不配一級分頁，降為安心頁的一列
@@ -348,6 +581,82 @@ struct HomeStatusView: View {
         .padding(.horizontal, HCSpacing.x4)
         .padding(.bottom, HCSpacing.x2)
         .background(.bar)
+    }
+
+    // MARK: - 單人態引導卡
+
+    /// 主鈕級卡片：一個人也能守護「不是自己」的地方（爸媽家、公司），
+    /// 讓單人使用者在還沒有家人可看時，App 仍有事可做
+    private var guardMorePlacesCard: some View {
+        Button {
+            addingPlace = true
+        } label: {
+            HStack(spacing: HCSpacing.x3) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.title2)
+                    .foregroundStyle(HCColor.medical)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("守護更多地方").font(.body.weight(.medium))
+                    Text("爸媽家、公司，都能設警戒圈")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hcCard()
+    }
+
+    /// 次要樣式（非滿版主鈕）：邀請不是這一刻非做不可的事，用較輕的視覺重量呈現，
+    /// 避免跟上面的「守護更多地方」搶第一順位
+    private var inviteFamilyCard: some View {
+        Button {
+            Analytics.track("home_invite_tapped") // 漏斗：單人主畫面邀請入口
+            router.selection = TabRouter.familyTab
+        } label: {
+            HStack(spacing: HCSpacing.x3) {
+                Image(systemName: "person.2.fill")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("邀請家人").font(.subheadline.weight(.medium))
+                    Text("加入後可以互報平安")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, HCSpacing.x2)
+    }
+
+    /// 等前一張 sheet（新增重要地點）收合動畫結束再開固定圈編輯器；
+    /// 立刻 present 會撞上仍在收合中的 sheet 而被系統丟棄
+    /// （兩段式時序照抄 FamilyListView.scheduleCircleEditor 的作法）
+    private func scheduleCircleEditor(_ member: LocalFamilyMember) {
+        Task {
+            try? await Task.sleep(for: .milliseconds(550))
+            newPlaceForCircle = member
+        }
+    }
+
+    /// PlaceSelectView 選定名稱後直接建立地點成員（不再經過 MemberEditorView 的打字表單），
+    /// 接著沿用既有兩段式時序開固定圈編輯器（照抄 FamilyListView.createPlace 的作法）。
+    private func createPlace(name: String) {
+        let member = LocalFamilyMember(name: name, relationship: "重要地點", kind: "place")
+        context.insert(member)
+        context.saveReporting()
+        Analytics.track("place_added")
+        scheduleCircleEditor(member)
     }
 }
 

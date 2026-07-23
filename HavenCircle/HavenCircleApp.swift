@@ -33,6 +33,9 @@ struct HavenCircleApp: App {
         NotificationScheduler.registerCategories()
         // 背景任務處理器必須在啟動完成前登記（Apple 規定），所以放 init 不放 .task
         BackgroundRefresh.register(container: modelContainer)
+        // 冷啟動次數 +1：放 init 保證早於任何視圖出現，讓「第二次開 App 才問身分」的判定不會有競態。
+        let launches = UserDefaults.standard.integer(forKey: SettingsKeys.launchCount) + 1
+        UserDefaults.standard.set(launches, forKey: SettingsKeys.launchCount)
     }
 
     /// 建立本機資料庫。取代舊版 try!：schema 變動導致遷移失敗時，

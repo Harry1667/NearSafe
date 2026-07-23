@@ -16,7 +16,9 @@ struct SafetyMapView: View {
     @State private var showCircles = true
     @State private var showAlertAreas = true
     /// 避難所／醫院圖層：已接上消防署／衛福部開放資料（近 6,000 筆官方座標）。
-    /// 預設關；開啟後只在鏡頭夠近時顯示視野內最近的一批，全國點位一次全畫會拖垮地圖。
+    /// 開啟後只在鏡頭夠近時顯示視野內最近的一批，全國點位一次全畫會拖垮地圖。
+    /// 2026-07-23 使用者實測裁決：平時**不**預設顯示（城區帳篷海干擾主畫面），
+    /// 需要的人從圖層選單開；新手帶領的保底段自帶單一避難所標記，不依賴此圖層。
     @State private var showShelters = false
     @State private var showHospitals = false
     /// 目前鏡頭範圍，供資源圖層做視野內過濾
@@ -46,6 +48,31 @@ struct SafetyMapView: View {
     /// 鏡頭明確框住生活圈（不能用 .automatic——它會框住所有內容，
     /// 加了全台塗層後開圖會變成全台灣視角，失去「聚焦自家」的預設）
     @State private var cameraPosition: MapCameraPosition = .automatic
+    /// 目前「半徑調整面板」開著的圈（circleKey）；nil＝面板關閉。
+    /// 點自己的圈標記開啟／收起面板——底部滑桿取代舊的拖曳把手
+    /// （2026-07-23 使用者實測裁決：拖曳跟地圖平移手勢打架、圈大時把手在螢幕邊緣、讀數膠囊被切）。
+    @State private var adjustingCircleKey: String?
+    /// 面板滑桿拖動中的即時預覽半徑（公尺）；只有放手／按「完成」才寫回 SwiftData，
+    /// 避免每個 tick 都觸發存檔。進入調整模式時以該圈目前的 radiusMeters 初始化。
+    @State private var previewRadiusMeters: Double = 1_000
+    /// 地圖的具名座標空間：guidance 脈動圈換算螢幕直徑要用 proxy.convert（見 circleScreenDiameter）
+    private static let mapSpace = "safetyMapSpace"
+    /// 「警戒圈可拖動調整」的提示：第一次點開事件、關掉詳情後顯示一次（不在帶領卡就先講）
+    @AppStorage(SettingsKeys.seenCircleAdjustHint) private var seenCircleAdjustHint = false
+    @State private var showCircleAdjustHint = false
+    /// 這次點開的事件關掉後，是否要接著顯示拖圈提示
+    @State private var pendingCircleAdjustHint = false
+    /// 第一次進地圖的「目標自己動」帶領：0＝脈動你的警戒圈，1＝脈動附近事件，nil＝結束（幾乎不用文字）
+    @AppStorage(SettingsKeys.firstRunCoachingPending) private var firstRunCoachingPending = false
+    @State private var guidanceStep: Int?
+    /// 段 1 保底路徑（脈動最近避難所）為了讓兩點都入鏡而挪動過鏡頭時記為 true，
+    /// 帶領結束要拉回原本的生活圈鏡頭，不留在挪過的位置
+    @State private var guidanceCameraAdjusted = false
+    /// 本次是否為「新手第一次進地圖」的 session：FirstRunSetup 建圈後會背景校正圈心，
+    /// 校正落地時鏡頭要跟著重新取景；一般使用中則不能因為圈心變動就亂動鏡頭
+    @State private var isFirstRunSession = false
+    /// A4：帶領結束後的情境式通知權限卡是否顯示（只在權限 .notDetermined 時才會被種下 true）
+    @State private var showNotificationPrompt = false
     // 用 @AppStorage 與設定頁共用同一旗標
     @AppStorage(SettingsKeys.alertsPaused) private var isPaused = false
 
@@ -128,6 +155,38 @@ struct SafetyMapView: View {
                     await sync.fetchPings()
                     await sync.fetchLiveLocations(context: modelContext)
                 }
+                // 第一次進地圖：消耗旗標，稍等地圖穩定後開始「目標自己動」的帶領（脈動圈→脈動事件）
+                .task {
+                    #if DEBUG
+                    // --guide-step N：直接跳到第 N 段帶領，供截圖
+                    let args = ProcessInfo.processInfo.arguments
+                    if let i = args.firstIndex(of: "--guide-step"),
+                       args.indices.contains(i + 1), let n = Int(args[i + 1]) {
+                        firstRunCoachingPending = false
+                        isFirstRunSession = true
+                        try? await Task.sleep(for: .milliseconds(700))
+                        withAnimation { guidanceStep = max(0, n) }
+                        return
+                    }
+                    #endif
+                    guard firstRunCoachingPending else { return }
+                    firstRunCoachingPending = false
+                    isFirstRunSession = true
+                    try? await Task.sleep(for: .milliseconds(700))
+                    Analytics.track("guidance_started") // 漏斗：帶領開始（debug --guide-step 不記）
+                    Analytics.track("map_data_shown") // 漏斗：新手首屏三件套（塗層＋資源點＋帶領）鋪出，只在這裡記一次
+                    withAnimation { guidanceStep = 0 }
+                }
+                #if DEBUG
+                // 截圖用：--adjust-circle 自動打開自己圈的半徑調整面板（headless 無法點圈觸發）
+                .task {
+                    guard ProcessInfo.processInfo.arguments.contains("--adjust-circle") else { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard let mine = visibleCircles.first(where: { $0.member?.isCurrentUser == true }) else { return }
+                    previewRadiusMeters = Double(mine.radiusMeters)
+                    adjustingCircleKey = mine.circleKey
+                }
+                #endif
                 .overlay(alignment: .top) {
                     if !isChromeHidden { topOverlays }
                 }
@@ -137,8 +196,13 @@ struct SafetyMapView: View {
                 .overlay(alignment: .bottomLeading) {
                     if !isChromeHidden { legendPanel }
                 }
+                // 半徑調整面板開著時取代附近卡片列（同一個 safe area 插槽，天然避開分頁列與事件卡片列）
                 .safeAreaInset(edge: .bottom) {
-                    if !isChromeHidden { nearbyStrip }
+                    if adjustingCircleKey != nil {
+                        circleAdjustPanel
+                    } else if !isChromeHidden {
+                        nearbyStrip
+                    }
                 }
                 .navigationTitle("安心圈")
                 .navigationBarTitleDisplayMode(.inline)
@@ -154,6 +218,52 @@ struct SafetyMapView: View {
                     RegionAlertDetailView(alert: $0, members: members)
                         .presentationDetents([.medium, .large])
                         .presentationDragIndicator(.visible)
+                }
+                // 點事件才教拖圈：點開事件詳情、關掉後，第一次跳一張拖圈提示
+                .onChange(of: selected) { oldValue, newValue in
+                    if newValue != nil {
+                        if !seenCircleAdjustHint { pendingCircleAdjustHint = true }
+                    } else if oldValue != nil, pendingCircleAdjustHint {
+                        pendingCircleAdjustHint = false
+                        seenCircleAdjustHint = true
+                        Analytics.track("circle_adjust_hint_shown") // 漏斗：拖圈教學出現
+                        withAnimation { showCircleAdjustHint = true }
+                    }
+                }
+                .overlay {
+                    if showCircleAdjustHint {
+                        CoachCard(
+                            icon: "hand.draw.fill",
+                            text: "點你的警戒圈，可以調整範圍",
+                            progress: nil,
+                            onTap: { withAnimation { showCircleAdjustHint = false } }
+                        )
+                    }
+                }
+                // 帶領進行中：全螢幕透明層接住點擊往下一段，底部一個小小「輕點繼續」
+                .overlay {
+                    if guidanceStep != nil {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { advanceGuidance() }
+                            .overlay(alignment: .bottom) {
+                                Text("輕點繼續")
+                                    .font(.footnote.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .background(.regularMaterial, in: Capsule())
+                                    .padding(.bottom, 110)
+                            }
+                    }
+                }
+                // A4：帶領結束後的情境式通知權限卡（見 scheduleNotificationPromptIfNeeded）
+                .overlay {
+                    if showNotificationPrompt {
+                        NotificationPromptCard {
+                            withAnimation { showNotificationPrompt = false }
+                        }
+                    }
                 }
         }
     }
@@ -233,6 +343,7 @@ struct SafetyMapView: View {
     }
 
     private var map: some View {
+        MapReader { proxy in
         Map(position: $cameraPosition) {
             if showCrimeLayer {
                 ForEach(crimeAreas) { area in
@@ -256,9 +367,14 @@ struct SafetyMapView: View {
                 ForEach(visibleCircles) { circle in
                     let circleColor: Color = circle.kind == .live ? HCColor.safe : HCColor.brand
                     let renderedColor = circle.isActiveForAlerts ? circleColor : Color.gray
+                    // 調整面板開著時，這顆圈即時吃滑桿預覽值（放手前不寫回 SwiftData）；
+                    // 沒在調整就照常顯示已存檔的半徑
+                    let displayRadius = adjustingCircleKey == circle.circleKey
+                        ? previewRadiusMeters
+                        : Double(circle.radiusMeters)
                     MapCircle(
                         center: .init(latitude: circle.latitude, longitude: circle.longitude),
-                        radius: CLLocationDistance(circle.radiusMeters)
+                        radius: CLLocationDistance(displayRadius)
                     )
                     .foregroundStyle(renderedColor.opacity(0.08))
                     .stroke(renderedColor.opacity(0.5), lineWidth: 1.5)
@@ -289,17 +405,30 @@ struct SafetyMapView: View {
                         .accessibilityLabel(
                             "\(circle.name)，\(circle.kind.title)，警戒半徑 \(circle.radiusMeters) 公尺，\(circle.locationFreshnessText)"
                         )
+                        // 點自己的圈＝開啟／收起底部半徑調整面板
+                        .onTapGesture {
+                            guard circle.member?.isCurrentUser == true else { return }
+                            if adjustingCircleKey == circle.circleKey {
+                                finishAdjustingCircle()
+                            } else {
+                                previewRadiusMeters = Double(circle.radiusMeters)
+                                withAnimation(.easeInOut(duration: 0.2)) { adjustingCircleKey = circle.circleKey }
+                            }
+                        }
                     }
                 }
             }
-            // 資源點放在事件標記之前宣告，讓事件永遠蓋在資源點上層
+            // 資源點放在事件標記之前宣告，讓事件永遠蓋在資源點上層。
+            // limit 收斂為「最近的少數幾個」（resources 依離鏡頭中心距離排序）：
+            // 圖層改預設開之後，城區視野內全量顯示會淹沒警戒圈主角（首屏 ~30 頂帳篷），
+            // 保底資源的意圖是「最近的在哪」不是「全部在哪」。
             if showShelters, let region = resourceRegion {
-                ForEach(EmergencyResourceStore.resources(kind: ResourceKind.shelter, in: region, limit: 60)) { resource in
+                ForEach(EmergencyResourceStore.resources(kind: ResourceKind.shelter, in: region, limit: 12)) { resource in
                     resourceAnnotation(resource, icon: "tent.fill", color: HCColor.safe)
                 }
             }
             if showHospitals, let region = resourceRegion {
-                ForEach(EmergencyResourceStore.resources(kind: ResourceKind.hospital, in: region, limit: 30)) { resource in
+                ForEach(EmergencyResourceStore.resources(kind: ResourceKind.hospital, in: region, limit: 6)) { resource in
                     resourceAnnotation(resource, icon: "cross.case.fill", color: HCColor.medical)
                 }
             }
@@ -325,6 +454,49 @@ struct SafetyMapView: View {
                 }
                 // 事件 pin 不顯示文字標籤：圖示已表達類型，縮遠時一堆「重大交通事故」
                 // 文字互相壓、被鄰近 pin 截斷（實機回報）；點 pin 後底部卡片有完整標題
+                .annotationTitles(.hidden)
+            }
+            // 第一次帶領：脈動圈把目光吸到「你的警戒圈」或「附近事件」（目標自己動、幾乎不用文字）
+            if guidanceStep == 0, let mine = guidanceCircle {
+                let diameter = circleScreenDiameter(mine, proxy: proxy)
+                Annotation("", coordinate: .init(latitude: mine.latitude, longitude: mine.longitude)) {
+                    PulseRing(color: HCColor.brand, maxDiameter: diameter)
+                        .overlay(alignment: .center) {
+                            guidancePill("你的守護範圍", color: HCColor.brand)
+                                .offset(y: -(diameter / 2) - 18)
+                        }
+                }
+                .annotationTitles(.hidden)
+            }
+            if guidanceStep == 1, let ev = guidanceEvent {
+                Annotation("", coordinate: .init(latitude: ev.latitude, longitude: ev.longitude)) {
+                    PulseRing(color: HCColor.danger, maxDiameter: 96)
+                        .overlay(alignment: .center) {
+                            guidancePill("附近的事件", color: HCColor.danger)
+                                .offset(y: -66)
+                        }
+                }
+                .annotationTitles(.hidden)
+            }
+            // 段 1 保底路徑：圈心附近沒有事件時，改脈動最近的避難收容所——
+            // 資料驗證顯示多數地區平時沒有近距事件，這是常態路徑，品質要求與事件分支相同（用「安心」的品牌綠，不是警報紅）
+            if guidanceStep == 1, guidanceEvent == nil, let shelter = guidanceShelter {
+                Annotation("", coordinate: .init(latitude: shelter.resource.latitude, longitude: shelter.resource.longitude)) {
+                    // 資源圖層預設關閉後，保底段自帶一枚帳篷標記——脈動要有實體目標才不會指著空地
+                    ZStack {
+                        PulseRing(color: HCColor.safe, maxDiameter: 96)
+                        Circle()
+                            .fill(HCColor.safe)
+                            .frame(width: 28, height: 28)
+                        Image(systemName: "tent.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .overlay(alignment: .center) {
+                        guidancePill("離你最近的避難所", color: HCColor.safe)
+                            .offset(y: -66)
+                    }
+                }
                 .annotationTitles(.hidden)
             }
             // 自己的位置（藍點）：需要 when-in-use 權限，未授權時 MapKit 自動不畫
@@ -391,6 +563,218 @@ struct SafetyMapView: View {
         // 鏡頭停下才更新（.onEnd），拖曳過程不重算資源過濾
         .onMapCameraChange(frequency: .onEnd) { context in
             visibleRegion = context.region
+        }
+        // 新手首次進地圖：FirstRunSetup 背景把圈心從台北車站校正到實際位置，
+        // 圈心落地時鏡頭要重新框住校正後的圈，否則會停在校正前的暫時位置。
+        // 只在首次 session 生效——一般使用中不能因為圈心變動就搶走使用者手動平移的鏡頭
+        .onChange(of: mineCircleCenterKey) { _, newKey in
+            guard isFirstRunSession, !newKey.isEmpty else { return }
+            withAnimation(.easeInOut(duration: 0.8)) { cameraPosition = circlesRegion }
+        }
+        // 具名座標空間：guidance 脈動圈換算螢幕直徑要用 proxy.convert（見 circleScreenDiameter）
+        .coordinateSpace(.named(Self.mapSpace))
+        // 調整面板開著時，點地圖其他處＝存檔＋收起面板；只加在調整模式下，
+        // 不影響平時的地圖平移／縮放手勢（onTapGesture 不吃 pan/pinch）
+        .onTapGesture {
+            guard adjustingCircleKey != nil else { return }
+            finishAdjustingCircle()
+        }
+        }
+    }
+
+    /// 圈的正東邊緣座標：guidance 脈動圈（circleScreenDiameter）拿來換算螢幕直徑用
+    private static func edgeCoordinate(of circle: LocalLifeCircle) -> CLLocationCoordinate2D {
+        let latRad = circle.latitude * .pi / 180
+        let metersPerDegLon = 111_320 * max(cos(latRad), 0.01)
+        let deltaLon = Double(circle.radiusMeters) / metersPerDegLon
+        return CLLocationCoordinate2D(latitude: circle.latitude, longitude: circle.longitude + deltaLon)
+    }
+
+    // MARK: - 底部半徑調整面板（Find My 地理圍欄式，取代舊拖曳把手）
+
+    /// 收起調整面板：半徑真的變了才寫回 SwiftData＋記漏斗事件，避免「開了面板但沒動滑桿」也算一次調整、
+    /// 也避免沒變更卻多一次沒必要的存檔。不論是按「完成」、點地圖其他處、或再點一次自己的圈都會走這條路。
+    private func finishAdjustingCircle() {
+        if let key = adjustingCircleKey,
+           let circle = visibleCircles.first(where: { $0.circleKey == key }) {
+            let newValue = Int(previewRadiusMeters)
+            if circle.radiusMeters != newValue {
+                circle.radiusMeters = newValue
+                modelContext.saveReporting()
+                Analytics.track("circle_adjusted") // 漏斗：真的調整了警戒圈半徑
+            }
+        }
+        withAnimation(.easeInOut(duration: 0.2)) { adjustingCircleKey = nil }
+    }
+
+    /// 半徑讀數格式化：>=1000 公尺顯示公里（一位小數），沿用事件卡片距離讀數的既有格式慣例
+    private static func radiusDisplayText(_ meters: Int) -> String {
+        meters >= 1000
+            ? String(format: "%.1f 公里", Double(meters) / 1_000)
+            : "\(meters) 公尺"
+    }
+
+    /// 底部滑桿面板：拖滑桿即時改 previewRadiusMeters（地圖上的圈跟著即時縮放），
+    /// 放手不會存檔——真正寫入 SwiftData 的時機只有 finishAdjustingCircle。
+    @ViewBuilder
+    private var circleAdjustPanel: some View {
+        if let key = adjustingCircleKey, let circle = visibleCircles.first(where: { $0.circleKey == key }) {
+            VStack(spacing: 12) {
+                HStack {
+                    Text(circle.name)
+                        .font(.subheadline.bold())
+                        .lineLimit(1)
+                    Spacer(minLength: 12)
+                    Button("完成") { finishAdjustingCircle() }
+                        .font(.subheadline.weight(.semibold))
+                }
+                Text(Self.radiusDisplayText(Int(previewRadiusMeters)))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .contentTransition(.numericText())
+                    .accessibilityHidden(true)
+                Slider(value: $previewRadiusMeters, in: 200...5_000, step: 100)
+                    .tint(HCColor.brand)
+                    .accessibilityLabel("警戒半徑")
+                    .accessibilityValue(Self.radiusDisplayText(Int(previewRadiusMeters)))
+            }
+            .padding(HCSpacing.x4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    // MARK: - 第一次帶領（目標自己動、幾乎不用文字）
+
+    /// 帶領要指的「你的圈」：優先本人的圈，否則第一個可見圈。
+    private var guidanceCircle: LocalLifeCircle? {
+        visibleCircles.first { $0.member?.isCurrentUser == true } ?? visibleCircles.first
+    }
+
+    /// 自己的圈心座標指紋：FirstRunSetup 背景校正圈心後這個字串會變，
+    /// 供 .onChange 偵測「圈心剛落地」，圈不存在就回空字串（不觸發）
+    private var mineCircleCenterKey: String {
+        guard let circle = guidanceCircle else { return "" }
+        return "\(circle.latitude),\(circle.longitude)"
+    }
+
+    /// 帶領要指的「附近事件」：只挑圈心 2.5 公里內、大概在畫面裡的事件；沒有就回 nil（不指螢幕外的東西）。
+    private var guidanceEvent: LocalSafetyEvent? {
+        guard let circle = guidanceCircle else { return nil }
+        let center = CLLocation(latitude: circle.latitude, longitude: circle.longitude)
+        return filteredEvents.first { event in
+            let loc = CLLocation(latitude: event.latitude, longitude: event.longitude)
+            return center.distance(from: loc) <= 2_500
+        }
+    }
+
+    /// 帶領段 1 的保底目標：圈心附近沒事件時，改指「離你最近的避難收容所」。
+    /// 資料清洗後座標可信，理論上不會找不到；找不到就回 nil（帶領直接結束）。
+    private var guidanceShelter: (resource: EmergencyResource, distanceMeters: Int)? {
+        guard let circle = guidanceCircle else { return nil }
+        return EmergencyResourceStore.nearest(
+            kind: ResourceKind.shelter, latitude: circle.latitude, longitude: circle.longitude
+        )
+    }
+
+    /// 座標是否落在目前鏡頭實際看得到的範圍內（用來判斷保底段要不要挪鏡頭）
+    private func isCoordinateVisible(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        guard let region = visibleRegion else { return false }
+        let latHalf = region.span.latitudeDelta / 2
+        let lonHalf = region.span.longitudeDelta / 2
+        return abs(coordinate.latitude - region.center.latitude) <= latHalf
+            && abs(coordinate.longitude - region.center.longitude) <= lonHalf
+    }
+
+    /// 框住兩個座標點的鏡頭範圍（外框加 1.4 倍緩衝，避免兩點貼著螢幕邊）
+    private func framingRegion(
+        _ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D
+    ) -> MapCameraPosition {
+        let lats = [a.latitude, b.latitude]
+        let lons = [a.longitude, b.longitude]
+        let center = CLLocationCoordinate2D(
+            latitude: (lats.min()! + lats.max()!) / 2,
+            longitude: (lons.min()! + lons.max()!) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max((lats.max()! - lats.min()!) * 1.4, 0.02),
+            longitudeDelta: max((lons.max()! - lons.min()!) * 1.4, 0.02)
+        )
+        return .region(MKCoordinateRegion(center: center, span: span))
+    }
+
+    /// 把圈的實際半徑換算成螢幕上的直徑（點），讓脈動圈剛好脹到圈的邊緣。
+    private func circleScreenDiameter(_ circle: LocalLifeCircle, proxy: MapProxy) -> CGFloat {
+        let center = CLLocationCoordinate2D(latitude: circle.latitude, longitude: circle.longitude)
+        let edge = Self.edgeCoordinate(of: circle)
+        guard let c = proxy.convert(center, to: .named(Self.mapSpace)),
+              let e = proxy.convert(edge, to: .named(Self.mapSpace)) else { return 180 }
+        return hypot(e.x - c.x, e.y - c.y) * 2
+    }
+
+    /// 帶領用的小標籤（極短、彩色膠囊）。
+    private func guidancePill(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(color, in: Capsule())
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+            .fixedSize()
+    }
+
+    /// 往下一段帶領：脈動圈 → 段 1 二擇一（附近有事件就脈動事件；沒有就脈動最近避難所當保底）→ 結束。
+    private func advanceGuidance() {
+        withAnimation {
+            if guidanceStep == 0 {
+                if guidanceEvent != nil {
+                    guidanceStep = 1
+                } else if let shelter = guidanceShelter {
+                    // 保底段：多數地區平時沒有近距事件，這是常態路徑而非退化選項
+                    guidanceStep = 1
+                    Analytics.track("guidance_shelter_shown") // 漏斗：保底段——脈動最近避難所
+                    let circleCoord = guidanceCircle.map {
+                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                    }
+                    let shelterCoord = CLLocationCoordinate2D(
+                        latitude: shelter.resource.latitude, longitude: shelter.resource.longitude
+                    )
+                    // 避難所不在目前視野內才挪鏡頭；已經看得到就不動，減少不必要的鏡頭跳動
+                    if !isCoordinateVisible(shelterCoord), let circleCoord {
+                        cameraPosition = framingRegion(circleCoord, shelterCoord)
+                        guidanceCameraAdjusted = true
+                    }
+                } else {
+                    guidanceStep = nil
+                    Analytics.track("guidance_finished") // 漏斗：帶領走完（含只有一段的情況）
+                    scheduleNotificationPromptIfNeeded()
+                }
+            } else {
+                if guidanceCameraAdjusted {
+                    // 保底段挪過鏡頭，結束時拉回原本框住生活圈的視角
+                    cameraPosition = circlesRegion
+                    guidanceCameraAdjusted = false
+                }
+                guidanceStep = nil
+                Analytics.track("guidance_finished") // 漏斗：帶領走完
+                scheduleNotificationPromptIfNeeded()
+            }
+        }
+    }
+
+    /// A4：帶領走完後，情境式問「要不要開通知」——先給了地圖／帶領的價值，再開口要權限。
+    /// 只在權限狀態 .notDetermined（尚未問過系統框）且使用者沒按過「先不用」時才會顯示；
+    /// 已授權或已被拒絕過都不再打擾。延遲 0.6 秒讓帶領收尾動畫先走完，避免卡片跟脈動圈打架。
+    private func scheduleNotificationPromptIfNeeded() {
+        Task {
+            let declined = UserDefaults.standard.bool(forKey: SettingsKeys.notificationPromptDeclined)
+            guard !declined,
+                  await NotificationScheduler.authorizationStatus() == .notDetermined else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            withAnimation { showNotificationPrompt = true }
         }
     }
 
@@ -622,7 +1006,7 @@ struct SafetyMapView: View {
                     } label: {
                         Image(systemName: "info.circle.fill")
                             .font(.body.weight(.semibold))
-                            .frame(width: 40, height: 40)
+                            .frame(width: 44, height: 44)
                             .background(.regularMaterial, in: Circle())
                             .overlay(Circle().stroke(.secondary.opacity(0.2), lineWidth: 1))
                     }
@@ -716,6 +1100,15 @@ struct SafetyMapView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                Button {
+                    withAnimation { isSummaryExpanded = false }
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("收合摘要")
             }
 
             HStack(spacing: 8) {
@@ -744,11 +1137,6 @@ struct SafetyMapView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("區域警報：\(alert.kind)，\(alert.title)")
             }
-
-            Button("收合摘要") {
-                withAnimation { isSummaryExpanded = false }
-            }
-            .font(.caption.bold())
 
             VStack(alignment: .leading, spacing: 2) {
                 if isPaused {
@@ -869,6 +1257,7 @@ private struct MapEventSheet: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
                         .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("關閉事件摘要")

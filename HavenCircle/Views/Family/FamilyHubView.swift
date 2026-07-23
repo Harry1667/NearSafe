@@ -1,40 +1,51 @@
 import SwiftUI
 import SwiftData
 
-/// 家人分頁：生活圈管理與安否回報合併在同一個介面，用分段控制切換
+/// 家人分頁：以人為中心的家人清單（FamilyListView）為唯一內容。
+/// 舊版用頂部 segment 把「警戒圈」「安否回報」拆成兩個並列分頁，等於把「回報平安」
+/// 這個核心動作也藏進去——2026-07 實測回饋「家人功能沒有明顯引導，所以沒用」，
+/// segment 本身就是沒有引導的來源之一，改為單一頁＋固定底部回報鈕。
 struct FamilyHubView: View {
     let myName: String
-    @State private var mode: Mode = .circles
+    @Query private var members: [LocalFamilyMember]
+    @State private var showCheckIn = false
 
-    enum Mode: String, CaseIterable {
-        case circles = "警戒圈"
-        case checkIn = "安否回報"
+    /// 判法與 HomeStatusView.isSoloUser 完全一致（只算「人」不算「重要地點」）：
+    /// 各處各自定義同一件事就會養出兩套真相，這裡直接沿用同一條規則。
+    private var isSoloUser: Bool {
+        members.filter { !$0.isPlace }.count < 2
     }
 
     var body: some View {
         NavigationStack {
-            Group {
-                switch mode {
-                case .circles:
-                    FamilyListView()
-                case .checkIn:
-                    SafetyCheckInView(myName: myName)
+            FamilyListView()
+                // 功能導覽直接讀取目前內容區的實際版面，避免導航列高度改變時遮罩偏移。
+                .tourAnchor(.familyContent)
+                .navigationTitle("家人")
+                .navigationBarTitleDisplayMode(.inline)
+                // 單人時按了沒有對象收到，「回報平安」直接不出現，不留一顆死路按鈕
+                // （與 HomeStatusView 的 checkInButton 同一款式、同一判斷）
+                .safeAreaInset(edge: .bottom) { if !isSoloUser { checkInButton } }
+                .sheet(isPresented: $showCheckIn) {
+                    NavigationStack { SafetyCheckInView(myName: myName) }
                 }
-            }
-            // 功能導覽直接讀取目前內容區的實際版面，避免導航列高度改變時遮罩偏移。
-            .tourAnchor(.familyContent)
-            .navigationTitle("家人")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("顯示內容", selection: $mode) {
-                        ForEach(Mode.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 220)
-                }
-            }
         }
+    }
+
+    private var checkInButton: some View {
+        Button {
+            showCheckIn = true
+        } label: {
+            Label("回報平安", systemImage: "checkmark.shield.fill")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(HCColor.brand)
+        .padding(.horizontal, HCSpacing.x4)
+        .padding(.bottom, HCSpacing.x2)
+        .background(.bar)
     }
 }
 

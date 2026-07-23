@@ -80,8 +80,17 @@ extension LocalLifeCircle {
 
     /// 即時位置超過 15 分鐘未更新，就不能再用來觸發安全判斷。
     /// 圈仍保留在畫面上並明示過期，避免把舊座標冒充現在位置。
+    ///
+    /// 例外：isFollowMe 圈一律視為有效，不吃 15 分鐘規則。
+    /// 上面的 `kind` getter只要 isFollowMe==true 就一定回報 `.live`（無論 kindRawValue
+    /// 存了什麼），但「live」在這個 model 裡其實疊了兩種更新頻率完全不同的語意：
+    /// (1) 家人持續分享位置給我看的圈——位置來自對方裝置頻繁回報，15 分鐘沒更新代表
+    ///     對方可能已停止分享，過期判斷合理；(2) 本機「警報跟著我」跟隨圈——只在顯著
+    ///     位置變更（約移動 500 公尺）時才更新，使用者原地不動幾小時是正常狀態，不是
+    ///     圈失效。用同一條「15 分鐘」規則會把「沒有移動」誤判成「位置過期」，導致
+    ///     警戒圈悄悄退出警報比對——這是假性安心的反面，比誤報更危險。
     var isActiveForAlerts: Bool {
-        guard kind == .live else { return true }
+        guard kind == .live, !isFollowMe else { return true }
         guard let locationUpdatedAt else { return false }
         return locationUpdatedAt > Date.now.addingTimeInterval(-15 * 60)
     }
@@ -90,7 +99,11 @@ extension LocalLifeCircle {
         guard kind == .live else { return "固定位置" }
         guard let locationUpdatedAt else { return "尚未取得位置" }
         guard isActiveForAlerts else { return "位置已過期" }
-        return "\(locationUpdatedAt.formatted(.relative(presentation: .named)))更新"
+        // 相對時間鎖定繁中：App 字串全是寫死的中文，系統格式器卻跟著裝置語言跑，
+        // 英文系統會拼出「1 minute ago 更新」這種中英混雜句
+        var style = Date.RelativeFormatStyle(presentation: .named)
+        style.locale = Locale(identifier: "zh_TW")
+        return "\(locationUpdatedAt.formatted(style))更新"
     }
 
     /// 事件發生時間是否落在這個生活圈的提醒時段內

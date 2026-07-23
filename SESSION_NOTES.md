@@ -1,5 +1,63 @@
 # SESSION_NOTES
 
+## 2026-07-23（用戶流程重構動工日：#2–#8 全部完成＋使用者實測回饋六項落地）
+
+### ✅ 完成（細節見專案 memory `havencircle-onboarding-redesign` 六批記錄）
+- **#2 密度驗證**：賭注1不成立（30天歷史不存在、新聞無座標）→A2 改向；賭注1b 成立；避難所 JSON 清洗 239 筆錯置座標（6152→5913）。結果在 `用戶流程重構思.md` §0.1。
+- **20 人模擬走查**（`模擬走查報告.md`＋劇本 `App完整體驗腳本.md`）：三激進取捨判定、五大死點，修正全數寫回 `目標用戶流程.md`（含設計紀律六條、D 骨架展開、動工順序修訂）。
+- **#3–#7 實裝**：A1 著陸瘦身（刪開場白＋刪確認步自動前進）、A2/A3 三件套＋保底帶領、D1+D2 安心頁雙狀態＋事件串（刪背景看守列）、A4 通知情境卡（App 內模擬示範）、D4 通知自主權（吵醒門檻/安靜時段/一鍵靜音/重問通道）、身分方塊加「其他稱呼」。
+- **#8 D3 家人頁重寫**：刪 segment、以人為中心、空狀態情境引導、SignInPreflight 登入前置卡（登入永不突襲、成功自動續作）、C3 身分接回（建圈/入圈成功跳六方塊）。
+- **重大 bug 修復**：①設定頁 Apple 登入按鈕是假的（無 nonce 不接 AuthService；登出也是假的）——家人頁所有 gate 導向死路的根因；②首次進地圖鏡頭與圈心校正脫鉤（isFirstRunSession 重取景）；③跟隨圈誤吃 .live 15 分鐘過期規則（isActiveForAlerts 加 !isFollowMe）；④SLC 不觸發時開 App 不校正跟隨圈（ShareAcceptance 前景啟動主動取位）。
+- **使用者實測六項裁決落地**：避難所 pin 撤預設、「附近」=10km（NearbyScope 單一常數）、預設圈=跟隨圈「我的身邊」（關=留原地變固定圈）、地點命名點選（PlaceSelectView 方塊）、調半徑改滑桿面板（拖把手整套刪除）、位置分享與即時圈拆分（FollowCircleToggleSection 免登入）。
+
+### 🔄 未完成/殘留
+- SafetyCheckInView 內「前往設定查看帳號」舊死路（觸發面已縮小）；「隱藏相似提醒」只擋 UI 不擋通知（既有缺口）；地點 emoji 未存（model 無欄位）；跟隨圈改名會讓開關失聯（現無改名入口）。
+- Apple 登入端到端（模擬器需 Apple ID）、多人態畫面、A4 卡片實機動線——待使用者實測回報。
+- 動工順序 #9–#13：家人閉環 S 批（B1/B2 強化/受邀通道/情境邀請）→C4 慶祝推播→C2 帳號設計稿→F 週報→E 颱風 CTA。
+
+### ⚠️ 環境備忘
+- bundle ID 已改 `com.gomiigo.HavenCircleApp`（舊 CamMenuApp 失效）；`--start-tab` 1=安心 2=地圖 3=家人；`--force-onboarding` 會釘住著陸頁；模擬器定位偶發釘死舊金山→shutdown+boot 後再 set；PATH 的 python3 是壞的 3.5，用 `/usr/bin/python3`。
+- 本次 commit 含四個「混有另一 session 早前 cosmetic hunks」的檔案（SafetyMapView/HomeStatusView/SettingsView/LiveCircleSharingSection）——無法事後拆 hunk，已隨今日多輪 Debug build＋截圖驗證；SixDisasterScenario/HavenCircleWidget 未收（另一 session 的、未經驗證）。
+
+## 2026-07-22（本場跨 07-20 深夜～07-22，同一長 session）
+
+### ✅ 本次完成
+- **Firebase 家庭圈重構收尾＋上 TF**：commit `c4a2775`（20 檔，只提自己的檔）；TestFlight 建置 `07201511` 上傳成功。
+- **新手流程整條重做**（多輪迭代，全部編譯過＋能截圖的都截圖驗證）：
+  - 著陸：乾淨地圖定位台北車站→點畫面才索定位；拒絕退台北車站＋溫和引導（`WelcomeMapView`）。
+  - 首次進地圖：自動建「本人」＋預設 1 公里圈（`FirstRunSetup`），落在地圖分頁。
+  - 帶領改「目標自己動」：聲納脈動圈＋膠囊短標籤（`PulseRing`），拿掉文字卡（使用者嫌蠢）；附近 2.5km 無事件就跳過事件段。
+  - 拖圈：點自己的圈→圈邊拖把手改半徑 200–5000m（`SafetyMapView` 加 MapReader/proxy.convert）。教學改「第一次點事件關掉後」才提示一次。
+  - 分頁一句話介紹（點畫面即關）；選身分六方塊（統一黃臉）**已解耦**成獨立元件，待家人介面重寫再接回。
+  - 設定→示範與開發加「重跑新手流程」按鈕（DEBUG）。
+- **三份流程文檔**：`原始用戶流程.md`（改版前逐字還原）、`App用戶流程.md`（現況全 App）、`新手流程說明.md`（新手細節）。
+- **用戶流程重構思 v3**（`用戶流程重構思.md`）：走完五問→三版分歧→premortem→收斂→**對抗驗收（抓到深連結自相矛盾/匿名帳號藏 L 級/避難所保底沒驗證）**→使用者審查（家人閉環資源錯配，補受邀通道/慶祝閉環/情境邀請/north star 換互報家庭數/平時心跳）。
+- **拍板**：平時心跳＝**週報**（三護欄：不動警報信任額度/沒事也發/通知關閉率護欄指標）；颱風 CTA 歸核心警報迴圈 backlog；north star＝「≥2 人且完成首次互報的家庭數」。
+- **`目標用戶流程.md`**：完整目標流程 A–F 六條線，每步標 [現有]/[改]/[新]，供使用者修改。
+- **動工 #1 漏斗埋點**：8 個事件已埋進現有畫面（landing shown/tapped、location granted/denied、onboarding_completed、guidance started/finished、adjust hint/adjusted、tab_intro×2），BUILD SUCCEEDED。
+
+### 🔄 未完成 / 進行中
+- 使用者要改 `目標用戶流程.md`（等回饋）。
+- 動工順序 #2–#9：資料密度驗證（1/1b）→地圖鋪真實資料→通知情境卡→家人閉環 S 級一批→慶祝推播→帳號設計稿（L）→週報→颱風 CTA。
+- **本場所有新手流程改動未 commit**（含 dirty 檔 `SafetyMapView`/`SettingsView` 裡我的 hunk 與另一 session 未提交改動混在一起——commit 必須 `git add -p` 挑 hunk）。
+- 舊教學（OnboardingView/FeatureTour）仍是死碼；設定頁「重看」兩按鈕還指向它們。
+- 實機未驗：拖圈手感、真實冷啟動全鏈路、Firebase 登入/邀請碼端到端（TF 07201511 可測）。
+
+### 💡 重要決策 / 發現
+- 「能學習的功能優先於不能學習的」（使用者拍板判準，一年五個樣本的功能無法迭代）。
+- 提案自檢新項：**宣稱的核心 vs 量級分佈要一致**（對抗驗收員驗可執行性，使用者抓到的是資源錯配——兩層不同）。
+- 模擬器只有 iPhone 17/iOS 26.5 可用（UDID 67B28D8A-…），`name=iPhone 15` 會 destination 失敗。
+- 受邀深連結不做：LINE 攔 Universal Link＋基礎設施不存在＋剪貼簿讀取跳系統提示；8 碼優化先收數據。
+
+### 🚀 下次起點
+1. 看使用者對 `目標用戶流程.md` 的修改 → 調整後執行動工 #2「資料密度驗證」（抽 10 城鄉座標算首屏視野內 30 天事件數＋6 個極端座標算最近避難所距離——查資料即可，不用寫 App 碼）。
+2. 或使用者說 commit：`git add -p` 只挑自己 hunk（SafetyMapView 的 MapReader/拖把手/脈動帶領/埋點段、SettingsView 的重跑按鈕＋resetOnboarding），新檔可整檔 add。
+
+### 📁 相關檔案
+- 新增：`HavenCircle/Views/Onboarding/{WelcomeMapView,WelcomeFlowView,RoleSelectView,FirstRunSetup,FirstRunCoach}.swift`
+- 修改：`ContentView.swift`、`AppTabs.swift`、`SettingsKeys.swift`、`HavenCircleApp.swift`、`SafetyMapView.swift`（dirty！）、`SettingsView.swift`（dirty！）
+- 文檔：`目標用戶流程.md`、`用戶流程重構思.md`（v3）、`App用戶流程.md`、`原始用戶流程.md`、`新手流程說明.md`
+
 ## 2026-07-20
 
 ### 完成事項：修復「推播完全收不到」（實機 iPhone 12 端到端驗證通過）

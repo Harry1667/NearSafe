@@ -72,7 +72,8 @@ enum NotificationScheduler {
         id: String,
         eventKey: String? = nil,
         interaction: AlertInteraction = .none,
-        timeSensitive: Bool = false
+        timeSensitive: Bool = false,
+        kind: String? = nil
     ) async {
         let defaults = UserDefaults.standard
         // alertsEnabled 預設值為 true（鍵不存在時視為啟用），alertsPaused 預設 false
@@ -103,14 +104,50 @@ enum NotificationScheduler {
         case .none: break
         }
         // 危險級（火災、械鬥、地震、海嘯、颱風）用時效性通知：可突破專注模式、鎖屏置頂。
-        // 提醒級維持一般層級，避免高溫特報也吵到勿擾中的使用者
-        content.interruptionLevel = timeSensitive ? .timeSensitive : .active
+        // 提醒級維持一般層級，避免高溫特報也吵到勿擾中的使用者。
+        // 是否「真的」能突破再交給 effectiveTimeSensitive 收斂（吵醒門檻／安靜時段／個別靜音）
+        content.interruptionLevel = effectiveTimeSensitive(requested: timeSensitive, kind: kind) ? .timeSensitive : .active
         do {
             try await UNUserNotificationCenter.current()
                 .add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             AppLog.notifications.info("✅ 已推播：\(title)")
         } catch {
             AppLog.notifications.error("通知排程失敗（\(id)）：\(error.localizedDescription)")
+        }
+    }
+
+    /// 吵醒門檻的單一收斂點：所有 scheduleAlert 呼叫都經這裡決定能不能用時效性通知
+    /// 突破靜音／專注模式。降級只影響 interruptionLevel，**不擋通知本身**——
+    /// 通知一律照常送達，只是降級後不亮屏、不出聲、不震動。
+    private static func effectiveTimeSensitive(requested: Bool, kind: String?) -> Bool {
+        // a. 呼叫端本來就沒要時效性，不必往下判斷
+        guard requested else { return false }
+        let threshold = WakeThreshold.current
+        // b. 使用者選「絕不吵醒」：任何警報都不突破
+        guard threshold != .never else { return false }
+        let isMajor = WakeThreshold.isMajor(kind: kind)
+        // c. 「僅重大才吵」：非重大一律不突破；家人安否視同重大
+        if threshold == .majorOnly, !isMajor { return false }
+        // d. .standard 且通過以上檢查：維持 requested==true，繼續往下看安靜時段與個別靜音
+        // e. 安靜時段內：再收斂一層，只有重大（含家人安否）能維持突破，其餘一律降級
+        if isWithinQuietHours(), !isMajor { return false }
+        // f. 使用者對這個事件類別按過「這類警報以後不吵醒我」：一律不突破
+        if let kind, AlertWakePrefs.isMuted(kind) { return false }
+        return true
+    }
+
+    /// 安靜時段判定：跨夜區間（如 22→7）要特別處理——結束時刻小於開始時刻代表跨過午夜。
+    private static func isWithinQuietHours() -> Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: SettingsKeys.quietHoursEnabled) else { return false }
+        let start = defaults.object(forKey: SettingsKeys.quietStartHour) as? Int ?? 22
+        let end = defaults.object(forKey: SettingsKeys.quietEndHour) as? Int ?? 7
+        let hour = Calendar.current.component(.hour, from: .now)
+        if start == end { return true } // 邊界情況（開始＝結束）視為全天安靜，避免語意矛盾
+        if start < end {
+            return hour >= start && hour < end // 不跨夜，例如 9→17
+        } else {
+            return hour >= start || hour < end // 跨夜，例如 22→7：今晚 22 點後或今天 7 點前都算
         }
     }
 
@@ -149,7 +186,8 @@ enum NotificationScheduler {
             id: event.eventKey,
             eventKey: event.eventKey,
             interaction: interaction,
-            timeSensitive: isDanger
+            timeSensitive: isDanger,
+            kind: event.eventType
         )
         // 標記已推播：同一事件不重複打擾（通知限流的最小單位）
         event.hasNotified = true
