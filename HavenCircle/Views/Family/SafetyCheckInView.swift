@@ -7,7 +7,6 @@ import CoreLocation
 /// - 工具列：邀請家人加入家庭圈（CKShare）
 struct SafetyCheckInView: View {
     @Environment(FamilySyncService.self) private var sync
-    @Environment(TabRouter.self) private var router
     let myName: String
 
     @State private var showInviteOptions = false
@@ -17,6 +16,8 @@ struct SafetyCheckInView: View {
     @AppStorage("checkInAttachLocation") private var attachLocation = false
     /// 邀請失敗時的可見錯誤——只寫 log 的話，使用者看到的是「按了沒反應＝App 壞了」
     @State private var shareError: String?
+    /// 登入前置把關：未登入時先彈預告卡解釋「為什麼」，登入成功後自動接續原動作
+    @State private var gate = SignInGate()
 
     var body: some View {
         // 由 FamilyHubView 承載（提供 NavigationStack 與分段切換）
@@ -27,6 +28,7 @@ struct SafetyCheckInView: View {
                 familyPingsSection
             }
         }
+        .signInPreflight(gate)
         .toolbar {
             if isWorking {
                 ProgressView()
@@ -60,13 +62,16 @@ struct SafetyCheckInView: View {
         switch sync.state {
         case .noAccount:
             Section {
-                Label("尚未登入 iCloud", systemImage: "icloud.slash")
+                Label("尚未登入 Apple 帳號", systemImage: "person.crop.circle.badge.exclamationmark")
                     .foregroundStyle(HCColor.attention)
-                Text("安否回報需要 iCloud 才能在家人之間同步。")
+                Text("回報平安需要 Apple 帳號，才能同步給家人。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("前往設定查看 Apple 帳號", systemImage: "gearshape") {
-                    router.showSettings = true
+                Button("登入") {
+                    gate.perform {
+                        await sync.refreshAccountStatus()
+                        await sync.fetchPings()
+                    }
                 }
             }
         case .error(let message):

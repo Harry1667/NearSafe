@@ -218,6 +218,8 @@ struct SafetyMapView: View {
                     RegionAlertDetailView(alert: $0, members: members)
                         .presentationDetents([.medium, .large])
                         .presentationDragIndicator(.visible)
+                        // iPad 會忽略 presentationDetents 而放大成整頁 sheet，這裡收斂成 form 尺寸
+                        .presentationSizing(.form)
                 }
                 // 點事件才教拖圈：點開事件詳情、關掉後，第一次跳一張拖圈提示
                 .onChange(of: selected) { oldValue, newValue in
@@ -641,6 +643,9 @@ struct SafetyMapView: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
             .padding(.horizontal)
             .padding(.bottom, 8)
+            // iPad 上限制面板寬度並置中，外層仍貼底（safeAreaInset(edge: .bottom) 負責貼底，不受影響）
+            .frame(maxWidth: 500)
+            .frame(maxWidth: .infinity)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
@@ -908,6 +913,9 @@ struct SafetyMapView: View {
         )
         // 進場完成的「守護開始」確認觸覺，與盾牌 bounce 同一個觸發源
         .sensoryFeedback(.success, trigger: shieldConfirmPulse)
+        // iPad 上限制頂部狀態卡寬度並置中，避免撐滿 13 吋螢幕
+        .frame(maxWidth: 500)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 守護圈開場（簽名動效）
@@ -1153,6 +1161,9 @@ struct SafetyMapView: View {
             in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
         )
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+        // iPad 上限制展開卡寬度並置中；卡片內 summaryMetric 的 frame(maxWidth: .infinity) 撐滿卡片內的列，保留不動
+        .frame(maxWidth: 500)
+        .frame(maxWidth: .infinity)
     }
 
     private func summaryMetric(_ title: String, count: Int, emphasis: Bool) -> some View {
@@ -1224,6 +1235,8 @@ private struct MapEventSheet: View {
         .presentationDetents([Self.compactDetent, .large], selection: $selectedDetent)
         .presentationDragIndicator(.visible)
         .presentationBackgroundInteraction(.enabled(upThrough: Self.compactDetent))
+        // iPad 會忽略 presentationDetents 而放大成整頁 sheet，這裡收斂成 form 尺寸
+        .presentationSizing(.form)
     }
 
     private var compactContent: some View {

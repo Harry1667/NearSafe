@@ -14,7 +14,6 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.apnsDeviceToken) private var apnsToken = ""
     @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
     @AppStorage(SettingsKeys.analyticsEnabled) private var analyticsEnabled = true
-    @State private var showTutorial = false
     @State private var showPaywall = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -132,27 +131,25 @@ struct SettingsView: View {
                         AboutView()
                     }
                     Button {
-                        showTutorial = true
+                        // 種旗標＋關掉設定 sheet：主畫面觀察到旗標會重播新版地圖新手帶領
+                        // （消耗點在 AppTabs.initialTab 與 SafetyMapView，這裡不動它們）
+                        UserDefaults.standard.set(true, forKey: SettingsKeys.firstRunCoachingPending)
+                        dismiss()
                     } label: {
                         Label {
-                            Text("重看新手教學")
-                                .foregroundStyle(.primary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("重看功能導覽")
+                                    .foregroundStyle(.primary)
+                                Text("回到主畫面後會重新播放各分頁介紹")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         } icon: {
                             settingsIcon("book.fill", color: HCColor.safe)
                         }
                     }
-                    Button {
-                        // 種旗標＋關掉設定 sheet，AppTabs 觀察到旗標會從安心頁開始跨分頁導覽
-                        UserDefaults.standard.set(true, forKey: SettingsKeys.homeTourPending)
-                        dismiss()
-                    } label: {
-                        Label {
-                            Text("重看功能導覽")
-                                .foregroundStyle(.primary)
-                        } icon: {
-                            settingsIcon("sparkles.rectangle.stack.fill", color: HCColor.brand)
-                        }
-                    }
+                    // 舊版 coach marks 導覽（homeTourPending）不再提供入口：新手流程重寫後
+                    // 沒有任何路徑會觸發它，兩顆同名「重看功能導覽」並列只會讓人困惑。
                 }
 
                 // App Store 審查指南 5.1.1(v)：提供帳號/資料刪除
@@ -195,9 +192,6 @@ struct SettingsView: View {
             .task { await sync.refreshAccountStatus() }
             .sheet(isPresented: $showPaywall) {
                 PaywallView()
-            }
-            .fullScreenCover(isPresented: $showTutorial) {
-                OnboardingView(isReplay: true)
             }
             .confirmationDialog("確定要刪除所有資料嗎？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("刪除所有資料", role: .destructive) {
@@ -499,7 +493,7 @@ struct SettingsView: View {
         case .ready, .sharing:
             "iCloud 已可用"
         case .noAccount:
-            "尚未登入 iCloud"
+            "尚未登入 Apple 帳號"
         case .error:
             "iCloud 暫時無法使用"
         case .unknown:

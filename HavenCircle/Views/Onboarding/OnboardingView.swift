@@ -563,7 +563,7 @@ struct OnboardingView: View {
         switch familySync.state {
         case .ready: "已登入，可建立家庭圈"
         case .sharing: "家庭圈同步中"
-        case .noAccount: "尚未登入 iCloud"
+        case .noAccount: "尚未登入 Apple 帳號"
         case .error: "暫時無法使用"
         case .unknown: "正在確認狀態"
         }

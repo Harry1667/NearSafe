@@ -77,6 +77,9 @@ struct HomeStatusView: View {
                 .padding(.top, HCSpacing.x4)
                 // 單人態沒有底部回報鈕的 safeAreaInset 墊高，內容會被浮動分頁列遮住尾巴，補等量留白
                 .padding(.bottom, isSoloUser ? 96 : 0)
+                // iPad 上限制內容主欄寬度並置中，避免 hcCard 卡片撐滿 13 吋螢幕
+                .frame(maxWidth: 600)
+                .frame(maxWidth: .infinity)
             }
             // 功能導覽介紹到的列可能在摺疊線以下（小螢幕尤其）：先捲進畫面再讓聚光燈框住，
             // 否則錨點矩形在螢幕外，裁切後聚光燈會框到不相干的位置

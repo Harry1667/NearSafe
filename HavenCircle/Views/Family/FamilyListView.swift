@@ -92,6 +92,11 @@ struct FamilyListView: View {
             )
         }
         .task { await sync.refreshAccountStatus() }
+        // iPad：整份清單限寬置中，避免按鈕與列卡撐滿 13 吋全寬（iPhone 上無感）；
+        // 外圍再鋪同款群組底色，否則 List 底色只到 600pt，左右會露出不同色階的接縫
+        .frame(maxWidth: 600)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 
     // MARK: - 空狀態（還沒有真人家人）

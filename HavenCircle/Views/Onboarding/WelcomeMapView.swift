@@ -53,8 +53,9 @@ struct WelcomeMapView: View {
     var body: some View {
         ZStack {
             cleanMap
-            // 卡片置中（與帶領卡一致）
+            // 卡片置中（與帶領卡一致）；iPad 上限制卡片寬度，ZStack 預設 .center 對齊會自動置中
             bottomCard
+                .frame(maxWidth: 440)
                 .padding(.horizontal, 20)
         }
         .ignoresSafeArea(edges: .top)
