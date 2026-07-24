@@ -5,10 +5,12 @@ import os
 /// StoreKit 2 訂閱狀態與購買流程。
 ///
 /// 設計：
-/// - 商品 ID 為單一真相來源（[monthlyProductID] / [yearlyProductID]），畫面一律透過
-///   [monthlyProduct] / [yearlyProduct] 拿 `Product`，不要另外硬寫字串。
+/// - 商品 ID 為單一真相來源（[monthlyProductID] / [yearlyProductID] / [lifetimeProductID]），畫面一律
+///   透過 [monthlyProduct] / [yearlyProduct] / [lifetimeProduct] 拿 `Product`，不要另外硬寫字串。
 /// - `isPlus` 只信任 `Transaction.currentEntitlements`（App Store 端真相），不做本機快取判定；
 ///   家庭共享（Family Sharing）成員即使沒有自己買，收到共享的訂閱也會出現在這裡，走同一條判定。
+///   終身買斷（非消耗型）交易同樣會出現在 `currentEntitlements`（消耗型才不會），因此沿用同一條
+///   `productIDs.contains(...)` 判斷即可涵蓋，不需要另外比對 `Transaction.productType`。
 /// - `Transaction.updates` 長聽整個 App 生命週期：外部續訂、退款、方案變更、Ask to Buy
 ///   核准都會即時反映，不必等下次啟動或手動 restore。
 /// - `isPlus` 除了讓 PaywallView 顯示「已是 Guardian+」狀態，也是 [canAddPlace] / [canAddFamilyMember]
@@ -20,11 +22,16 @@ final class EntitlementStore {
     static let monthlyProductID = "com.gomiigo.HavenCircleApp.plus.monthly"
     /// Guardian+ 年訂閱商品 ID（同一訂閱群組「Guardian+」）
     static let yearlyProductID = "com.gomiigo.HavenCircleApp.plus.yearly"
-    /// 顯示順序固定為「年、月」：PaywallView 依這個順序排序卡片，不依賴 App Store 回傳順序。
-    static let productIDs: [String] = [yearlyProductID, monthlyProductID]
+    /// Guardian+ 終身買斷商品 ID（非消耗型 IAP，不屬於訂閱群組，家庭共享同樣開啟）
+    static let lifetimeProductID = "com.gomiigo.HavenCircleApp.plus.lifetime"
+    /// 顯示順序固定為「年、月、終身」：PaywallView 依這個順序排序卡片，不依賴 App Store 回傳順序。
+    static let productIDs: [String] = [yearlyProductID, monthlyProductID, lifetimeProductID]
 
     private(set) var products: [Product] = []
     private(set) var isPlus = false
+    /// 目前的 Plus 權益是否來自終身買斷（非消耗型）：用來讓 PaywallView 顯示「終身 Guardian+」
+    /// 而非「管理訂閱」——非消耗型沒有訂閱可管理。
+    private(set) var isLifetime = false
     private(set) var isLoadingProducts = false
     /// 載入商品失敗時的人話文案；nil 代表沒有錯誤（見 [loadProducts]）
     private(set) var productLoadError: String?
@@ -36,6 +43,7 @@ final class EntitlementStore {
 
     var monthlyProduct: Product? { products.first { $0.id == Self.monthlyProductID } }
     var yearlyProduct: Product? { products.first { $0.id == Self.yearlyProductID } }
+    var lifetimeProduct: Product? { products.first { $0.id == Self.lifetimeProductID } }
 
     // 沒有 deinit：這個物件跟 App 同壽命（見 HavenCircleApp 以 @State 持有並用 environment 注入），
     // 不會提前釋放；且 deinit 一律是 nonisolated context，無法安全存取 MainActor 隔離的屬性。
@@ -89,7 +97,8 @@ final class EntitlementStore {
                 let transaction = try Self.checkVerified(verification)
                 await refreshEntitlements()
                 await transaction.finish()
-                Analytics.track("purchase_success")
+                // 終身買斷用獨立事件名區分（Analytics.track 不支援附加參數）
+                Analytics.track(product.id == Self.lifetimeProductID ? "purchase_success_lifetime" : "purchase_success")
                 return true
             case .userCancelled:
                 // 使用者主動取消，不是錯誤，不需要顯示任何訊息
@@ -123,15 +132,20 @@ final class EntitlementStore {
 
     /// 依 `Transaction.currentEntitlements` 重新判定 isPlus——這是 App Store 端的真相來源，
     /// 家庭共享成員收到的共享訂閱也會出現在這裡，跟自己購買走同一條判定，不需要另外分支。
+    /// 同時判定 isLifetime：終身買斷（非消耗型）交易同樣出現在 currentEntitlements 裡。
     func refreshEntitlements() async {
         var active = false
+        var lifetime = false
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? Self.checkVerified(result) else { continue }
-            if Self.productIDs.contains(transaction.productID), transaction.revocationDate == nil {
-                active = true
+            guard Self.productIDs.contains(transaction.productID), transaction.revocationDate == nil else { continue }
+            active = true
+            if transaction.productID == Self.lifetimeProductID {
+                lifetime = true
             }
         }
         isPlus = active
+        isLifetime = lifetime
     }
 
     /// 長聽交易更新：續訂、退款、方案升降級、Ask to Buy 核准都會從這裡進來。

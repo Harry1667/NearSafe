@@ -1,7 +1,23 @@
 {
   "identifier" : "8F1B7C4A-6E3D-4E2A-9C5B-2A7D4F1E9B60",
   "nonRenewingSubscriptions" : [],
-  "products" : [],
+  "products" : [
+    {
+      "displayPrice" : "1490",
+      "familyShareable" : true,
+      "internalID" : "20977020",
+      "localizations" : [
+        {
+          "description" : "一次付清，永久解鎖 Guardian+ 所有進階功能，不需要續訂、不會過期。",
+          "displayName" : "終身 Guardian+",
+          "locale" : "zh_Hant"
+        }
+      ],
+      "productID" : "com.gomiigo.HavenCircleApp.plus.lifetime",
+      "referenceName" : "Guardian+ Lifetime",
+      "type" : "NonConsumable"
+    }
+  ],
   "settings" : {
     "_applicationInternalID" : "0",
     "_developerTeamID" : "0",
