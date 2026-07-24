@@ -34,7 +34,11 @@ struct SettingsView: View {
                         HStack(spacing: HCSpacing.x3) {
                             avatar
                             VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                                Text(displayName.isEmpty ? "設定你的名稱" : displayName)
+                                // 這張卡導到 AppleAccountView，職責是登入狀態/登出/刪號，不是改名，
+                                // 文案不能再暗示「點進去能設定名稱」（真正改名在下方「個人資訊」row）
+                                Text(displayName.isEmpty
+                                     ? (sync.state == .noAccount ? "登入 Apple 帳號" : "Apple 帳號")
+                                     : displayName)
                                     .font(.title3.weight(.bold))
                                 if !appleEmail.isEmpty {
                                     Text(appleEmail)
@@ -90,7 +94,8 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    settingsRow("個人資訊", subtitle: "顯示名稱與緊急聯絡備註",
+                    // 標題從「個人資訊」改為白話版，讓使用者一眼知道改名／改身分在這裡
+                    settingsRow("你的名字與家庭身分", subtitle: "本名、家人怎麼叫你，與緊急聯絡備註",
                                 icon: "person.text.rectangle.fill", color: HCColor.brand) {
                         PersonalProfileView()
                     }
@@ -851,28 +856,64 @@ private struct DeleteAccountReauthSheet: View {
     }
 }
 
+/// #7+8：「設定你的名稱」空殼修好——這頁才是真正能改名、改家庭身分的地方。
+/// 本名（profileDisplayName）與家庭身分（profileFamilyRole）是分開的兩個鍵：
+/// 本名優先當顯示名稱，本名空著時才退而用身分頂替（與 FamilyListView/applyRole 等既有邏輯一致）。
 private struct PersonalProfileView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
+    @AppStorage(SettingsKeys.profileFamilyRole) private var familyRole = ""
     @AppStorage(SettingsKeys.profileContactNote) private var contactNote = ""
     @Environment(\.modelContext) private var context
     @Query private var members: [LocalFamilyMember]
 
+    private var me: LocalFamilyMember? { members.first(where: \.isCurrentUser) }
+
+    /// 家庭身分是否命中六個常見快選；命中時下方自訂輸入框顯示空白，避免跟方塊重複顯示同一個值
+    private var isPresetRole: Bool {
+        familyRole.isEmpty || FamilyRole.all.contains(where: { $0.label == familyRole })
+    }
+
+    private let roleColumns = [
+        GridItem(.flexible(), spacing: HCSpacing.x2),
+        GridItem(.flexible(), spacing: HCSpacing.x2),
+        GridItem(.flexible(), spacing: HCSpacing.x2),
+    ]
+
     var body: some View {
         Form {
-            Section("顯示資訊") {
-                TextField("顯示名稱", text: $displayName)
-                Text("顯示名稱會用在安否回報的署名，家人會看到這個名稱。請只填寫家人辨識所需的資訊。")
+            Section {
+                TextField("本名", text: $displayName)
+                Text("家人會在安否回報、家人清單上看到這個名字，請只填家人辨識所需的資訊。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } header: {
+                Text("你的本名")
             }
             .onChange(of: displayName) { _, newValue in
-                // 同步到本人的家庭成員資料：安否回報署名（senderName）與家人清單都靠它，
-                // 不同步的話改了名字、家人收到的回報還是舊署名
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty, let me = members.first(where: \.isCurrentUser), me.name != trimmed else { return }
-                me.name = trimmed
-                context.saveReporting()
+                syncMemberName(displayName: newValue, familyRole: familyRole)
             }
+
+            Section {
+                LazyVGrid(columns: roleColumns, spacing: HCSpacing.x2) {
+                    ForEach(FamilyRole.all) { role in
+                        roleChip(role)
+                    }
+                }
+                .padding(.vertical, HCSpacing.x1)
+                TextField("其他稱呼（例如：姊姊、看護）", text: Binding(
+                    get: { isPresetRole ? "" : familyRole },
+                    set: { familyRole = $0 }
+                ))
+                Text("這是你在家裡的角色（例如「媽媽」），會顯示在家人清單上；本名沒填時，家人會改看到這個稱呼。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("你的家庭身分")
+            }
+            .onChange(of: familyRole) { _, newValue in
+                syncMemberName(displayName: displayName, familyRole: newValue)
+            }
+
             Section("緊急聯絡備註") {
                 TextField("備註（選填）", text: $contactNote, axis: .vertical)
                     .lineLimit(3...6)
@@ -881,9 +922,49 @@ private struct PersonalProfileView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("個人資訊")
+        .navigationTitle("你的名字與家庭身分")
         .navigationBarTitleDisplayMode(.inline)
         .analyticsScreen("personal_profile")
+    }
+
+    private func roleChip(_ role: FamilyRole) -> some View {
+        let isSelected = familyRole == role.label
+        return Button {
+            familyRole = role.label
+            Analytics.track("role_selected")
+        } label: {
+            VStack(spacing: HCSpacing.x1) {
+                Text(role.emoji)
+                    .font(.title2)
+                Text(role.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, HCSpacing.x2)
+            .background(
+                RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                    .fill(isSelected ? HCColor.brand.opacity(0.14) : Color(.secondarySystemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                    .stroke(isSelected ? HCColor.brand : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(role.label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// 同步到本人的家庭成員資料：安否回報署名（senderName）與家人清單都靠它，
+    /// 不同步的話改了名字或身分、家人收到的回報還是舊署名。本名優先，本名空著才用身分頂替。
+    private func syncMemberName(displayName: String, familyRole: String) {
+        guard let me else { return }
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = trimmedName.isEmpty ? familyRole : trimmedName
+        guard !resolved.isEmpty, me.name != resolved else { return }
+        me.name = resolved
+        context.saveReporting()
     }
 }
 

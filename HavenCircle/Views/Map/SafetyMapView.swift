@@ -448,8 +448,10 @@ struct SafetyMapView: View {
                                 .frame(width: 24, height: 24)
                                 .background(renderedColor, in: Circle())
                                 .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                            // #5：地圖圈標記文字改語意字體（.caption2 是最小的可縮放級距），
+                            // 讓「字體大小」設定調整時這裡也看得出變化；圖示尺寸維持固定（純裝飾）
                             Text(circleLabelText(circle))
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.caption2.weight(.semibold))
                                 .foregroundStyle(renderedColor)
                                 .lineLimit(1)
                                 .padding(.horizontal, 5)
@@ -458,7 +460,7 @@ struct SafetyMapView: View {
                                 .overlay(Capsule().stroke(renderedColor.opacity(0.6), lineWidth: 1))
                             if circle.kind == .live {
                                 Text(circle.locationFreshnessText)
-                                    .font(.system(size: 8, weight: .medium))
+                                    .font(.caption2.weight(.medium))
                                     .foregroundStyle(circle.isActiveForAlerts ? .secondary : HCColor.attention)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 1)
@@ -579,8 +581,9 @@ struct SafetyMapView: View {
                             .background(ping.status == .safe ? HCColor.safe : HCColor.danger, in: Circle())
                             .overlay(Circle().stroke(.white, lineWidth: 2))
                             .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                        // #5：同上，改語意字體讓字級可調
                         Text(ping.createdAt.formatted(.relative(presentation: .named)))
-                            .font(.system(size: 9))
+                            .font(.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(.thinMaterial, in: Capsule())
