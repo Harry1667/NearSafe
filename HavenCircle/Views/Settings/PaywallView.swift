@@ -1,25 +1,27 @@
+import StoreKit
 import SwiftUI
 
-/// 升級（Guardian+）定價頁——目前為 UI 版面，尚未接 StoreKit 金流。
-/// 升級按鈕先顯示「即將推出」；實際訂閱待驗證留存後再接 IAP（見 MONETIZATION_PLAN.md）。
+/// 升級（Guardian+）定價頁——接 StoreKit 2 真實金流（見 EntitlementStore）。
 /// 設計原則：核心安全警報「兩邊都免費」的訊息要最醒目，付費牆只擋規模與便利。
 struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(EntitlementStore.self) private var store
     /// 選中的方案：年訂為主（低頻安全 App 用「一年的安心」對抗月訂 churn）
     @State private var yearlySelected = true
-    @State private var showComingSoon = false
+    @State private var showManageSubscriptions = false
 
-    // 免費 vs 進階 分層（對照 MONETIZATION_PLAN.md）
-    private let tiers: [(feature: String, free: String, plus: String)] = [
-        ("核心災害警報", "全開", "全開"),
-        ("家庭成員", "6 位", "無上限"),
-        ("生活圈 / 警戒區", "2 個", "無上限"),
-        ("關心的據點（老家/學校）", "1 個", "多據點"),
-        ("歷史回顧", "30 天", "完整"),
-        ("即時圈分享", "基本", "長時不限"),
-        ("所在地進階資料源", "每日摘要", "即時推播"),
-        ("自訂靜音時段", "—", "✓"),
-    ]
+    // 免費 vs 進階 分層（對照 MONETIZATION_PLAN.md 三方辯論裁決）。
+    // 額度數字一律讀 FreeTier.swift，不寫死數字——調整額度只需要改那邊即可讓這張表跟著變。
+    // 「自訂靜音時段」已免費上線（不是付費賣點），不得再出現在這張表。
+    private var tiers: [(feature: String, free: String, plus: String)] {
+        [
+            ("核心災害警報", "全開", "全開"),
+            ("家庭成員", "\(FreeTier.maxFamilyMembers) 人", "無上限"),
+            ("重要地點", "\(FreeTier.maxPlaces) 個", "無上限"),
+            ("歷史回顧", "\(FreeTier.historyDays) 天", "\(FreeTier.plusHistoryDays) 天"),
+            ("未來進階功能（城市安全情報、週報進階）", "—", "優先享有"),
+        ]
+    }
 
     var body: some View {
         NavigationStack {
@@ -27,10 +29,22 @@ struct PaywallView: View {
                 VStack(spacing: 24) {
                     header
                     safetyFreeBanner
-                    comparisonCard
-                    pricingCards
-                    ctaButton
+                    if store.isPlus {
+                        guardianPlusStatusCard
+                    } else {
+                        comparisonCard
+                        pricingCards
+                        ctaButton
+                        if let purchaseError = store.purchaseError {
+                            Text(purchaseError)
+                                .font(.caption)
+                                .foregroundStyle(HCColor.danger)
+                                .multilineTextAlignment(.center)
+                        }
+                        restoreAndManageButtons
+                    }
                     finePrint
+                    legalLinks
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
@@ -43,11 +57,8 @@ struct PaywallView: View {
                 }
             }
             .analyticsScreen("paywall")
-            .alert("訂閱功能即將推出", isPresented: $showComingSoon) {
-                Button("好", role: .cancel) {}
-            } message: {
-                Text("付費方案正在準備中。核心安全警報現在、未來都完全免費。")
-            }
+            .task { await store.loadProducts() }
+            .manageSubscriptionsSheet(isPresented: $showManageSubscriptions)
         }
     }
 
@@ -81,6 +92,31 @@ struct PaywallView: View {
         .background(HCColor.safe.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
     }
 
+    /// 已是 Guardian+：整頁改為感謝狀態，不再顯示購買 UI。
+    private var guardianPlusStatusCard: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(HCColor.brand)
+            Text("你已是 Guardian+")
+                .font(.title3.weight(.bold))
+            Text("謝謝你的支持，讓安心圈能持續守護更多家庭。你的家庭成員、多個關心據點與完整歷史回顧都已解鎖。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                showManageSubscriptions = true
+            } label: {
+                Text("管理訂閱")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .padding(.top, 4)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
     private var comparisonCard: some View {
         VStack(spacing: 0) {
             HStack {
@@ -104,18 +140,83 @@ struct PaywallView: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     }
 
+    @ViewBuilder
     private var pricingCards: some View {
-        VStack(spacing: 12) {
-            planCard(title: "年訂", price: "NT$690", note: "約 NT$58/月 · 附 7 天免費試用", badge: "最超值", selected: yearlySelected) {
-                yearlySelected = true
+        if let loadError = store.productLoadError {
+            VStack(spacing: 10) {
+                Text(loadError)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("重試") {
+                    Task { await store.reloadProducts() }
+                }
+                .font(.subheadline.weight(.semibold))
             }
-            planCard(title: "月訂", price: "NT$90", note: "每月自動續訂 · 隨時可取消", badge: nil, selected: !yearlySelected) {
-                yearlySelected = false
+            .frame(maxWidth: .infinity)
+            .padding(16)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        } else {
+            VStack(spacing: 12) {
+                planCard(
+                    title: "年訂",
+                    price: store.yearlyProduct?.displayPrice,
+                    note: yearlyNote,
+                    badge: "最超值",
+                    selected: yearlySelected
+                ) {
+                    yearlySelected = true
+                }
+                planCard(
+                    title: "月訂",
+                    price: store.monthlyProduct?.displayPrice,
+                    note: "每月自動續訂 · 隨時可取消",
+                    badge: nil,
+                    selected: !yearlySelected
+                ) {
+                    yearlySelected = false
+                }
             }
         }
     }
 
-    private func planCard(title: String, price: String, note: String, badge: String?, selected: Bool, tap: @escaping () -> Void) -> some View {
+    /// 年訂副標：優先顯示真實試用天數（讀自 .storekit／App Store Connect 設定的
+    /// introductory offer），沒有試用資訊時退回單純的折算文案。
+    private var yearlyNote: String {
+        var parts: [String] = []
+        if let yearly = store.yearlyProduct {
+            let monthly = yearly.price / 12
+            let formatted = monthly.formatted(yearly.priceFormatStyle)
+            parts.append("約 \(formatted)/月")
+        }
+        if let trialDays = freeTrialDays(for: store.yearlyProduct) {
+            parts.append("附 \(trialDays) 天免費試用")
+        }
+        return parts.isEmpty ? "年繳最划算" : parts.joined(separator: " · ")
+    }
+
+    /// 從商品的 introductory offer 讀出免費試用天數；非「免費試用」型態的優惠一律回傳 nil。
+    private func freeTrialDays(for product: Product?) -> Int? {
+        guard let offer = product?.subscription?.introductoryOffer,
+              offer.paymentMode == .freeTrial else { return nil }
+        let value = offer.period.value
+        switch offer.period.unit {
+        case .day: return value
+        case .week: return value * 7
+        case .month: return value * 30
+        case .year: return value * 365
+        @unknown default: return nil
+        }
+    }
+
+    private func planCard(
+        title: String,
+        price: String?,
+        note: String,
+        badge: String?,
+        selected: Bool,
+        tap: @escaping () -> Void
+    ) -> some View {
         Button(action: tap) {
             HStack(spacing: 14) {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
@@ -134,7 +235,14 @@ struct PaywallView: View {
                     Text(note).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(price).font(.title3.weight(.bold))
+                if let price {
+                    Text(price).font(.title3.weight(.bold))
+                } else {
+                    // 商品尚未載入完成：先用同尺寸佔位文字避免版面跳動，載入完成即替換
+                    Text("NT$00")
+                        .font(.title3.weight(.bold))
+                        .redacted(reason: .placeholder)
+                }
             }
             .padding(16)
             .background(
@@ -143,32 +251,87 @@ struct PaywallView: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(price == nil)
     }
 
     private var ctaButton: some View {
         Button {
-            showComingSoon = true
+            Task { await purchaseSelectedPlan() }
         } label: {
-            Text(yearlySelected ? "開始 7 天免費試用" : "訂閱 Guardian+")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(HCColor.brand, in: RoundedRectangle(cornerRadius: 14))
-                .foregroundStyle(.white)
+            HStack {
+                if store.purchaseInProgress {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Text(ctaTitle)
+                        .font(.headline)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(HCColor.brand, in: RoundedRectangle(cornerRadius: 14))
+            .foregroundStyle(.white)
         }
+        .disabled(store.purchaseInProgress || selectedProduct == nil)
+    }
+
+    private var ctaTitle: String {
+        if yearlySelected, freeTrialDays(for: store.yearlyProduct) != nil {
+            return "開始免費試用"
+        }
+        return "訂閱 Guardian+"
+    }
+
+    private var selectedProduct: Product? {
+        yearlySelected ? store.yearlyProduct : store.monthlyProduct
+    }
+
+    private func purchaseSelectedPlan() async {
+        guard let product = selectedProduct else { return }
+        await store.purchase(product)
+    }
+
+    private var restoreAndManageButtons: some View {
+        HStack(spacing: 20) {
+            Button("恢復購買") {
+                Task { await store.restorePurchases() }
+            }
+            Button("管理訂閱") {
+                showManageSubscriptions = true
+            }
+        }
+        .font(.footnote.weight(.semibold))
+        .disabled(store.purchaseInProgress)
     }
 
     private var finePrint: some View {
         VStack(spacing: 6) {
-            Text("試用結束前可隨時取消，不收費。訂閱透過 App Store 付款，可在系統設定中管理。")
+            // 倫理承諾：不分免費或付費，保命警報一律免費——這是信任的底線，寫在付費頁最顯眼的收尾處
+            Text("災害警報推播永遠免費，不分免費或付費。")
+                .foregroundStyle(.secondary)
+            Text("訂閱為自動續訂：除非在到期前至少 24 小時取消，否則會自動以相同方案續約並向 Apple 帳號扣款；可隨時在「設定 > Apple 帳號 > 訂閱」中取消或管理。試用期內取消不收費。")
             Text("安心圈不是 110／119 或緊急救難服務。")
         }
         .font(.caption2)
         .foregroundStyle(.tertiary)
         .multilineTextAlignment(.center)
     }
+
+    private var legalLinks: some View {
+        HStack(spacing: 16) {
+            NavigationLink("隱私權政策") {
+                LegalDocumentView(document: .privacy)
+            }
+            NavigationLink("使用條款") {
+                LegalDocumentView(document: .terms)
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
 }
 
 #Preview {
     PaywallView()
+        .environment(EntitlementStore())
 }

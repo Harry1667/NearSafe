@@ -14,6 +14,7 @@ struct HavenCircleApp: App {
     @Environment(\.scenePhase) private var scenePhase
     private let modelContainer: ModelContainer
     @State private var familySync = FamilySyncService()
+    @State private var entitlementStore = EntitlementStore()
     // 外觀模式：使用者可在設定頁強制淺色/深色（預設跟隨系統）
     @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
     @AppStorage(SettingsKeys.profileDisplayName) private var profileDisplayName = ""
@@ -82,7 +83,11 @@ struct HavenCircleApp: App {
                 // nil（跟隨系統）時不強制，交還系統深淺設定
                 .preferredColorScheme(AppearanceMode(rawValue: appearanceMode)?.colorScheme)
                 .environment(familySync)
+                .environment(entitlementStore)
                 .task {
+                    // StoreKit 2 交易長聽：先判定目前權益，再開 Transaction.updates 監聽
+                    // （續訂／退款／家庭共享成員的權益變化都要在 App 存活期間即時反映）
+                    entitlementStore.start()
                     // 遠端設定放最前面（5 秒逾時）：後面的資料管線要吃它的功能開關
                     await RemoteConfig.refresh()
                     Self.markCurrentUser(

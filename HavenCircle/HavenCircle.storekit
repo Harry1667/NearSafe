@@ -1,0 +1,121 @@
+{
+  "identifier" : "8F1B7C4A-6E3D-4E2A-9C5B-2A7D4F1E9B60",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "0",
+    "_developerTeamID" : "0",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "zh_TW",
+    "_storefront" : "TWN",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "20977001",
+      "localizations" : [],
+      "name" : "Guardian+",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "690",
+          "familyShareable" : true,
+          "groupNumber" : 1,
+          "internalID" : "20977011",
+          "introductoryOffer" : {
+            "internalID" : "20977012",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P2W"
+          },
+          "localizations" : [
+            {
+              "description" : "年繳最划算，含 14 天免費試用；解鎖無上限家庭成員、多個關心據點與完整歷史回顧。",
+              "displayName" : "Guardian+ 年訂",
+              "locale" : "zh_Hant"
+            }
+          ],
+          "productID" : "com.gomiigo.HavenCircleApp.plus.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Guardian+ Yearly",
+          "subscriptionGroupID" : "20977001",
+          "type" : "RecurringSubscription",
+          "win_back_offers" : []
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "90",
+          "familyShareable" : true,
+          "groupNumber" : 1,
+          "internalID" : "20977013",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "每月自動續訂，隨時可取消；解鎖無上限家庭成員、多個關心據點與完整歷史回顧。",
+              "displayName" : "Guardian+ 月訂",
+              "locale" : "zh_Hant"
+            }
+          ],
+          "productID" : "com.gomiigo.HavenCircleApp.plus.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Guardian+ Monthly",
+          "subscriptionGroupID" : "20977001",
+          "type" : "RecurringSubscription",
+          "win_back_offers" : []
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

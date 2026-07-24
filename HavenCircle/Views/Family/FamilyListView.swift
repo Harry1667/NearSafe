@@ -16,12 +16,15 @@ struct FamilyListView: View {
     @Environment(\.modelContext) private var context
     @Environment(FamilySyncService.self) private var sync
     @Environment(TabRouter.self) private var router
+    @Environment(EntitlementStore.self) private var entitlementStore
     @Query private var members: [LocalFamilyMember]
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleAccountEmail = ""
 
     @State private var adding = false
     @State private var addingPlace = false
+    /// 成員／地點額度閘門觸發時開這個付費頁（見 [gateAddFamilyMember] / [gateAddPlace]）
+    @State private var showPaywall = false
     /// 剛儲存的家人/地點：編輯器收合後接著替它開固定圈編輯器（兩段式流程合併成一段）
     @State private var newMemberForCircle: LocalFamilyMember?
 
@@ -91,8 +94,8 @@ struct FamilyListView: View {
         }
         .toolbar {
             Menu {
-                Button("新增家人", systemImage: "person.badge.plus") { adding = true }
-                Button("新增重要地點", systemImage: "mappin.and.ellipse") { addingPlace = true }
+                Button("新增家人", systemImage: "person.badge.plus") { gateAddFamilyMember() }
+                Button("新增重要地點", systemImage: "mappin.and.ellipse") { gateAddPlace() }
             } label: {
                 Label("新增", systemImage: "plus")
             }
@@ -106,6 +109,11 @@ struct FamilyListView: View {
                 addingPlace = false
                 createPlace(name: name)
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
+                .presentationSizing(.form)
         }
         .sheet(item: $newMemberForCircle) { member in
             CircleEditorView(member: member)
@@ -248,7 +256,7 @@ struct FamilyListView: View {
     private var addPlaceCard: some View {
         Section {
             Button {
-                addingPlace = true
+                gateAddPlace()
             } label: {
                 HStack(spacing: HCSpacing.x3) {
                     Image(systemName: "mappin.and.ellipse")
@@ -527,6 +535,30 @@ struct FamilyListView: View {
         }
     }
 
+    // MARK: - 付費閘門（成員／地點額度）
+
+    /// 「新增家人」入口共用閘門：額度用滿且非 Guardian+ 就改開付費頁，不放行手動新增表單。
+    /// 注意：邀請碼加入他人家庭圈的路徑不經過這裡（見 [EntitlementStore.canAddFamilyMember] 說明）。
+    private func gateAddFamilyMember() {
+        guard entitlementStore.canAddFamilyMember(currentCount: familyMembers.count) else {
+            Analytics.track("paywall_from_member_limit")
+            showPaywall = true
+            return
+        }
+        adding = true
+    }
+
+    /// 「新增重要地點」入口共用閘門：FamilyListView 的 toolbar 與 addPlaceCard 都呼叫這裡，
+    /// 保證兩處判斷的額度定義永遠一致。
+    private func gateAddPlace() {
+        guard entitlementStore.canAddPlace(currentCount: places.count) else {
+            Analytics.track("paywall_from_place_limit")
+            showPaywall = true
+            return
+        }
+        addingPlace = true
+    }
+
     /// PlaceSelectView 選定名稱後直接建立地點成員（不再經過 MemberEditorView 的打字表單），
     /// 接著沿用既有兩段式時序接固定圈編輯器。
     private func createPlace(name: String) {
@@ -546,5 +578,6 @@ struct FamilyListView: View {
     .modelContainer(PreviewSupport.container())
     .environment(FamilySyncService())
     .environment(TabRouter())
+    .environment(EntitlementStore())
 }
 #endif

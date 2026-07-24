@@ -11,6 +11,7 @@ struct HomeStatusView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(TabRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(EntitlementStore.self) private var entitlementStore
     // PlaceSelectView 選定後要直接建立地點成員，這裡才需要 modelContext（原本這件事都在
     // MemberEditorView 內部完成，這頁只負責呈現 sheet）
     @Environment(\.modelContext) private var context
@@ -23,6 +24,8 @@ struct HomeStatusView: View {
     /// 單人態「守護更多地方卡」：兩段式流程（先存地點、sheet 收合後再開固定圈編輯器）
     @State private var addingPlace = false
     @State private var newPlaceForCircle: LocalFamilyMember?
+    /// 地點額度閘門觸發時開這個付費頁（見 [gateAddPlace]，共用判斷在 EntitlementStore）
+    @State private var showPaywall = false
 
     /// 與地圖頁共用同一個聚合（SafetyStatus）：兩頁對「平安與否」的說法永遠一致，
     /// 且一律以未過濾事件計算——假性安心是這頁最不可犯的錯
@@ -134,6 +137,11 @@ struct HomeStatusView: View {
             }
             .sheet(item: $newPlaceForCircle) { member in
                 CircleEditorView(member: member)
+            }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView()
+                    // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
+                    .presentationSizing(.form)
             }
         }
     }
@@ -555,7 +563,8 @@ struct HomeStatusView: View {
             HStack {
                 Image(systemName: "clock.arrow.circlepath")
                     .foregroundStyle(HCColor.brand)
-                Text("回顧過去 30 天")
+                // 天數依方案分層跟著變（見 HistoryView／FreeTier），不寫死 30 天避免 Guardian+ 使用者看到錯誤天數
+                Text("回顧過去 \(entitlementStore.isPlus ? FreeTier.plusHistoryDays : FreeTier.historyDays) 天")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -593,7 +602,7 @@ struct HomeStatusView: View {
     /// 讓單人使用者在還沒有家人可看時，App 仍有事可做
     private var guardMorePlacesCard: some View {
         Button {
-            addingPlace = true
+            gateAddPlace()
         } label: {
             HStack(spacing: HCSpacing.x3) {
                 Image(systemName: "mappin.and.ellipse")
@@ -643,6 +652,20 @@ struct HomeStatusView: View {
         .padding(.horizontal, HCSpacing.x2)
     }
 
+    // MARK: - 付費閘門（地點額度）
+
+    /// 「守護更多地方」入口共用閘門：額度用滿且非 Guardian+ 就改開付費頁——
+    /// 判斷邏輯與 FamilyListView 共用同一份（見 [EntitlementStore.canAddPlace]）。
+    private func gateAddPlace() {
+        let placeCount = members.filter(\.isPlace).count
+        guard entitlementStore.canAddPlace(currentCount: placeCount) else {
+            Analytics.track("paywall_from_place_limit")
+            showPaywall = true
+            return
+        }
+        addingPlace = true
+    }
+
     /// 等前一張 sheet（新增重要地點）收合動畫結束再開固定圈編輯器；
     /// 立刻 present 會撞上仍在收合中的 sheet 而被系統丟棄
     /// （兩段式時序照抄 FamilyListView.scheduleCircleEditor 的作法）
@@ -670,5 +693,6 @@ struct HomeStatusView: View {
         .modelContainer(PreviewSupport.container())
         .environment(FamilySyncService())
         .environment(TabRouter())
+        .environment(EntitlementStore())
 }
 #endif
