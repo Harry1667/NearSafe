@@ -12,6 +12,51 @@ import SwiftData
 /// 分支判斷一律看 [FamilySyncService.isInFamilyCircle] / [FamilySyncService.isSolo]（雲端真相），
 /// 不看本機 LocalFamilyMember 筆數——本機清單是投影，剛加入時會落後於雲端，
 /// 用本機筆數判斷會出現「明明已加入卻還看到邀請空狀態」的錯覺（2026-07-24 實測撞到的 bug）。
+
+// MARK: - 家人列樣式共用小工具（FamilyListView 與 FamilyMembersOverviewView 都會用到）
+
+/// 身分 emoji：成員名對得上 FamilyRole.all 的用其 emoji（爸爸、媽媽⋯），對不上一律用中性黃臉。
+private func roleEmoji(for name: String) -> String {
+    FamilyRole.all.first(where: { $0.label == name })?.emoji ?? FamilyRole.customEmoji
+}
+
+/// 這位家人最新的安否回報時間（比對署名；還沒回報過就明講，不是留白讓人猜）
+private func lastPingText(_ member: LocalFamilyMember, pings: [SafetyPing]) -> String {
+    guard let ping = pings
+        .filter({ $0.senderName == member.name })
+        .max(by: { $0.createdAt < $1.createdAt }) else {
+        return "尚未回報"
+    }
+    return ping.createdAt.formatted(.relative(presentation: .named))
+}
+
+/// 位置狀態：分享中／過期／未開啟——三態直接對應即時圈是否存在、是否仍在有效時效內。
+private func locationStatusText(_ member: LocalFamilyMember) -> String {
+    guard let live = member.lifeCircles.first(where: { $0.kind == .live }) else {
+        return "未開啟"
+    }
+    return live.isActiveForAlerts ? "分享中" : "過期"
+}
+
+/// #15 本名/身分分離：家人清單「自己」那列的主標題——本名優先，
+/// 本名沒填才退回身分（爸爸／媽媽…），兩者皆空才 fallback「我」。
+/// FamilyListView 與 FamilyMembersOverviewView 共用同一份規則，不各自重寫一次。
+private func familySelfListTitle(displayName: String, familyRole: String) -> String {
+    let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmedName.isEmpty { return trimmedName }
+    let trimmedRole = familyRole.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmedRole.isEmpty ? "我" : trimmedRole
+}
+
+/// 「自己」那列的身分小標籤：只有本名跟身分「都」有值才顯示——本名沒填時身分已經
+/// 當主標題用了，不必再重複顯示一次同樣的字。
+private func familySelfRoleBadge(displayName: String, familyRole: String) -> String? {
+    let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedRole = familyRole.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedName.isEmpty, !trimmedRole.isEmpty else { return nil }
+    return trimmedRole
+}
+
 struct FamilyListView: View {
     @Environment(\.modelContext) private var context
     @Environment(FamilySyncService.self) private var sync
@@ -19,11 +64,11 @@ struct FamilyListView: View {
     @Environment(EntitlementStore.self) private var entitlementStore
     @Query private var members: [LocalFamilyMember]
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
+    @AppStorage(SettingsKeys.profileFamilyRole) private var familyRole = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleAccountEmail = ""
 
-    @State private var adding = false
     @State private var addingPlace = false
-    /// 成員／地點額度閘門觸發時開這個付費頁（見 [gateAddFamilyMember] / [gateAddPlace]）
+    /// 地點額度閘門觸發時開這個付費頁（見 [gateAddPlace]）
     @State private var showPaywall = false
     /// 剛儲存的家人/地點：編輯器收合後接著替它開固定圈編輯器（兩段式流程合併成一段）
     @State private var newMemberForCircle: LocalFamilyMember?
@@ -51,8 +96,11 @@ struct FamilyListView: View {
     private var isSignedIn: Bool { sync.state != .noAccount }
 
     private var me: LocalFamilyMember? { members.first(where: \.isCurrentUser) }
+    /// 家人清單（#4：含「自己」，排在最前面）——memberRow 會依 isCurrentUser 特判顯示方式。
     private var familyMembers: [LocalFamilyMember] {
-        members.filter { !$0.isPlace && !$0.isCurrentUser }
+        let others = members.filter { !$0.isPlace && !$0.isCurrentUser }
+        guard let me else { return others }
+        return [me] + others
     }
     private var places: [LocalFamilyMember] {
         members.filter(\.isPlace)
@@ -61,6 +109,15 @@ struct FamilyListView: View {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "我" : trimmed
     }
+    /// #15 本名/身分分離：家人清單「自己」那列的主標題（規則見檔案頂部共用函式 familySelfListTitle）。
+    private var selfListTitle: String {
+        familySelfListTitle(displayName: displayName, familyRole: familyRole)
+    }
+    /// 「自己」那列的身分小標籤（規則見檔案頂部共用函式 familySelfRoleBadge）。
+    /// 其他家人的身分沒有同步到雲端，這個標籤只會出現在自己這一列（刻意裁切，見任務說明）。
+    private var selfRoleBadge: String? {
+        familySelfRoleBadge(displayName: displayName, familyRole: familyRole)
+    }
     private var familyCircleDisplayName: String {
         let name = sync.familyName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? "我的家庭圈" : name
@@ -68,15 +125,20 @@ struct FamilyListView: View {
 
     var body: some View {
         List {
-            myAccountSection
             if !isInFamilyCircle {
+                // 未入圈：邀請大鈕（連同「輸入邀請碼加入」次要鈕）永遠置頂——
+                // 這正是使用者罵「沒有引導」的畫面，入口不能被我的帳號卡擠到第二位（#16）
                 emptyStateSection
+                myAccountSection
                 // 重要地點小節固定在成員／狀態卡之後：任何家庭狀態下都不消失、不沉底（2026-07 真機回饋）
                 placesSection
                 // 單人也能用：這正是使用者要的「我的即時圈」——純本地，不用登入
                 FollowCircleToggleSection()
             } else if isCircleSolo {
+                familyCircleHeaderSection
                 waitingForFamilyCard
+                joinByCodeSection
+                InviteFamilySection()
                 placesSection
                 FollowCircleToggleSection(disambiguateFromSharing: true)
                 LiveCircleSharingSection()
@@ -84,10 +146,11 @@ struct FamilyListView: View {
             } else {
                 familyCircleHeaderSection
                 familyMembersSection
+                InviteFamilySection()
+                joinByCodeSection
                 placesSection
                 FollowCircleToggleSection(disambiguateFromSharing: true)
                 LiveCircleSharingSection()
-                InviteFamilySection()
                 leaveFamilySection
             }
         }
@@ -98,19 +161,13 @@ struct FamilyListView: View {
                 Button("設定", systemImage: "gearshape") { router.showSettings = true }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("新增家人", systemImage: "person.badge.plus") { gateAddFamilyMember() }
-                    Button("新增守護地點", systemImage: "mappin.and.ellipse") { gateAddPlace() }
-                } label: {
-                    // 視覺上維持原本的「+」圖示，但 accessibilityLabel 講清楚這是選單而非單一動作
-                    Image(systemName: "plus")
-                        .fontWeight(.medium)
-                }
-                .accessibilityLabel("新增家人或守護地點")
+                // #17：拿掉「新增家人」這個假家人卡入口（手動建的本機成員從沒真的邀請成功，
+                // 卻讓使用者誤以為已經加入）；「+」只剩「新增守護地點」，改成單一動作按鈕。
+                Button("新增守護地點", systemImage: "plus") { gateAddPlace() }
+                    .accessibilityLabel("新增守護地點")
             }
         }
         .signInPreflight(signInGate)
-        .sheet(isPresented: $adding) { MemberEditorView(onSaved: scheduleCircleEditor) }
         .sheet(isPresented: $addingPlace) {
             // 名字用點擊選擇取代打字（少一步輸入畫面）；選定後直接建立地點成員，
             // 沿用既有的兩段式時序接固定圈編輯器
@@ -182,30 +239,46 @@ struct FamilyListView: View {
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 
-    // MARK: - D2：我的帳號卡（固定頂部，未入圈／已入圈都顯示）
+    // MARK: - D2：我的帳號卡（只在未入圈時顯示——已入圈後這件事由家庭圈 header／成員清單接手，
+    // 見 familyCircleHeaderSection／familyMembersSection 的「自己」列）
 
+    /// 整張卡可點：已登入點下去開設定頁（「個人資訊」在設定頁最上方，可改本名），
+    /// 未登入點下去走跟右側「登入」按鈕相同的登入前置流程（#16 可到個人資訊）。
     private var myAccountSection: some View {
         Section {
-            HStack(spacing: HCSpacing.x3) {
-                Text(roleEmoji(for: myDisplayName))
-                    .font(.system(size: 30))
-                    .frame(width: 48, height: 48)
-                    .background(.secondary.opacity(0.08), in: Circle())
-                VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                    Text(accountDisplayText).font(.body.weight(.semibold))
-                    Text(accountSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            Button {
+                if isSignedIn {
+                    router.showSettings = true
+                } else {
+                    signInGate.isPresentingPreflight = true
                 }
-                Spacer()
-                if !isSignedIn {
-                    Button("登入") {
-                        signInGate.isPresentingPreflight = true
+            } label: {
+                HStack(spacing: HCSpacing.x3) {
+                    Text(roleEmoji(for: myDisplayName))
+                        .font(.system(size: 30))
+                        .frame(width: 48, height: 48)
+                        .background(.secondary.opacity(0.08), in: Circle())
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                        Text(accountDisplayText).font(.body.weight(.semibold))
+                        Text(accountSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if isSignedIn {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("登入")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(HCColor.brand)
+                    }
                 }
+                .foregroundStyle(.primary)
+                .hcCard()
             }
-            .hcCard()
+            .buttonStyle(.plain)
         } header: {
             Text("我的帳號")
         }
@@ -254,9 +327,9 @@ struct FamilyListView: View {
                 } label: {
                     // 問題2：未登入時先講成本再讓人按——「登入並邀請家人」比裸「邀請家人」
                     // 更誠實，不會讓人點下去才發現還要先過一關登入。
-                    Label(isSignedIn ? "邀請家人" : "登入並邀請家人", systemImage: "person.crop.circle.badge.plus")
+                    // #9：不用 Label 直接套 .frame(maxWidth: .infinity)（icon 會消失），改用 HCCenteredLabel。
+                    HCCenteredLabel(isSignedIn ? "邀請家人" : "登入並邀請家人", systemImage: "person.crop.circle.badge.plus")
                         .font(.body.weight(.medium))
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -282,15 +355,16 @@ struct FamilyListView: View {
                         .multilineTextAlignment(.center)
                 }
                 // 問題2：阿嬤是被邀請方——小灰字容易被當成無用的免責宣告直接忽略，
-                // 升級成次要按鈕樣式，跟主鈕同寬同尺寸但視覺次要
-                Button("我收到了邀請碼") {
+                // 升級成次要按鈕樣式，跟主鈕同寬同尺寸但視覺次要（#16：輸碼入口置頂可見）
+                Button {
                     signInGate.perform {
                         prefilledJoinCode = nil
                         showJoinByCode = true
                     }
+                } label: {
+                    HCCenteredLabel("輸入邀請碼加入", systemImage: "number.square")
+                        .font(.body.weight(.medium))
                 }
-                .font(.body.weight(.medium))
-                .frame(maxWidth: .infinity)
                 .buttonStyle(.bordered)
                 .controlSize(.large)
             }
@@ -329,10 +403,14 @@ struct FamilyListView: View {
         }
     }
 
+    /// #15 本名/身分分離：選身分只寫 `profileFamilyRole`，絕不覆寫 `profileDisplayName`
+    /// （舊行為會把本名蓋成「媽媽」，本名跟身分是兩件事）。member.name 本名優先，
+    /// 本名還沒填時才用身分當顯示名，避免同步給家人的名字是空白。
     private func applyRole(_ role: FamilyRole) {
-        displayName = role.label
+        familyRole = role.label
         if let me {
-            me.name = role.label
+            let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            me.name = trimmedName.isEmpty ? role.label : trimmedName
             context.saveReporting()
         }
         Analytics.track("role_selected")
@@ -371,9 +449,9 @@ struct FamilyListView: View {
                 Button {
                     showInviteOptions = true
                 } label: {
-                    Label("再次分享", systemImage: "square.and.arrow.up")
+                    // #9：同上，改用 HCCenteredLabel 保留 icon
+                    HCCenteredLabel("再次分享", systemImage: "square.and.arrow.up")
                         .font(.body.weight(.medium))
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -393,27 +471,35 @@ struct FamilyListView: View {
         .listRowBackground(Color.clear)
     }
 
-    // MARK: - A4：家庭圈 header（已入圈且多人）
+    // MARK: - A4：家庭圈 header（已入圈，單人／多人共用）
 
+    /// #16：整張卡可點入看成員清單（FamilyMembersOverviewView），單人時裡面只有自己一列，
+    /// 多人時跟下方 familyMembersSection 同款內容——體感一致，不是看得到卻按不下去的假卡片。
     private var familyCircleHeaderSection: some View {
         Section {
-            HStack(spacing: HCSpacing.x3) {
-                Image(systemName: "house.fill")
-                    .font(.title3.weight(.medium))
-                    .foregroundStyle(HCColor.brand)
-                VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                    Text(familyCircleDisplayName)
-                        .font(.title3.weight(.bold))
-                    Text("\(max(sync.memberUids.count, 1)) 位成員")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            NavigationLink {
+                FamilyMembersOverviewView(familyName: familyCircleDisplayName, members: familyMembers)
+            } label: {
+                HStack(spacing: HCSpacing.x3) {
+                    Image(systemName: "house.fill")
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(HCColor.brand)
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                        Text(familyCircleDisplayName)
+                            .font(.title3.weight(.bold))
+                        Text("\(max(sync.memberUids.count, 1)) 位成員")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.vertical, HCSpacing.x1)
             }
-            .padding(.vertical, HCSpacing.x1)
         }
     }
 
+    /// 家人清單：#4 本名/身分分離——「自己」這列也在清單裡（排在最前面），
+    /// 主標題本名優先、身分當輔助小標籤；其他成員的身分沒有同步到雲端，只顯示同步來的名字。
     @ViewBuilder
     private var familyMembersSection: some View {
         if !familyMembers.isEmpty {
@@ -435,11 +521,15 @@ struct FamilyListView: View {
                     )
                     .listRowBackground(Color.clear)
                     .swipeActions {
-                        Button(role: .destructive) {
-                            context.delete(member)
-                            context.saveReporting()
-                        } label: {
-                            Label("刪除", systemImage: "trash")
+                        // 自己這列不給滑動刪除：刪掉的是本機的「自己」成員資料，不是退出家庭圈
+                        // （退出家庭圈有專門的 leaveFamilySection，語意不同，不能被滑一下誤觸）
+                        if !member.isCurrentUser {
+                            Button(role: .destructive) {
+                                context.delete(member)
+                                context.saveReporting()
+                            } label: {
+                                Label("刪除", systemImage: "trash")
+                            }
                         }
                     }
                 }
@@ -449,14 +539,23 @@ struct FamilyListView: View {
 
     private func memberRow(_ member: LocalFamilyMember) -> some View {
         let circleCount = member.lifeCircles.count
+        let titleText = member.isCurrentUser ? selfListTitle : member.name
         return HStack(spacing: HCSpacing.x3) {
-            Text(roleEmoji(for: member.name))
+            Text(roleEmoji(for: titleText))
                 .font(.system(size: 24))
                 .frame(width: 40, height: 40)
                 .background(.secondary.opacity(0.08), in: Circle())
             VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                Text(member.name).font(.body.weight(.medium))
-                Text("\(lastPingText(member)) · \(locationStatusText(member))")
+                HStack(spacing: HCSpacing.x2) {
+                    Text(titleText).font(.body.weight(.medium))
+                    // #4：身分小標籤只出現在自己這列——其他家人的身分沒有同步到雲端（刻意裁切）
+                    if member.isCurrentUser, let badge = selfRoleBadge {
+                        Text("〔\(badge)〕")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("\(lastPingText(member, pings: sync.pings)) · \(locationStatusText(member))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -508,8 +607,25 @@ struct FamilyListView: View {
             Button {
                 gateAddPlace()
             } label: {
-                Label("新增守護地點", systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity)
+                // #9：同上，改用 HCCenteredLabel 保留 icon
+                HCCenteredLabel("新增守護地點", systemImage: "plus.circle.fill")
+            }
+        }
+    }
+
+    // MARK: - B：輸入邀請碼加入（#16＋#4輸碼：已入圈狀態下的次要入口）
+
+    /// 已入圈（單人等待／多人）狀態下仍要摸得到「輸入邀請碼加入」——例如手機同時要加入
+    /// 另一個家庭圈邀請碼的情境；未入圈時的主要入口在 emptyStateSection。
+    private var joinByCodeSection: some View {
+        Section {
+            Button {
+                signInGate.perform {
+                    prefilledJoinCode = nil
+                    showJoinByCode = true
+                }
+            } label: {
+                Label("輸入邀請碼加入", systemImage: "number.square")
             }
         }
     }
@@ -578,21 +694,6 @@ struct FamilyListView: View {
         }
     }
 
-    /// 身分 emoji：成員名對得上 FamilyRole.all 的用其 emoji（爸爸、媽媽⋯），對不上一律用中性黃臉。
-    private func roleEmoji(for name: String) -> String {
-        FamilyRole.all.first(where: { $0.label == name })?.emoji ?? FamilyRole.customEmoji
-    }
-
-    /// 這位家人最新的安否回報時間（比對署名；還沒回報過就明講，不是留白讓人猜）
-    private func lastPingText(_ member: LocalFamilyMember) -> String {
-        guard let ping = sync.pings
-            .filter({ $0.senderName == member.name })
-            .max(by: { $0.createdAt < $1.createdAt }) else {
-            return "尚未回報"
-        }
-        return ping.createdAt.formatted(.relative(presentation: .named))
-    }
-
     /// 地點列表副標：一個地點剛好一個警戒圈，直接講那個圈的實際資訊（地址優先，
     /// 沒有地址文字才退回警戒半徑），比報「N 個警戒圈」這種需要心算的數字有用；
     /// 0 圈孤兒（歷史殘留）維持提示「還沒設」並暗示點進去完成。
@@ -605,21 +706,12 @@ struct FamilyListView: View {
         return "警戒半徑 \(circle.radiusMeters) 公尺"
     }
 
-    /// 位置狀態：分享中／過期／未開啟——三態直接對應即時圈是否存在、是否仍在有效時效內。
-    private func locationStatusText(_ member: LocalFamilyMember) -> String {
-        guard let live = member.lifeCircles.first(where: { $0.kind == .live }) else {
-            return "未開啟"
-        }
-        return live.isActiveForAlerts ? "分享中" : "過期"
-    }
-
     /// 等前一張 sheet 的收合動畫結束再開警戒圈編輯器；
     /// 立刻 present 會撞上仍在收合中的 sheet 而被系統丟棄。
     ///
     /// 鐵律：只有「地點」才會有警戒圈（一個守護地點＝剛好一個警戒圈，額度＝地點數）。
-    /// MemberEditorView 的「新增家人」onSaved 也會呼叫這個函式（見上方 `adding` sheet），
-    /// 若不擋在這裡，新增家人時會順手替這位「人」建立一個不受 gateAddPlace 額度控管的
-    /// 固定圈，等於繞過守護地點額度閘門——這裡擋掉，只放行地點成員（見 createPlace）。
+    /// 只放行地點成員（見 createPlace）——#17 移除「新增家人」假家人卡入口後，
+    /// 這個函式現在只會被地點流程呼叫，guard 仍保留當防呆。
     private func scheduleCircleEditor(_ member: LocalFamilyMember) {
         guard member.isPlace else { return }
         Task {
@@ -628,18 +720,7 @@ struct FamilyListView: View {
         }
     }
 
-    // MARK: - 付費閘門（成員／地點額度）
-
-    /// 「新增家人」入口共用閘門：額度用滿且非 Guardian+ 就改開付費頁，不放行手動新增表單。
-    /// 注意：邀請碼加入他人家庭圈的路徑不經過這裡（見 [EntitlementStore.canAddFamilyMember] 說明）。
-    private func gateAddFamilyMember() {
-        guard entitlementStore.canAddFamilyMember(currentCount: familyMembers.count) else {
-            Analytics.track("paywall_from_member_limit")
-            showPaywall = true
-            return
-        }
-        adding = true
-    }
+    // MARK: - 付費閘門（地點額度）
 
     /// 「新增重要地點」入口共用閘門：FamilyListView 的 toolbar 與 placesSection 內的新增列都呼叫這裡，
     /// 保證兩處判斷的額度定義永遠一致。
@@ -660,6 +741,73 @@ struct FamilyListView: View {
         context.saveReporting()
         Analytics.track("place_added")
         scheduleCircleEditor(member)
+    }
+}
+
+/// #16：家庭圈成員總覽——從 familyCircleHeaderSection「N 位成員」卡片點入的目的地，
+/// 讓那張卡片真的「可以點進去看成員清單」，不是看得到摸不到的假卡片。
+/// 列樣式與 FamilyListView.familyMembersSection 同款（本名優先＋自己身分小標籤），
+/// 靠檔案頂部的共用小工具（roleEmoji／lastPingText／locationStatusText／familySelfListTitle／
+/// familySelfRoleBadge）保持兩處顯示邏輯一致，不各自維護一份。
+private struct FamilyMembersOverviewView: View {
+    let familyName: String
+    /// 呼叫端已把「自己」排在最前面（見 FamilyListView.familyMembers）
+    let members: [LocalFamilyMember]
+    @Environment(FamilySyncService.self) private var sync
+    @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
+    @AppStorage(SettingsKeys.profileFamilyRole) private var familyRole = ""
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(members) { member in
+                    NavigationLink {
+                        MemberDetailView(member: member)
+                    } label: {
+                        row(member)
+                    }
+                }
+            } footer: {
+                if members.count <= 1 {
+                    Text("目前還沒有其他家人加入，邀請碼可以在家人頁隨時再分享一次。")
+                }
+            }
+        }
+        .navigationTitle(familyName)
+        .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("family_members_overview")
+    }
+
+    private func titleText(_ member: LocalFamilyMember) -> String {
+        member.isCurrentUser ? familySelfListTitle(displayName: displayName, familyRole: familyRole) : member.name
+    }
+
+    private func row(_ member: LocalFamilyMember) -> some View {
+        let title = titleText(member)
+        return HStack(spacing: HCSpacing.x3) {
+            Text(roleEmoji(for: title))
+                .font(.system(size: 24))
+                .frame(width: 40, height: 40)
+                .background(.secondary.opacity(0.08), in: Circle())
+            VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                HStack(spacing: HCSpacing.x2) {
+                    Text(title).font(.body.weight(.medium))
+                    if member.isCurrentUser,
+                       let badge = familySelfRoleBadge(displayName: displayName, familyRole: familyRole) {
+                        Text("〔\(badge)〕")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("\(lastPingText(member, pings: sync.pings)) · \(locationStatusText(member))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("\(member.lifeCircles.count) 圈")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

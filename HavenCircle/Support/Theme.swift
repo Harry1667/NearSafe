@@ -110,6 +110,29 @@ enum HCAppearance {
     }
 }
 
+/// 保留 icon 又能置中的按鈕標籤：直接對 SwiftUI 內建 `Label` 套 `.frame(maxWidth: .infinity)`
+/// 會讓 SF Symbol 消失、只剩文字（2026-07「按鈕文字置中」commit 撞到的反模式，#9）。
+/// 改用手動 HStack＋左右 Spacer 達成「置中且圖示不消失」，家人頁重設計時修好的幾處置中鈕
+/// 都改用這個共用元件，避免各檔各自重蹈覆轍。
+struct HCCenteredLabel: View {
+    let title: String
+    let systemImage: String
+
+    init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Image(systemName: systemImage)
+            Text(title)
+            Spacer()
+        }
+    }
+}
+
 extension View {
     /// 統一卡片：淡底＋連續圓角。不用 Material 疊 Material（會掉幀且對比不足）。
     func hcCard() -> some View {

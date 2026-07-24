@@ -37,7 +37,8 @@ struct FamilyHubView: View {
         Button {
             showCheckIn = true
         } label: {
-            Label("回報平安", systemImage: "checkmark.shield.fill")
+            // #9：不用 Label 直接套 .frame(maxWidth:)（icon 會消失），改用 HCCenteredLabel。
+            HCCenteredLabel("回報平安", systemImage: "checkmark.shield.fill")
                 .font(.headline)
                 // iPad：與內容清單同寬上限，不讓整條按鈕撐滿 13 吋全寬
                 .frame(maxWidth: 600)

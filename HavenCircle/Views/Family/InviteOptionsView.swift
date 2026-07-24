@@ -24,9 +24,9 @@ struct InviteOptionsView: View {
                     qrSection(code: code)
                     Section {
                         ShareLink(item: shareText(code: code)) {
-                            Label("用訊息或 AirDrop 分享邀請碼", systemImage: "square.and.arrow.up")
+                            // #9：不用 Label 直接套 .frame(maxWidth: .infinity)（icon 會消失），改用 HCCenteredLabel。
+                            HCCenteredLabel("用訊息或 AirDrop 分享邀請碼", systemImage: "square.and.arrow.up")
                                 .font(.body.weight(.medium))
-                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(HCColor.brand)
@@ -87,10 +87,10 @@ struct InviteOptionsView: View {
                 Button {
                     Task { await regenerate() }
                 } label: {
-                    Label("重新產生邀請碼", systemImage: "arrow.clockwise")
+                    // #9：同上，改用 HCCenteredLabel 保留 icon
+                    HCCenteredLabel("重新產生邀請碼", systemImage: "arrow.clockwise")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
                 }
             }
             if let regenerateError {

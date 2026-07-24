@@ -175,11 +175,49 @@ struct CircleEditorView: View {
                     Button("取消") { dismiss() }
                 }
             }
+            // #4：常駐醒目提示——只要位置還沒確認，這段說明就固定顯示（不是條件式時有時無），
+            // 讓「儲存鈕按不下去」的原因一眼可見，不用等使用者先按過搜尋失敗才看到提示。
+            .safeAreaInset(edge: .bottom) {
+                if locationNeedsConfirmation {
+                    unresolvedLocationBanner
+                }
+            }
             .analyticsScreen("circle_editor")
         }
         // 未儲存就離開（取消按鈕／下滑手勢關閉 sheet）兩條路徑都會讓這個 View 從畫面消失，
         // 用同一個 .onDisappear 收斂判斷，不必分別在取消按鈕與下滑手勢各接一次
         .onDisappear { deleteOrphanPlaceIfNeeded() }
+        // #4：新增地點且是「住家」時，嘗試自動帶入目前位置——住家本來就是「不必多問一次」
+        // 的信任情境（見上方「把目前位置設為這個守護地點」按鈕同樣的判斷），減少卡住機率。
+        // 其餘地點名稱（爸媽家、公司⋯）刻意不自動帶入：使用者當下人多半不在那個地點，
+        // 靜默帶入目前位置反而會建出錯誤的警戒圈，安全風險比「多一步確認」更高。
+        // 沒有定位權限就安靜略過，不 crash、也不強制要求權限。
+        .task {
+            guard isNewPlaceCircle, member.name == "住家",
+                  picked == nil, found == nil,
+                  LocationService.shared.isAuthorized else { return }
+            await useCurrentLocation()
+        }
+    }
+
+    /// #4 常駐提示文案：清楚列出三種能解除「位置待確認」的動作，不只是抽象地說「請確認位置」。
+    private var unresolvedLocationBanner: some View {
+        VStack(alignment: .leading, spacing: HCSpacing.x1) {
+            Label("請先確認地點位置，儲存鈕才會亮起", systemImage: "exclamationmark.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(HCColor.attention)
+            Text("搜尋地址、點「把目前位置設為這個守護地點」，或在地圖上點一下，三選一即可。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(HCSpacing.x3)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(HCColor.attention.opacity(0.3))
+                .frame(height: 1)
+        }
     }
 
     /// 新增地點兩段式流程的收尾：步驟 A（PlaceSelectView／FamilyListView／HomeStatusView

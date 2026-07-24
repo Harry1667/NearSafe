@@ -11,6 +11,7 @@ struct JoinByCodeView: View {
     @Environment(\.modelContext) private var context
     @Query private var members: [LocalFamilyMember]
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
+    @AppStorage(SettingsKeys.profileFamilyRole) private var familyRole = ""
 
     /// B2：deep link／QR 帶入的預填碼；出現時自動觸發一次查詢，省去使用者再打一次字。
     var prefilledCode: String? = nil
@@ -294,10 +295,13 @@ struct JoinByCodeView: View {
         }
     }
 
+    /// #15 本名/身分分離：選身分只寫 `profileFamilyRole`，絕不覆寫 `profileDisplayName`。
+    /// member.name 本名優先，本名還沒填時才用身分當顯示名。
     private func applyRole(_ role: FamilyRole) {
-        displayName = role.label
+        familyRole = role.label
         if let me = members.first(where: \.isCurrentUser) {
-            me.name = role.label
+            let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            me.name = trimmedName.isEmpty ? role.label : trimmedName
             context.saveReporting()
         }
         Analytics.track("role_selected")

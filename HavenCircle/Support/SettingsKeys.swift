@@ -9,6 +9,10 @@ enum SettingsKeys {
     static let digestEnabled = "digestEnabled"
     static let digestHour = "digestHour"
     static let profileDisplayName = "profileDisplayName"
+    /// 家庭身分（爸爸／媽媽…）：與本名分離的獨立鍵（#15）。選身分只寫這裡，
+    /// 絕不覆寫 profileDisplayName——避免「選了『媽媽』就把本名蓋掉」的舊行為。
+    /// 只記自己的身分；其他家人的身分不會同步到雲端，家人清單上只有「自己」這列會顯示身分標籤。
+    static let profileFamilyRole = "profileFamilyRole"
     static let liveLocationSharingEnabled = "liveLocationSharingEnabled"
     static let liveCircleRadiusMeters = "liveCircleRadiusMeters"
     static let liveLocationDeviceID = "liveLocationDeviceID"

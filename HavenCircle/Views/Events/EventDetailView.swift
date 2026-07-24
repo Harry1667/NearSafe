@@ -9,6 +9,7 @@ struct EventDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(FamilySyncService.self) private var sync
     @AppStorage(SettingsKeys.profileDisplayName) private var profileName = ""
+    @AppStorage(SettingsKeys.profileFamilyRole) private var familyRole = ""
     @State private var showResolveConfirmation = false
     @State private var checkInFeedback: String?
     /// 回報失敗／逾時的人話錯誤（見 FamilySyncService.humanPingErrorMessage）；
@@ -462,10 +463,13 @@ struct EventDetailView: View {
         }
     }
 
+    /// #15 本名/身分分離：選身分只寫 `profileFamilyRole`，絕不覆寫 `profileDisplayName`。
+    /// member.name 本名優先，本名還沒填時才用身分當顯示名。
     private func applyRole(_ role: FamilyRole) {
-        profileName = role.label
+        familyRole = role.label
         if let me = members.first(where: \.isCurrentUser) {
-            me.name = role.label
+            let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+            me.name = trimmedName.isEmpty ? role.label : trimmedName
             context.saveReporting()
         }
         Analytics.track("role_selected")
