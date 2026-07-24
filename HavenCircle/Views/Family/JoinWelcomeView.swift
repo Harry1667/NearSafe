@@ -38,6 +38,9 @@ struct JoinWelcomeView: View {
         // 避免整頁儀式感在 13 吋螢幕上被拉伸得又空又怪
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
+        // fullScreenCover 呈現、根層只有 VStack，沒有 List/Form/NavigationStack 自帶的
+        // 不透明底：同 RoleSelectView 的坑，鋪系統底色避免深色模式整層透明。
+        .background(Color(.systemBackground).ignoresSafeArea())
         .analyticsScreen("join_welcome")
     }
 }

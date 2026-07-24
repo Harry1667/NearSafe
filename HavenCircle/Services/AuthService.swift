@@ -161,6 +161,38 @@ final class AuthService {
     }
 }
 
+extension AuthService {
+    /// 統一把 Sign in with Apple／Firebase 相關錯誤轉成人話：原始錯誤一律記 log（error 級）
+    /// 供除錯排查，UI 只顯示對使用者友善的訊息，不直出 `error.localizedDescription`
+    /// （真機上曾出現「AuthorizationError error 10…」這類讀不懂又被截斷的訊息）。
+    ///
+    /// - Parameters:
+    ///   - error: 原始錯誤（ASAuthorizationError／URLError／其他）。
+    ///   - context: 只用於 log 的場景描述（例如「登入失敗」「刪除帳號驗證失敗」），不會顯示給使用者。
+    /// - Returns: 給使用者看的訊息；`nil` 表示不需要顯示任何東西（例如使用者主動按取消）。
+    static func userFacingMessage(for error: Error, context: String) -> String? {
+        // 不論最終要不要顯示給使用者，原始錯誤都先記下來，除錯才有根據。
+        AppLog.cloudError("\(context)：\(error.localizedDescription)")
+
+        if let authError = error as? ASAuthorizationError {
+            if authError.code == .canceled {
+                // 使用者主動取消，不是錯誤，不吵他。
+                return nil
+            }
+            // 其餘 ASAuthorizationError（含 .unknown / error 1000）最常見成因是
+            // 這台裝置根本沒有登入 Apple 帳號，直接告訴使用者怎麼解。
+            return "登入沒有完成。請確認這台裝置已在「設定」登入 Apple 帳號，然後再試一次。"
+        }
+
+        let nsError = error as NSError
+        if error is URLError || nsError.domain == NSURLErrorDomain {
+            return "網路連線有問題，請稍後再試。"
+        }
+
+        return "登入失敗，請再試一次。"
+    }
+}
+
 enum AuthError: LocalizedError {
     case missingNonce
     case missingIdentityToken

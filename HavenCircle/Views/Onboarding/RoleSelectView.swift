@@ -78,6 +78,9 @@ struct RoleSelectView: View {
         // iPad 上限制內容欄寬度並置中，避免固定 3 欄的方塊在 13 吋螢幕上被拉得過大
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
+        // fullScreenCover 呈現、根層又只有 VStack（無 List/Form/NavigationStack 自帶不透明底），
+        // 真機深色模式下會整層透明、跟底下畫面疊成鬼畫面——鋪一層系統底色，深淺色都對。
+        .background(Color(.systemBackground).ignoresSafeArea())
         .analyticsScreen("role_select")
         .alert("家人怎麼叫你？", isPresented: $showCustomInput) {
             TextField("例如：姊姊、寶寶、阿姨", text: $customName)

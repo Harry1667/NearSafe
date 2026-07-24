@@ -557,26 +557,35 @@ private struct AppleAccountView: View {
     var body: some View {
         List {
             Section("Apple 帳號資訊") {
-                if !appleEmail.isEmpty {
-                    LabeledContent("Email", value: appleEmail)
-                }
-                // 真登入：nonce/scopes 由 AuthService 統一設定，換到 Firebase uid 才是家庭圈能用的身份
-                // （原本這顆按鈕只寫本機 @AppStorage，從不呼叫 AuthService，是一顆假登入按鈕）
-                SignInWithAppleButton(.continue) { request in
-                    AuthService.shared.prepareAppleRequest(request)
-                } onCompletion: { result in
-                    handleSignIn(result)
-                }
-                .frame(height: 44)
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                if let signInError {
-                    Text(signInError)
+                if sync.state != .noAccount {
+                    // 已登入：顯示現況，不能同時又冒出一顆登入按鈕（真機回報過這個自相矛盾）
+                    LabeledContent("名稱", value: displayName.isEmpty ? "未設定" : displayName)
+                    if !appleEmail.isEmpty {
+                        LabeledContent("Email", value: appleEmail)
+                    }
+                    Text("已用 Apple 帳號登入安心圈，家人回報平安與即時位置會同步給家庭圈。")
                         .font(.caption)
-                        .foregroundStyle(HCColor.danger)
+                        .foregroundStyle(.secondary)
+                } else {
+                    // 未登入：維持原本的登入按鈕與說明
+                    // 真登入：nonce/scopes 由 AuthService 統一設定，換到 Firebase uid 才是家庭圈能用的身份
+                    // （原本這顆按鈕只寫本機 @AppStorage，從不呼叫 AuthService，是一顆假登入按鈕）
+                    SignInWithAppleButton(.continue) { request in
+                        AuthService.shared.prepareAppleRequest(request)
+                    } onCompletion: { result in
+                        handleSignIn(result)
+                    }
+                    .frame(height: 44)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    if let signInError {
+                        Text(signInError)
+                            .font(.caption)
+                            .foregroundStyle(HCColor.danger)
+                    }
+                    Text("用 Apple 帳號登入安心圈：免費，只用來讓家人找到彼此、同步安否回報與即時位置。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("用 Apple 帳號登入安心圈：免費，只用來讓家人找到彼此、同步安否回報與即時位置。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section("登入狀態") {
@@ -654,14 +663,13 @@ private struct AppleAccountView: View {
                     _ = try await AuthService.shared.completeAppleSignIn(credential)
                     await sync.refreshAccountStatus()
                 } catch {
-                    signInError = "登入失敗：\(error.localizedDescription)。請重試一次。"
+                    // 原始錯誤只進 log；UI 一律顯示轉譯過的人話（見 AuthService.userFacingMessage）
+                    signInError = AuthService.userFacingMessage(for: error, context: "登入失敗")
                 }
             }
         case .failure(let error):
-            // 使用者按取消也會走到這裡，不當成錯誤吵他
-            if (error as? ASAuthorizationError)?.code != .canceled {
-                signInError = "登入失敗：\(error.localizedDescription)"
-            }
+            // 取消／裝置未登入／網路問題都交給共用轉譯判斷；使用者主動取消時會回傳 nil，不吵他
+            signInError = AuthService.userFacingMessage(for: error, context: "登入失敗")
         }
     }
 
@@ -785,14 +793,13 @@ private struct DeleteAccountReauthSheet: View {
                     onFinished()
                 } catch {
                     isDeleting = false
-                    errorMessage = "驗證或刪除失敗：\(error.localizedDescription)。請重試一次。"
+                    // 原始錯誤只進 log；UI 一律顯示轉譯過的人話（見 AuthService.userFacingMessage）
+                    errorMessage = AuthService.userFacingMessage(for: error, context: "刪除帳號驗證失敗")
                 }
             }
         case .failure(let error):
-            // 使用者按取消不當成錯誤吵他
-            if (error as? ASAuthorizationError)?.code != .canceled {
-                errorMessage = "驗證失敗：\(error.localizedDescription)"
-            }
+            // 取消／裝置未登入／網路問題都交給共用轉譯判斷；使用者主動取消時會回傳 nil，不吵他
+            errorMessage = AuthService.userFacingMessage(for: error, context: "刪除帳號驗證失敗")
         }
     }
 }

@@ -142,14 +142,13 @@ private struct SignInPreflightCard: View {
                     onSignedIn()
                     dismiss()
                 } catch {
-                    signInError = "登入失敗：\(error.localizedDescription)。請重試一次。"
+                    // 原始錯誤只進 log；UI 一律顯示轉譯過的人話（見 AuthService.userFacingMessage）
+                    signInError = AuthService.userFacingMessage(for: error, context: "登入失敗")
                 }
             }
         case .failure(let error):
-            // 使用者按取消不當錯誤吵他
-            if (error as? ASAuthorizationError)?.code != .canceled {
-                signInError = "登入失敗：\(error.localizedDescription)"
-            }
+            // 取消／裝置未登入／網路問題都交給共用轉譯判斷；使用者主動取消時會回傳 nil，不吵他
+            signInError = AuthService.userFacingMessage(for: error, context: "登入失敗")
         }
     }
 }
