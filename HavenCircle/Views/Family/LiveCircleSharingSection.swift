@@ -16,7 +16,8 @@ struct LiveCircleSharingSection: View {
 
     var body: some View {
         Section {
-            Toggle("分享這支手機的位置", isOn: $isSharing)
+            // #10：和「警報跟著我移動（不分享）」刻意拉開——這個是把位置「上傳給家人看」。
+            Toggle("把我的位置分享給家人", isOn: $isSharing)
                 .disabled(isWorking || (!isSharing && iCloudUnavailable))
                 .onChange(of: isSharing) { _, enabled in
                     Task { await updateSharing(enabled) }

@@ -42,8 +42,10 @@ struct FollowCircleToggleSection: View {
 
     private var isOn: Bool { myFollowCircle?.isFollowMe ?? false }
 
+    /// #10：和「把我的位置分享給家人」（LiveCircleSharingSection）語意刻意拉開——
+    /// 這個是「警戒圈跟著我移動、只在本機比對」，強調「不分享」；那個是「上傳位置給家人看」。
     private var title: String {
-        disambiguateFromSharing ? "警報跟著我（只在這支手機）" : "警報跟著我"
+        disambiguateFromSharing ? "警報跟著我移動（不分享給家人）" : "警報跟著我移動"
     }
 
     var body: some View {

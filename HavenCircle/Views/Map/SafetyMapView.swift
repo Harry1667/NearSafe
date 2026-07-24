@@ -255,7 +255,11 @@ struct SafetyMapView: View {
                 .navigationTitle("安心圈")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    memberPicker
+                    // #3：只有自己（沒有家人）時不顯示「全家/我」切換器——沒有對象可切，
+                    // 出現「全家」會讓人以為已經有家人。members 含本人，故 >1 才代表真的有家人。
+                    if members.count > 1 {
+                        memberPicker
+                    }
                     filterMenu
                     pauseButton
                 }
