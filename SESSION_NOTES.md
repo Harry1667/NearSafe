@@ -1,5 +1,31 @@
 # SESSION_NOTES
 
+## 2026-07-24（上架準備＋付費牆＋走查修復大批；TF 最終 build 07241320）
+
+> 完整 durable 設計裁決見 memory：`havencircle-ux-conventions`（術語/一地點一圈/我平安不變式/膠囊誠實態）、`havencircle-appstore-submission`、`havencircle-crawler-pipeline`、`havencircle-monetization-verdict`。
+
+### ✅ 完成
+- **上架申報三件套**（commit `baf8cc0`）：PrivacyInfo.xcprivacy 重寫為 Firebase 真實申報（精確位置/姓名/Email/UserID 連結身分＋裝置ID/產品互動不連結，全不追蹤）；`docs/appstore/ASC隱私問卷答案.md`（你照填）；`docs/appstore/AppStore上架素材.md`（描述/關鍵字/雙語審查備註）；隱私政策/條款/用戶協議部署 havencircle.looptw.com（新目錄頁，舊根 .html 轉址）；App 內 webURL 跟進。
+- **爬蟲提速＋延遲埋點**（commit `58464cb`，遠端已生效有 .bak-0724）：NCDR 2→1 分鐘、CWA 10→5 分鐘；事件加 source_published_at/fetched_at，ingest.php 寫 latency.log（實測爬蟲→Oracle 落地約 1 秒）。**既有 bug 未修**：ingest 即推的 exec() 被主機 disable_functions 停用，推播靠每分鐘 cron 兜底。
+- **付費牆**：三方案（月90/年690+14天試用/終身1490）；EntitlementStore/FreeTier/.storekit 齊；視覺重設計一屏完整＋信任錨（commit `c7facb8`）；DEBUG `--show-paywall` 截圖模式產 IAP 審查圖（`docs/appstore/screenshots/iap/`）。
+- **20 人冷啟動走查**（`docs/ux/冷啟動走查報告-2026-07-24.md`，推薦率 19/20）→ **12 類全修**（commit `eac81b2`，21 檔）：地圖膠囊三態誠實化（無圈灰「尚未設定」不再假性安心）、靜音確認框＋常駐提示、圈色冷色系＋圈旁標名、圖例文字膠囊＋首展、未登入邀請鈕講成本、設定齒輪三頁統一、隱私承諾進 UI、字體大小四檔（Dynamic Type）、提醒「安靜→僅重大」消歧、絕不吵醒收起無效安靜時段、「啟用本機提醒→災害警報通知」＋確認框。
+- **我平安保命級 P0**（deep-dive 揪出，含在 `eac81b2`）：postPing 回傳成敗＋8 秒 timeout（離線不卡死）；事件詳情頁未登入不再假成功；通知快速回報補回饋；補「需要協助」按鈕＋成功提示＋防連點。
+- **額度模型收斂「一地點一圈」**（含在 `eac81b2`）：MemberDetailView 收掉無閘門加圈入口；scheduleCircleEditor guard isPlace 堵漏；新增地點取消不留孤兒＋不誤佔額度誤觸付費；CircleEditorView 內嵌小地圖長按放 pin＋畫圈預覽。
+- **動作按鈕文字統一置中**（commit `fd51a5f`，7 檔）：帶圖示的清單/表單動作列補 maxWidth 置中；CTA 大多本來就置中未動。
+
+### 🔄 未完成 / 待決
+- **你（ASC 後台）**：填隱私問卷（答案表已備）、簽付費合約→建 3 個 IAP 商品（本地化文案已給，審查截圖在 iap/）、真機跑 `docs/appstore/真機回歸檢查表.md`（23 條，第19 production 推播最重要）。
+- **設定頁三顆按鈕（升級Guardian+/刪除帳號/重看導覽）是否置中**：我判斷維持靠左（跟設定選單列一致），等你點頭；不回＝維持現狀。
+- **我平安 P1（家人端伺服器主動推播）**：卡 Blaze（Cloud Function 或走 Oracle 中繼），同 TTL 一起等 Blaze。
+- **TTL 政策**：仍卡 Blaze（Spark 免費方案 billing disabled），recipe 已記 memory。
+- HomeStatusView 首頁回報按鈕未接 SignInGate（下輪補）；上架 store 截圖此批 UX 後已過時要重拍。
+
+### ⚠️ 環境備忘
+- fastlane beta 要帶 `ASC_KEY_ID=BY34254SVJ ASC_ISSUER_ID=e473f18e-d7f2-40c6-a7b7-e69ae833566b`（不帶會報缺變數）；build 號＝時間戳 MMddHHmm。
+- 截圖定式：DEBUG `--start-tab 0/2/3`＋`simctl spawn defaults write` 設 onboarding 旗標逐條（zsh 迴圈不斷詞）；付費牆 `--show-paywall`。**別用 AppleScript/cliclick 合成點擊**（屢敗）。
+- 模擬器 7A6A09FE（iPhone 17 Pro Max）常自己 Shutdown→boot 要等 15-18 秒；install+多旗標指令易逾時，拆步驟跑。
+- **多 agent 並行紀律**：每檔只讓一個 agent 寫、各用獨立 DerivedData（DD-mapfix/DD-quotafix…）、全樹整合 build 由主對話自跑驗收、名單式 git add（不用 -A）。部分 agent 會卡在等自己 build 的 Monitor 不回報——主對話直接自己整合 build 驗收即可。
+
 ## 2026-07-23（用戶流程重構動工日：#2–#8 全部完成＋使用者實測回饋六項落地）
 
 ### ✅ 完成（細節見專案 memory `havencircle-onboarding-redesign` 六批記錄）
