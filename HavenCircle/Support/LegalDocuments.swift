@@ -42,9 +42,9 @@ enum LegalDocumentKind: String, CaseIterable, Identifiable {
 
     var webURL: URL {
         let path = switch self {
-        case .privacy: "privacy.html"
-        case .userAgreement: "user-agreement.html"
-        case .terms: "terms.html"
+        case .privacy: "privacy/"
+        case .userAgreement: "user-agreement/"
+        case .terms: "terms/"
         }
         return URL(string: "https://havencircle.looptw.com/\(path)")!
     }

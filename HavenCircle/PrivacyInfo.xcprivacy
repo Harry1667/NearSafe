@@ -2,23 +2,76 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- 本 App 不做跨 App/網站的使用者追蹤，未整合任何廣告或分析 SDK -->
+	<!-- 本 App 不做跨 App/網站的使用者追蹤，無廣告 SDK、無 ATT 需求 -->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 	<!--
-	  申報原則＝「是否傳離裝置到開發者/第三方」。
-	  ・裝置 ID：APNs 裝置權杖會上傳開發者的中繼伺服器（供無聲推播），故申報。
-	  ・產品互動：匿名事件計數會上傳自建 analytics 端點，故申報。
-	  ・精確位置「不」申報：家庭位置只寫入使用者自己的 iCloud（CKShare），
-	    開發者伺服器與 Firebase 皆收不到；AI 功能送出的是去識別化的概略距離、非座標。
-	    依 Apple 定義（傳離裝置到開發者/第三方才算蒐集）此項未蒐集。
-	  ・Firebase Analytics 的 SDK 層蒐集由 FirebaseAnalytics 框架自帶的隱私宣告涵蓋，Apple 會自動合併。
-	  三類皆「不連結身分、不用於追蹤」。
+	  申報原則＝「是否傳離裝置到開發者/第三方」（2026-07 Firebase 架構版，取代舊 CloudKit 時代申報）。
+	  ・精確位置：家庭位置與安全回報座標寫入 Firestore（families/{id}/locations、pings），
+	    文件以 Firebase Auth uid 為鍵並含 displayName → 蒐集且「連結身分」。
+	  ・姓名：使用者顯示名稱（displayName）隨成員/位置文件寫入 Firestore → 蒐集且連結身分。
+	  ・電子郵件：Sign in with Apple 憑證交給 Firebase Auth，使用者帳號紀錄含 email
+	    （可能是 Apple 私密轉發信箱）→ 蒐集且連結身分。App 自身不再另存伺服器端。
+	  ・使用者 ID：Firebase Auth uid 是雲端資料主鍵 → 蒐集且連結身分。
+	  ・裝置 ID：APNs 裝置權杖上傳開發者中繼伺服器（推播用，僅 token＋環境，不含身分）；
+	    FCM 註冊權杖由 Google 端持有 → 蒐集、不連結身分。
+	  ・產品互動：Firebase Analytics 事件與畫面瀏覽（無 userID 綁定）＋自建端點的匿名事件計數
+	    （僅事件名/次數/App 版本/OS 版本）→ 蒐集、不連結身分。
+	  ・Firebase 各 SDK 框架自帶的隱私宣告由 Xcode 打包時自動合併，此處不重複申報 SDK 內部項目。
+	  全部「不用於追蹤」。
 	-->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePreciseLocation</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeName</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeEmailAddress</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeDeviceID</string>

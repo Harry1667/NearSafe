@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>隱私權政策｜安心圈 HavenCircle</title>
+<meta name="description" content="安心圈 HavenCircle App 隱私權政策：我們處理哪些資料，以及你如何控制它們。">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #5b5b5b;
+    --line: #e2e2e2;
+    --link: #1a56c4;
+    --notice-bg: #f4f6fb;
+    --notice-border: #c9d3ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14151a;
+      --fg: #eaeaea;
+      --muted: #a3a3a3;
+      --line: #2c2d33;
+      --link: #7aa6ff;
+      --notice-bg: #1c2130;
+      --notice-border: #303a54;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;
+    line-height: 1.85;
+    font-size: 16px;
+    padding: 32px 20px 80px;
+  }
+  main {
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  header.page-head {
+    margin-bottom: 28px;
+  }
+  h1 {
+    font-size: 26px;
+    margin: 0 0 8px;
+    letter-spacing: 0.01em;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 15px;
+    margin: 0 0 18px;
+  }
+  .intro {
+    background: var(--notice-bg);
+    border: 1px solid var(--notice-border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-size: 14.5px;
+    color: var(--fg);
+  }
+  nav.crumbs {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  nav.crumbs a {
+    color: var(--link);
+    text-decoration: none;
+  }
+  nav.crumbs a:hover { text-decoration: underline; }
+  section.doc-section {
+    margin-top: 34px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  section.doc-section:first-of-type {
+    border-top: none;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 0 0 12px;
+  }
+  p {
+    margin: 0 0 12px;
+    color: var(--fg);
+  }
+  p:last-child { margin-bottom: 0; }
+  a { color: var(--link); }
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  footer nav {
+    margin-bottom: 10px;
+  }
+  footer nav a {
+    color: var(--link);
+    text-decoration: none;
+    margin-right: 16px;
+  }
+  footer nav a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <header class="page-head">
+    <nav class="crumbs"><a href="/">安心圈 HavenCircle</a></nav>
+    <h1>隱私權政策</h1>
+    <p class="subtitle">我們處理哪些資料，以及你如何控制它們</p>
+    <p class="intro">安心圈以資料最少化為原則。固定圈與事件偏好主要留在你的裝置；本人主動開啟即時圈後，最新位置會透過雲端服務（Google Firebase）分享給你家庭圈的成員，不建立移動軌跡。</p>
+  </header>
+
+  <section class="doc-section">
+    <h2>一、適用範圍與聯絡方式</h2>
+    <p>本政策適用於安心圈 HavenCircle App、官方網站及為其提供的邀請碼、公開警報與推播中繼服務。服務提供者為安心圈 HavenCircle 開發團隊；隱私問題或資料權利請寄至 hello@havencircle.app。</p>
+    <p>本文件是目前原型與黑客松版本的實際資料處理說明；正式公開營運前仍應由具資格的法律專業人員審閱，並補齊法定營運者名稱、地址及適用的客服資訊。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>二、我們處理的資料</h2>
+    <p>裝置本機資料：你輸入的顯示名稱、Apple 登入首次提供的電子郵件、聯絡備註、固定圈名稱、地址或座標、半徑、事件紀錄、提醒偏好與小工具快照。這些資料主要保存在你的裝置或 App Group。</p>
+    <p>家庭雲端資料（Google Firebase）：只有本人主動開啟即時圈後，才會把該裝置最新一筆精確位置、顯示名稱、警戒半徑、行政區、更新時間與分享狀態寫入雲端家庭圈（Firebase Firestore，伺服器位於 asia-east1 區域，即台灣以外的亞洲資料中心）。安否回報可能包含狀態、備註及你另行選擇附上的一次性位置，保存約 30 天後自動過期清除。這些資料僅同一家庭圈的成員可讀，也只能寫入自己的位置（由後端安全規則保證），家庭成員也可能看見已讀狀態。</p>
+    <p>身分與邀請資料：登入使用 Apple 的 Sign in with Apple 換取 Firebase 帳號識別碼（uid），作為家庭圈成員的身分；我們只取得 Apple 提供的識別憑證與你選擇性提供的 email，不經手也拿不到你的 Apple 密碼。家庭邀請碼是一組隨機 8 碼，存在雲端邀請索引供家人輸入加入，7 天後自動失效。安心圈推播中繼站（架設於美國鳳凰城的自營雲端主機）只登記 APNs 裝置權杖與 sandbox／production 環境，用於發送災害警報廣播；警報比對在你的裝置上完成，你的固定圈、姓名或即時位置都不會經過這台中繼站。</p>
+    <p>使用統計資料：App 預設會蒐集不含個人識別碼、不含精確位置的匿名使用統計（事件次數、頁面瀏覽與停留時長），透過關閉廣告識別功能的 Firebase Analytics 與我們自有的累計計數器彙整，用於了解功能使用狀況與除錯。你可在「設定 → 匿名使用統計」隨時整個關閉，關閉後不再蒐集也不再送出。</p>
+    <p>網站與網路資訊：造訪網站或呼叫 API 時，主機、網路服務商與網站目前使用的 Google Fonts 可能依一般技術運作處理 IP 位址、請求時間、瀏覽器或裝置資訊與錯誤紀錄。本站目前不放置廣告追蹤器或行銷分析工具。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>三、處理目的與必要性</h2>
+    <p>我們僅為建立警戒圈、比對官方風險、發送通知、家庭共享、安否回報、邀請兌換、資安防護、除錯與改善可靠性而處理必要資料。</p>
+    <p>定位、通知與家庭共享並非所有功能的必要條件。你可以拒絕定位或通知，但即時圈、附近事件或主動提醒等相應功能將無法運作；不登入 Apple 帳號仍可使用本機地圖、固定圈與警報功能。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>四、位置、同意與家庭共享</h2>
+    <p>即時圈只能由裝置持有人在自己的手機上主動開啟，並可隨時停止。家庭成員只取得最新位置與更新時間；安心圈不設計移動軌跡、到訪歷史或隱形追蹤。超過 15 分鐘未更新會標示為過期，不冒充目前位置。</p>
+    <p>請勿替他人開啟位置分享，或在未取得本人或其法定代理人適當同意時，將他人的裝置加入即時圈。固定圈應優先使用約略地點，避免輸入不必要的門牌或個人資訊。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>五、第三方服務與資料來源</h2>
+    <p>App 使用 Apple 的 Sign in with Apple、APNs、MapKit 與 Core Location，以及 Google 的 Firebase（Authentication 身分驗證、Firestore 家庭雲端資料庫、Cloud Messaging 推播、Analytics 匿名使用統計）；網站目前使用 Google Fonts。這些服務由各供應者依其條款與隱私政策處理資料——家庭圈與即時位置資料儲存在 Google Firebase 的伺服器，屬於傳送至第三方後端的個人資料。</p>
+    <p>政府示警、新聞、空氣品質、避難所與醫療資源來自 NCDR 及政府公開資料或其整理中繼。請求公開資訊時不會附上你的警戒圈或精確位置，但網路供應者仍可能看到一般連線資訊。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>六、保存、刪除與撤回</h2>
+    <p>本機資料保存至你在 App 內刪除、刪除 App 或裝置系統清除為止。雲端家庭圈資料（Firebase Firestore）保存至你退出家庭圈或圈主解散為止；停止即時圈後位置會標示停止共享，不再持續更新。安否回報約 30 天後自動過期清除。</p>
+    <p>家庭圈擁有者解散家庭圈後，其他成員先前留下的安否回報等歷史紀錄可能仍殘留於資料庫中一段時間，且該成員本人屆時可能已無法再透過 App 存取或刪除這些殘留紀錄；如需協助清除，請寄信至 hello@havencircle.app。</p>
+    <p>家庭邀請碼 7 天後自動失效；圈主也可隨時重新產生使舊碼提前失效，請只分享給你信任的家人。APNs 權杖保存至你使用「刪除帳號與所有資料」撤銷、權杖失效或服務清理為止。必要的主機安全與錯誤紀錄僅於達成資安、除錯或法定目的所需期間保存，之後刪除或去識別。</p>
+    <p>你可在「設定 → 刪除帳號與所有資料」清除本機資料、停止即時位置分享、退出或刪除雲端家庭圈，並要求中繼站移除目前裝置的推播權杖。你也可在 iOS 系統設定撤回定位、通知與 Apple 登入授權。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>七、你的資料權利</h2>
+    <p>在適用法律範圍內，你可請求查詢或閱覽、製給複製本、補充或更正、停止蒐集處理利用，以及刪除你的個人資料。請從註冊裝置使用 App 內控制項，或寄信至 hello@havencircle.app；我們可能在不額外蒐集資料的前提下，要求合理資訊確認請求來源。</p>
+    <p>固定圈等只存在你裝置的資料，安心圈伺服器無法直接讀取或代你匯出；雲端家庭圈資料可透過 App 內控制項退出或刪除。我們會提供可行的操作指引。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>八、安全、未成年人與事件通報</h2>
+    <p>我們採資料最少化、Apple 平台權限、Firebase 後端安全規則（限同一家庭成員存取）及傳輸加密等措施，但任何系統都無法保證絕對安全。請妥善保管家庭邀請碼與 Apple 帳號。</p>
+    <p>未成年人使用位置分享時，應由其法定代理人閱讀本政策、提供適當同意，並以未成年人最佳利益設定最小必要的共享範圍。</p>
+    <p>若發現疑似未授權分享、資料外洩或安全問題，請立即停止分享並來信聯絡。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>九、政策更新</h2>
+    <p>若資料用途、服務或法律要求有重大變更，我們會更新修訂日期，並在 App 或網站提供清楚通知；需要新同意時，會在變更生效前再次取得。</p>
+  </section>
+
+  <footer>
+    <nav>
+      <a href="/privacy/">隱私權政策</a><a href="/terms/">使用條款</a><a href="/user-agreement/">用戶協議</a>
+    </nav>
+    <p>最後更新日期：2026-07-24　聯絡信箱：hello@havencircle.app</p>
+    <p>© 2026 HavenCircle 安心圈</p>
+  </footer>
+</main>
+</body>
+</html>
