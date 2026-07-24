@@ -111,6 +111,9 @@ struct HavenCircleApp: App {
                     // 匿名統計：記一次啟動並把累積佇列送出（斷網自動留到下次）
                     Analytics.track("app_open")
                     await Analytics.flush()
+                    // #11：App 沒在跑時收不到 credentialRevokedNotification，啟動時主動複查一次
+                    // Apple 授權是否已被撤銷（例如上次關閉 App 期間使用者去系統設定登出了 Apple 帳號）。
+                    await AuthService.shared.checkAppleCredentialState()
                     await familySync.refreshAccountStatus()
                     LocationService.shared.syncLiveLocationSharing(
                         isEnabled: liveLocationSharingEnabled
@@ -150,6 +153,9 @@ struct HavenCircleApp: App {
                 BackgroundRefresh.schedule()
             } else if phase == .active {
                 Task {
+                    // #11：回前景複查一次 Apple 授權狀態（雙重保險的第二層；通知能送達時這裡多查一次
+                    // 沒有壞處，通知没送達時這裡是唯一能及時發現撤銷的地方）。
+                    await AuthService.shared.checkAppleCredentialState()
                     await familySync.fetchLiveLocations(context: modelContainer.mainContext)
                     // A2：回前景順便刷新家庭成員清單（新成員加入、名字改動都要跟著新鮮）
                     await familySync.refreshFamilyMembers(context: modelContainer.mainContext)

@@ -777,6 +777,12 @@ private struct DeleteAccountReauthSheet: View {
                     if isDeleting {
                         ProgressView("正在刪除…")
                             .padding(.vertical, HCSpacing.x2)
+                        // #1：AuthService.deleteAccount 現在對驗證與刪除各套 15 秒逾時，
+                        // 這裡明講「最長等候」讓使用者知道畫面會自動恢復，不必反覆點按鎖住的按鈕。
+                        Text("最長等候約 30 秒；若網路不穩逾時，畫面會自動恢復並提示重試。")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     } else {
                         SignInWithAppleButton(.continue) { request in
                             AuthService.shared.prepareAppleRequest(request)

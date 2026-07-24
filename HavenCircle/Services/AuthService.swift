@@ -2,6 +2,7 @@ import Foundation
 import FirebaseAuth
 import AuthenticationServices
 import CryptoKit
+import SwiftData // MemberImportVisibility：AppRuntime.container?.mainContext 用得到 ModelContainer 的成員
 import os // Swift 6.2 MemberImportVisibility：直接使用 os.Logger 插值的檔案必須自行 import
 
 /// Firebase 身份服務：用 Sign in with Apple 登入 Firebase Auth，取得穩定的 uid。
@@ -25,11 +26,70 @@ final class AuthService {
     /// Firebase 端用原始值驗證，兩者比對防止重放攻擊。
     private var currentNonce: String?
 
+    /// Firebase Auth 狀態監聽 handle，deinit 時要移除，避免 listener 洩漏。
+    /// `nonisolated(unsafe)`：deinit 在 Swift 中一律 nonisolated，即使類別整體是 @MainActor，
+    /// 也不能在 deinit 直接讀寫 MainActor-isolated 的屬性；deinit 執行時保證沒有其他參照，
+    /// 不會有真的資料競爭，這裡用 nonisolated(unsafe) 只是滿足編譯器的隔離檢查。
+    private nonisolated(unsafe) var authStateHandle: AuthStateDidChangeListenerHandle?
+    /// Apple 帳號授權撤銷通知的 observer token，deinit 時要移除（理由同上）。
+    private nonisolated(unsafe) var credentialRevokedObserver: NSObjectProtocol?
+
+    /// 這次登入使用的 Apple 穩定使用者代碼（`credential.user`）存本機，供之後
+    /// [checkAppleCredentialState] 複查 Apple 端授權是否被撤銷。只是 Apple 給的不透明代碼，
+    /// 不是任何可讀的個資。
+    private static let appleUserIdentifierDefaultsKey = "authAppleUserIdentifier"
+
     private init() {
         // Firebase Auth 會持久化 session；啟動時直接還原既有登入狀態，免得每次都要重登。
         if let user = Auth.auth().currentUser {
             uid = user.uid
             isSignedIn = true
+        }
+
+        // #2/#13：登入狀態要即時反映，不能只在啟動時讀一次快照。掛上 Firebase 官方的狀態監聽，
+        // 之後不論是「這次啟動之後才完成登入」或「其他地方呼叫 signOut／帳號被撤銷」，
+        // uid/isSignedIn 都會自動更新（本類別是 @Observable，看這兩個欄位的畫面會自動重繪，
+        // 不必再靠使用者下拉刷新）。
+        //
+        // 狀態「真的改變」時，順便自動觸發 FamilySyncService.refreshAccountStatus()——這是
+        // 「登入完成但家人頁要下拉才顯示已登入」這個 bug 的根本解法：狀態源頭一變就自動推播，
+        // 不必等使用者手動點「重新檢查帳號狀態」。這裡用 AppRuntime.familySync（一個
+        // HavenCircleApp.init 建立後才賦值的橋接指標，同一份 FamilySyncService 實例）去呼叫，
+        // 而不是讓 FamilySyncService 反過來訂閱 AuthService——本類別只是呼叫一個既有 singleton
+        // 實例上的方法，沒有新增任何雙向的強參照，不會造成循環相依。
+        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            Task { @MainActor in
+                guard let self else { return }
+                let newUid = user?.uid
+                let stateChanged = self.isSignedIn != (newUid != nil) || self.uid != newUid
+                self.uid = newUid
+                self.isSignedIn = newUid != nil
+                if stateChanged {
+                    await AppRuntime.familySync?.refreshAccountStatus()
+                }
+            }
+        }
+
+        // #11：監聽 Apple 帳號授權撤銷（使用者到系統「設定」登出這個 Apple 帳號，或撤銷了
+        // 對本 App 的存取）。這個通知只在 App 存活期間才送得到；App 沒在跑時會錯過，
+        // 所以另外提供 [checkAppleCredentialState] 給啟動／回前景時主動複查（見 HavenCircleApp）。
+        credentialRevokedObserver = NotificationCenter.default.addObserver(
+            forName: ASAuthorizationAppleIDProvider.credentialRevokedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                await self?.handleCredentialRevocation()
+            }
+        }
+    }
+
+    deinit {
+        if let authStateHandle {
+            Auth.auth().removeStateDidChangeListener(authStateHandle)
+        }
+        if let credentialRevokedObserver {
+            NotificationCenter.default.removeObserver(credentialRevokedObserver)
         }
     }
 
@@ -63,6 +123,8 @@ final class AuthService {
         currentNonce = nil
         uid = result.user.uid
         isSignedIn = true
+        // #11：存下 Apple 穩定使用者代碼，供之後 [checkAppleCredentialState] 複查授權是否被撤銷。
+        UserDefaults.standard.set(credential.user, forKey: Self.appleUserIdentifierDefaultsKey)
         AppLog.cloud.info("Firebase Auth（Sign in with Apple）登入成功")
         return result.user.uid
     }
@@ -79,6 +141,63 @@ final class AuthService {
         currentNonce = nil
     }
 
+    // MARK: - #11：Apple 帳號撤銷偵測（登出 Apple 帳號 → 退出家庭圈；同帳號重登 → 自動加回）
+
+    /// App 啟動／回前景時主動複查一次 Apple 授權狀態（Apple 官方建議的雙重保險：
+    /// `credentialRevokedNotification` 只在 App 存活時才送得到，這裡補上「App 沒在跑時
+    /// 錯過通知」的情況，見 HavenCircleApp 的呼叫點）。從未用 Apple 登入過（沒存過使用者代碼）
+    /// 就直接略過，不發任何請求。
+    func checkAppleCredentialState() async {
+        guard let appleUserID = UserDefaults.standard.string(forKey: Self.appleUserIdentifierDefaultsKey) else {
+            return
+        }
+        guard let state = await Self.fetchCredentialState(forUserID: appleUserID) else { return }
+        if state == .revoked {
+            await handleCredentialRevocation()
+        }
+    }
+
+    /// `ASAuthorizationAppleIDProvider.getCredentialState` 只有 completion handler 版本，
+    /// 包一層 continuation 讓呼叫端能用 async/await。
+    private static func fetchCredentialState(
+        forUserID userID: String
+    ) async -> ASAuthorizationAppleIDProvider.CredentialState? {
+        await withCheckedContinuation { continuation in
+            ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in
+                if let error {
+                    AppLog.cloud.error("查詢 Apple 授權狀態失敗：\(error.localizedDescription)")
+                    continuation.resume(returning: nil)
+                } else {
+                    continuation.resume(returning: state)
+                }
+            }
+        }
+    }
+
+    /// 確認 Apple 授權已撤銷：登出 Firebase＋清掉本機家庭圈投影，但**不**呼叫雲端的
+    /// 退出／解散家庭圈——刻意保留 Firestore `memberUids` 裡的這個 uid，讓使用者用「同一個」
+    /// Apple 帳號重新登入時，[FamilySyncService.refreshAccountStatus] 能透過既有的
+    /// [FirestoreFamilyBackend.findFamily]（用 uid 反查 `memberUids` array-contains）
+    /// 自動找回原本的家庭圈，而不是永久失聯。
+    ///
+    /// 實作上借用 [FamilySyncService.leaveFamily]：呼叫它之前已經把 `uid` 設為 nil，
+    /// 該函式內部 `if let uid, let familyID = currentFamilyID` 這段守門會整段跳過，
+    /// 完全不會打 FirestoreFamilyBackend 的 leaveFamily／deleteFamily，只會執行後半段
+    /// 「清本機投影＋重置本機狀態」——正是這裡要的效果，不需要再另寫一套清除邏輯。
+    private func handleCredentialRevocation() async {
+        AppLog.cloud.info("偵測到 Apple 帳號授權已撤銷，登出並清除本機家庭圈投影（雲端 memberUids 保留，供重新登入自動尋回）")
+        do {
+            try Auth.auth().signOut()
+        } catch {
+            AppLog.cloud.error("Firebase 登出失敗（Apple 授權撤銷後）：\(error.localizedDescription)")
+        }
+        uid = nil
+        isSignedIn = false
+        currentNonce = nil
+        UserDefaults.standard.removeObject(forKey: Self.appleUserIdentifierDefaultsKey)
+        try? await AppRuntime.familySync?.leaveFamily(context: AppRuntime.container?.mainContext)
+    }
+
     // MARK: - 刪除帳號（App Store 5.1.1(v)：帳號刪除必須真的刪掉帳號本體）
 
     /// 永久刪除 Firebase 帳號＋盡力撤銷 Apple 授權。呼叫端須先用 [prepareAppleRequest] 設定
@@ -89,8 +208,11 @@ final class AuthService {
     /// 2. 只有這次全新的 Apple 授權流程才能拿到 `authorizationCode`，用來呼叫 Apple 的
     ///    token revocation——沒有這次重新授權，撤銷授權根本無從做起。
     ///
-    /// 呼叫順序：reauthenticate（滿足 1、2 兩點）→ 撤銷 Apple 授權（盡力而為，失敗只記 log，
-    /// 不中斷刪除——使用者刪帳號的意圖優先於撤銷是否成功）→ 真正刪除 Firebase 帳號。
+    /// 呼叫順序：reauthenticate（滿足 1、2 兩點）→ 丟一個背景 Task 嘗試撤銷 Apple 授權
+    /// （真.盡力而為：不等待、不擋住後面的刪除，失敗只記 log）→ 真正刪除 Firebase 帳號。
+    /// reauthenticate 與刪除各自套 15 秒逾時保護——這兩步是僅存還會讓 UI 無限期卡住的網路請求
+    /// （離線／訊號差時 Firebase SDK 本身不會自己逾時），逾時就丟 [AuthTimeoutError]，
+    /// 讓呼叫端的「刪除中」畫面能解鎖並顯示「請重試」，不再無限期卡住。
     ///
     /// ⚠️ 呼叫端要注意順序：任何「這個使用者還在家庭圈裡」相關的 Firestore 清理
     /// （退出／解散家庭圈）都必須在呼叫本函式「之前」做完——一旦 `currentUser.delete()`
@@ -113,23 +235,56 @@ final class AuthService {
             fullName: credential.fullName
         )
         currentNonce = nil
-        // 重新驗證：滿足 requiresRecentLogin，同時是唯一能拿到新鮮 authorizationCode 的時機
-        _ = try await user.reauthenticate(with: firebaseCredential)
 
-        // 撤銷 Apple 授權：盡力而為。這步失敗（例如離線）不該擋住使用者刪帳號的權利，
-        // 只記 log，不往上拋。
+        // 重新驗證：滿足 requiresRecentLogin，同時是唯一能拿到新鮮 authorizationCode 的時機。
+        // 逾時保護（15 秒，withThrowingTaskGroup 讓「真正請求」與「計時器」賽跑，仿照
+        // FirestoreFamilyBackend.postPing 的既有逾時實作模式，誰先完成用誰的結果）。
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { _ = try await user.reauthenticate(with: firebaseCredential) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 15_000_000_000)
+                throw AuthTimeoutError()
+            }
+            do {
+                try await group.next()
+            } catch {
+                group.cancelAll()
+                throw error
+            }
+            group.cancelAll()
+        }
+
+        // 撤銷 Apple 授權：真.盡力而為——丟到背景 Task 就不再等待，失敗只記 log，
+        // 不擋住下面的 user.delete()。舊版寫成 await 擋在刪除之前，註解說「盡力而為」但
+        // 實作卻讓它成為刪除流程的必經關卡，這裡改成名符其實的 fire-and-forget。
         if let codeData = credential.authorizationCode,
            let authorizationCode = String(data: codeData, encoding: .utf8) {
-            do {
-                try await Auth.auth().revokeToken(withAuthorizationCode: authorizationCode)
-            } catch {
-                AppLog.cloud.error("Apple 授權撤銷失敗（不中斷刪除流程）：\(error.localizedDescription)")
+            Task {
+                do {
+                    try await Auth.auth().revokeToken(withAuthorizationCode: authorizationCode)
+                } catch {
+                    AppLog.cloud.error("Apple 授權撤銷失敗（fire-and-forget，不影響刪除流程）：\(error.localizedDescription)")
+                }
             }
         } else {
             AppLog.cloud.error("Apple 授權缺少 authorizationCode，無法撤銷（不中斷刪除流程）")
         }
 
-        try await user.delete()
+        // 真正刪除 Firebase 帳號。逾時保護（15 秒），理由同上。
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await user.delete() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 15_000_000_000)
+                throw AuthTimeoutError()
+            }
+            do {
+                try await group.next()
+            } catch {
+                group.cancelAll()
+                throw error
+            }
+            group.cancelAll()
+        }
         uid = nil
         isSignedIn = false
         AppLog.cloud.info("Firebase 帳號已刪除")
@@ -184,6 +339,12 @@ extension AuthService {
             return "登入沒有完成。請確認這台裝置已在「設定」登入 Apple 帳號，然後再試一次。"
         }
 
+        // #1：reauthenticate／刪除帳號逾時，給明確、可行動的文案，不要落到最後泛用的
+        // 「登入失敗，請再試一次」（那句話對「正在刪除」的情境文不對題）。
+        if error is AuthTimeoutError {
+            return error.localizedDescription
+        }
+
         let nsError = error as NSError
         if error is URLError || nsError.domain == NSURLErrorDomain {
             return "網路連線有問題，請稍後再試。"
@@ -208,4 +369,11 @@ enum AuthError: LocalizedError {
             return "目前沒有登入中的帳號，無法刪除。"
         }
     }
+}
+
+/// #1：reauthenticate／刪除帳號本體逾時（15 秒未完成）。離線或訊號差時 Firebase SDK
+/// 不會自己逾時，[AuthService.deleteAccount] 用這個錯誤讓 UI 能解鎖並提示使用者重試，
+/// 不再無限期卡在「正在刪除…」畫面。
+struct AuthTimeoutError: LocalizedError {
+    var errorDescription: String? { "網路逾時，請重試。" }
 }
