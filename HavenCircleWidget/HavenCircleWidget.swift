@@ -135,8 +135,8 @@ private enum WidgetDisplayState {
 
     var compactTitle: String {
         switch self {
-        case .normal: "安全"
-        case .attention: "危險"
+        case .normal: "平穩"
+        case .attention: "注意"
         case .stale: "未知"
         }
     }
@@ -205,9 +205,9 @@ private struct SmallWidgetView: View {
     let state: WidgetDisplayState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
-                Image(systemName: "house.fill")
+                Image(systemName: "mappin.and.ellipse")
                     .font(.caption.bold())
                 Text(entry.snapshot?.circleName ?? "安心圈")
                     .font(.caption.bold())
@@ -218,9 +218,9 @@ private struct SmallWidgetView: View {
 
             Spacer(minLength: 0)
 
-            StatusIcon(state: state, size: 44)
+            StatusIcon(state: state, size: 40)
             Text(state.compactTitle)
-                .font(.title.bold())
+                .font(.title2.bold())
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
             Text(statusCaption)
@@ -232,8 +232,9 @@ private struct SmallWidgetView: View {
 
             Text(footerText)
                 .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.tertiary)
-                .lineLimit(2)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(entry.snapshot?.circleName ?? "安心圈")，\(state.title)，\(statusCaption)")
@@ -241,14 +242,17 @@ private struct SmallWidgetView: View {
 
     private var statusCaption: String {
         switch state {
-        case .normal: "目前沒有需留意事件"
-        case .attention: "附近有需留意事件"
+        case .normal: "固定地點目前平穩"
+        case .attention: "固定地點有需留意事件"
         case .stale: "請開啟 App 更新"
         }
     }
 
     private var footerText: String {
-        state == .attention ? "非緊急服務 · 緊急請撥 110／119" : "非緊急服務"
+        let updated = entry.snapshot?.generatedAt.widgetTimeText ?? "尚無資料"
+        return state == .attention
+            ? "\(updated) 更新\n非緊急服務\n緊急請撥 110／119"
+            : "\(updated) 更新\n非緊急服務"
     }
 }
 
@@ -288,7 +292,7 @@ private struct MediumWidgetView: View {
                 }
             }
             .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
@@ -304,7 +308,7 @@ private struct MediumWidgetView: View {
 
     private var updatedText: String {
         guard let generatedAt = entry.snapshot?.generatedAt else { return "尚未取得資料" }
-        return "\(generatedAt.formatted(date: .omitted, time: .shortened)) 更新"
+        return "\(generatedAt.widgetTimeText) 更新"
     }
 }
 
@@ -366,9 +370,9 @@ private struct LargeWidgetView: View {
 
             Spacer(minLength: 0)
 
-            Text("HavenCircle 非緊急服務 · 緊急狀況請撥 110／119")
+            Text("安心圈非緊急服務 · 緊急狀況請撥 110／119")
                 .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
@@ -414,7 +418,7 @@ private struct LargeWidgetView: View {
 
     private var updatedText: String {
         guard let generatedAt = entry.snapshot?.generatedAt else { return "尚無資料" }
-        return generatedAt.formatted(date: .omitted, time: .shortened)
+        return generatedAt.widgetTimeText
     }
 }
 
@@ -423,7 +427,7 @@ private struct WidgetHeader: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "house.fill")
+            Image(systemName: "mappin.and.ellipse")
                 .font(.caption)
                 .padding(5)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
@@ -599,8 +603,19 @@ private enum WidgetMapSnapshotRenderer {
 
 private func formattedDistance(_ meters: Int) -> String {
     meters >= 1_000
-        ? String(format: "%.1f km", Double(meters) / 1_000).replacingOccurrences(of: ".0", with: "")
-        : "\(meters) m"
+        ? String(format: "%.1f 公里", Double(meters) / 1_000).replacingOccurrences(of: ".0", with: "")
+        : "\(meters) 公尺"
+}
+
+private extension Date {
+    var widgetTimeText: String {
+        formatted(
+            .dateTime
+                .hour(.twoDigits(amPM: .omitted))
+                .minute(.twoDigits)
+                .locale(Locale(identifier: "zh_Hant_TW"))
+        )
+    }
 }
 
 private extension CGFloat {

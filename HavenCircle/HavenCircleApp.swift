@@ -17,6 +17,9 @@ struct HavenCircleApp: App {
     @State private var entitlementStore = EntitlementStore()
     // 外觀模式：使用者可在設定頁強制淺色/深色（預設跟隨系統）
     @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
+    // 全域字體大小：使用者可在設定頁放大顯示（預設跟隨系統）；設定變更靠這個 @AppStorage
+    // 驅動 Scene body 重新求值即時生效，套用方式同 appearanceMode
+    @AppStorage(SettingsKeys.appTextSize) private var appTextSize = AppTextSize.system.rawValue
     @AppStorage(SettingsKeys.profileDisplayName) private var profileDisplayName = ""
     @AppStorage(SettingsKeys.liveLocationSharingEnabled) private var liveLocationSharingEnabled = false
     @AppStorage(SettingsKeys.liveCircleRadiusMeters) private var liveCircleRadiusMeters = 1_000
@@ -82,6 +85,8 @@ struct HavenCircleApp: App {
             ContentView()
                 // nil（跟隨系統）時不強制，交還系統深淺設定
                 .preferredColorScheme(AppearanceMode(rawValue: appearanceMode)?.colorScheme)
+                // nil（跟隨系統）時不覆寫，交還使用者在 iOS 設定裡的文字大小
+                .modifier(AppTextSizeOverride(rawValue: appTextSize))
                 .environment(familySync)
                 .environment(entitlementStore)
                 .task {
@@ -164,6 +169,20 @@ struct HavenCircleApp: App {
         }) {
             owner.isCurrentUser = true
             context.saveReporting()
+        }
+    }
+}
+
+/// 全域字體大小覆寫：AppTextSize.system 時 overrideSize 為 nil，該分支原樣回傳 content
+/// （不加 .dynamicTypeSize，交還系統設定）；其餘三檔套用對應的 Dynamic Type 級距，全樹適用。
+private struct AppTextSizeOverride: ViewModifier {
+    let rawValue: String
+
+    func body(content: Content) -> some View {
+        if let size = AppTextSize(rawValue: rawValue)?.overrideSize {
+            content.dynamicTypeSize(size)
+        } else {
+            content
         }
     }
 }

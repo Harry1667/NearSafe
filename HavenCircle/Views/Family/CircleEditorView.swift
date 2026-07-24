@@ -25,11 +25,24 @@ struct CircleEditorView: View {
     @State private var locating = false
     @State private var locationHint = ""
     @State private var locationNeedsConfirmation: Bool
+    /// 行政區是否由地址搜尋／目前位置反查「自動判定」而來（非使用者手動在進階設定裡挑的）；
+    /// 只用來決定要不要顯示「自動判定」提示行，不影響實際儲存的 district 值。
+    @State private var districtAutoDetected = false
+    /// 「進階設定」（手動行政區 Picker）展開狀態：新增地點情境下預設展開，
+    /// 自動判定成功就收合，判定失敗（含尚未查詢）維持展開讓人手動挑。
+    @State private var advancedExpanded = false
+
+    /// 新增地點接續情境：從 PlaceSelectView 選完地點名稱、550ms 後直接接著開這裡建第一個固定圈。
+    /// 此時 member 名稱就是使用者剛選的地點名稱（住家／公司／⋯），標題與欄位預填據此客製化；
+    /// 編輯既有圈或替一般家人新增圈都不算，外觀維持原本樣子（見 body 內 districtSection 分支）。
+    private let isNewPlaceCircle: Bool
 
     init(member: LocalFamilyMember, circle: LocalLifeCircle? = nil) {
         self.member = member
         self.circle = circle
-        _name = State(initialValue: circle?.name ?? "")
+        let isNewPlaceCircle = member.isPlace && circle == nil
+        self.isNewPlaceCircle = isNewPlaceCircle
+        _name = State(initialValue: circle?.name ?? (isNewPlaceCircle ? member.name : ""))
         _address = State(initialValue: circle?.addressText ?? "")
         _radius = State(initialValue: circle?.radiusMeters ?? 1_000)
         _district = State(initialValue: circle?.district ?? Districts.unspecified)
@@ -38,6 +51,8 @@ struct CircleEditorView: View {
         _startHour = State(initialValue: circle?.scheduleStartHour ?? 8)
         _endHour = State(initialValue: circle?.scheduleEndHour ?? 19)
         _locationNeedsConfirmation = State(initialValue: circle == nil)
+        // 尚未做過任何自動判定嘗試前，進階設定預設展開，讓使用者一開始就能手動挑
+        _advancedExpanded = State(initialValue: true)
     }
 
     var body: some View {
@@ -86,23 +101,18 @@ struct CircleEditorView: View {
                 if let found, picked == nil {
                     Text("找到：\(found.name ?? address)").foregroundStyle(HCColor.safe)
                 } else if searchFailed && picked == nil {
-                    Text("找不到這個地點，請修改地址或改用目前位置；未確認前不會儲存固定圈。")
+                    Text("找不到這個地點，請修改地址或改用目前位置；未確認前不會儲存這個地點。")
                         .font(.caption)
                         .foregroundStyle(HCColor.attention)
                 }
-                Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
-                Picker("所在行政區", selection: $district) {
-                    ForEach(Districts.all, id: \.self) { Text($0) }
-                }
-                Text("行政區用於颱風、豪雨等區域型警報的比對，已支援全國鄉鎮市區；沒把握就選「未指定」，仍可收到點狀事件與全國官方警報。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Stepper("通知範圍：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
+                districtSection
                 Text("提醒類型：\(EventCategory.defaultSelection.joined(separator: "、"))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 scheduleSection
             }
-            .navigationTitle(circle == nil ? "新增固定圈" : "編輯固定圈")
+            .navigationTitle(navigationTitleText)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("儲存") { save() }
@@ -113,6 +123,66 @@ struct CircleEditorView: View {
                 }
             }
             .analyticsScreen("circle_editor")
+        }
+    }
+
+    /// 導覽標題：新增地點接續情境講人話（帶出剛選的地點名稱），其餘情境沿用「守護地點」語彙
+    private var navigationTitleText: String {
+        if isNewPlaceCircle { return "把「\(member.name)」放上地圖" }
+        return circle == nil ? "守護這個地點" : "編輯守護地點"
+    }
+
+    /// 所在行政區欄位：新增地點接續情境下改成「自動判定＋收進進階設定」，
+    /// 其餘情境（編輯既有圈、替一般家人新增圈）外觀維持原本常駐 Picker。
+    @ViewBuilder
+    private var districtSection: some View {
+        if isNewPlaceCircle {
+            if districtAutoDetected, district != Districts.unspecified {
+                Text("所在行政區：\(district)（自動判定）")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            DisclosureGroup("進階設定", isExpanded: $advancedExpanded) {
+                Picker("所在行政區", selection: districtBinding) {
+                    ForEach(Districts.all, id: \.self) { Text($0) }
+                }
+                Text("行政區用於颱風、豪雨等區域型警報的比對，已支援全國鄉鎮市區；沒把握就選「未指定」，仍可收到點狀事件與全國官方警報。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Picker("所在行政區", selection: districtBinding) {
+                ForEach(Districts.all, id: \.self) { Text($0) }
+            }
+            Text("行政區用於颱風、豪雨等區域型警報的比對，已支援全國鄉鎮市區；沒把握就選「未指定」，仍可收到點狀事件與全國官方警報。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 使用者手動在 Picker 挑行政區時，視為不再是自動判定的結果，讓上面的「自動判定」提示行消失
+    private var districtBinding: Binding<String> {
+        Binding(
+            get: { district },
+            set: { newValue in
+                district = newValue
+                districtAutoDetected = false
+            }
+        )
+    }
+
+    /// 自動判定行政區的共用邏輯：只從 Districts.all 這個集合裡挑值（guessDistrict 內部已用包含比對
+    /// 對到集合項），對不到就維持「未指定」並展開進階設定讓使用者手動選——絕不寫入集合外的自創字串，
+    /// 否則會讓區域型警報的行政區比對失效。已有值（含使用者手動選過）時不覆蓋。
+    private func applyAutoDetectedDistrict(_ matched: String) {
+        guard district == Districts.unspecified else { return }
+        if matched != Districts.unspecified {
+            district = matched
+            districtAutoDetected = true
+            advancedExpanded = false
+        } else {
+            districtAutoDetected = false
+            advancedExpanded = true
         }
     }
 
@@ -135,7 +205,7 @@ struct CircleEditorView: View {
         if let place = await MapReverseGeocoder.lookup(location) {
             let matchedDistrict = OnboardingView.guessDistrict(from: place.searchableText)
             pickedLabel = place.approximateLabel(district: matchedDistrict) ?? "座標已取得"
-            if district == Districts.unspecified { district = matchedDistrict }
+            applyAutoDetectedDistrict(matchedDistrict)
             if address.isEmpty { address = pickedLabel }
         } else {
             pickedLabel = "座標已取得"
@@ -182,10 +252,8 @@ struct CircleEditorView: View {
             found = try await MKLocalSearch(request: request).start().mapItems.first
             searchFailed = (found == nil)
             locationNeedsConfirmation = (found == nil)
-            // 搜尋成功且尚未手動選行政區時，從地址文字自動帶入
-            if district == Districts.unspecified {
-                district = OnboardingView.guessDistrict(from: "\(found?.name ?? "") \(address)")
-            }
+            // 搜尋成功時嘗試從地址文字自動帶入行政區（已有值時 applyAutoDetectedDistrict 內部會自動略過）
+            applyAutoDetectedDistrict(OnboardingView.guessDistrict(from: "\(found?.name ?? "") \(address)"))
         } catch {
             AppLog.data.error("地點搜尋失敗：\(error.localizedDescription)")
             found = nil
@@ -206,7 +274,7 @@ struct CircleEditorView: View {
             ?? circle.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
         guard let coordinate else { return }
         let target = circle ?? LocalLifeCircle(
-            name: "固定圈",
+            name: "守護地點",
             encryptedAddress: "",
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
@@ -214,7 +282,7 @@ struct CircleEditorView: View {
             alertTypes: EventCategory.defaultSelection,
             member: member
         )
-        target.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "固定圈" : name
+        target.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "守護地點" : name
         target.setAddress(pickedLabel.isEmpty ? (found?.name ?? address) : pickedLabel)
         target.latitude = coordinate.latitude
         target.longitude = coordinate.longitude

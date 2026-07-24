@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// UserDefaults / @AppStorage 鍵值集中定義，避免字串打錯造成設定失效
 enum SettingsKeys {
@@ -48,6 +49,9 @@ enum SettingsKeys {
     static let guardianIntroPending = "guardianIntroPending"
     /// 外觀模式（AppearanceMode 的 rawValue）：跟隨系統／淺色／深色
     static let appearanceMode = "appearanceMode"
+    /// 全域字體大小（AppTextSize 的 rawValue）：跟隨系統（預設）／大／特大／最大
+    /// 與 alertFrequencyLevel（提醒多寡：安靜／平衡／靈敏）是兩件事，實機測試曾誤認為同一個設定，故分鍵獨立管理
+    static let appTextSize = "appTextSize"
     /// 功能導覽待播旗標：Onboarding 完成時種下，首次進主畫面消耗；設定頁可重新種下
     static let homeTourPending = "homeTourPending"
     /// 首次設定時明確同意的法律文件版本；條款重大更新時改版號即可重新取得同意
@@ -69,6 +73,13 @@ enum SettingsKeys {
     static let quietEndHour = "quietEndHour"
     /// 情境式通知權限卡（帶領結束後）是否被使用者按過「先不用」；按過就不再出現這張卡
     static let notificationPromptDeclined = "notificationPromptDeclined"
+
+    // MARK: - 安全地圖圖層記憶（2026-07-24：使用者拍板「預設地圖不要出現避難所」）
+
+    /// 避難收容所圖層開關；預設關（城區帳篷海會干擾主畫面），使用者從圖層選單打開後要記住這個選擇
+    static let mapShowShelters = "mapShowShelters"
+    /// 急救責任醫院圖層開關；預設關，理由同避難收容所
+    static let mapShowHospitals = "mapShowHospitals"
 }
 
 /// 吵醒門檻：勿擾／靜音下，時效性通知能不能突破。使用者在設定頁「勿擾與吵醒」調整；
@@ -123,12 +134,14 @@ enum AlertFrequency: Int, CaseIterable, Identifiable {
         return raw.flatMap(AlertFrequency.init(rawValue:)) ?? .standard
     }
 
-    /// 分段控制顯示的短標籤（小／中／大）
+    /// 分段控制顯示的短標籤（安靜／平衡／靈敏）
+    /// 2026-07-24：實機測試員誤讀成字體大小調整，改名消除與「字體大小」的歧義；
+    /// case 名、rawValue、UserDefaults 儲存格式都不變，只改顯示文字
     var shortLabel: String {
         switch self {
-        case .low: return "小"
-        case .standard: return "中"
-        case .high: return "大"
+        case .low: return "安靜"
+        case .standard: return "平衡"
+        case .high: return "靈敏"
         }
     }
 
@@ -141,6 +154,45 @@ enum AlertFrequency: Int, CaseIterable, Identifiable {
             return "危險事件即時通知，高溫、降雨、停水等一般提醒也會通知。多數人適用。"
         case .high:
             return "除了上述，連尚未經官方或多來源確認的早期線索也會通知——更早知道，但可能偶有誤報。"
+        }
+    }
+}
+
+/// 全域字體大小。使用者在設定頁「外觀」附近調整；套用點是 App 根視圖（見 HavenCircleApp）
+/// 的 .dynamicTypeSize 覆寫，一次套用全樹、所有機型自動適配（xLarge/xxxLarge/accessibility1
+/// 都是 SwiftUI 內建的 Dynamic Type 級距，不是自訂 pt 數字，才能吃到系統的無障礙排版邏輯）。
+/// 「跟隨系統」＝不覆寫，尊重使用者在 iOS 設定 > 螢幕顯示與亮度 > 文字大小 的選擇。
+enum AppTextSize: String, CaseIterable, Identifiable {
+    case system      // 跟隨系統（預設）：不覆寫
+    case large       // 大：對應 DynamicTypeSize.xLarge
+    case extraLarge  // 特大：對應 DynamicTypeSize.xxxLarge
+    case huge        // 最大：對應 DynamicTypeSize.accessibility1
+
+    var id: String { rawValue }
+
+    /// 目前設定值（鍵不存在時預設「跟隨系統」，與舊版行為一致——這是新設定，舊使用者不該被意外放大）
+    static var current: AppTextSize {
+        let raw = UserDefaults.standard.string(forKey: SettingsKeys.appTextSize)
+        return raw.flatMap(AppTextSize.init(rawValue:)) ?? .system
+    }
+
+    /// 分段控制顯示的短標籤
+    var shortLabel: String {
+        switch self {
+        case .system: return "跟隨系統"
+        case .large: return "大"
+        case .extraLarge: return "特大"
+        case .huge: return "最大"
+        }
+    }
+
+    /// 要覆寫的 Dynamic Type 級距；跟隨系統時回 nil（呼叫端看到 nil 就不加 modifier，原樣交還系統）
+    var overrideSize: DynamicTypeSize? {
+        switch self {
+        case .system: return nil
+        case .large: return .xLarge
+        case .extraLarge: return .xxxLarge
+        case .huge: return .accessibility1
         }
     }
 }

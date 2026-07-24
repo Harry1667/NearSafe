@@ -26,7 +26,7 @@ struct MemberDetailView: View {
                     }
                 }
             }
-            Section("固定圈") {
+            Section("固定地點") {
                 let fixedCircles = member.lifeCircles.filter { $0.kind == .fixed }
                 if fixedCircles.isEmpty {
                     Text("尚未設定住家、倉庫或其他固定資產")
@@ -47,7 +47,7 @@ struct MemberDetailView: View {
                     }
                 }
             }
-            Button("新增固定圈", systemImage: "plus.circle.fill") { adding = true }
+            Button("新增守護地點", systemImage: "plus.circle.fill") { adding = true }
         }
         .navigationTitle(member.name)
         .analyticsScreen("member_detail")

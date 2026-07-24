@@ -91,9 +91,9 @@ struct FeatureTourView: View {
         .init(target: .historyRow, tab: TabRouter.homeTab, title: "回顧過去 30 天",
               message: "查看警戒圈周遭最近一個月的事件統計與紀錄，了解這個區域平時的安全樣貌。"),
         .init(target: .mapCanvas, tab: TabRouter.mapTab, title: "安全地圖",
-              message: "地圖同時呈現家人主動分享的即時圈、你儲存的固定圈、官方警報範圍與事件位置；每個即時圈都會標示最後更新時間。"),
+              message: "地圖同時呈現家人主動分享的即時圈、你儲存的固定地點、官方警報範圍與事件位置；每個即時圈都會標示最後更新時間。"),
         .init(target: .familyContent, tab: TabRouter.familyTab, title: "管理家人與重要地點",
-              message: "邀請家人加入、開啟自己的即時位置分享，或新增住家、倉庫等固定圈；每位家人都必須在自己的手機上同意位置分享。"),
+              message: "邀請家人加入、開啟自己的即時位置分享，或新增住家、倉庫等守護地點；每位家人都必須在自己的手機上同意位置分享。"),
         .init(target: .checkInButton, tab: TabRouter.homeTab, title: "回報平安，完成導覽",
               message: "一鍵告訴全家「我平安」，也可只在送出當下附上一次位置。完成後會留在安心總覽；下一步可到「家人」邀請成員。"),
     ]

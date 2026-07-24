@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
     @AppStorage(SettingsKeys.apnsDeviceToken) private var apnsToken = ""
     @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
+    @AppStorage(SettingsKeys.appTextSize) private var appTextSize = AppTextSize.system.rawValue
     @AppStorage(SettingsKeys.analyticsEnabled) private var analyticsEnabled = true
     @State private var showPaywall = false
     @State private var showDeleteConfirm = false
@@ -108,6 +109,26 @@ struct SettingsView: View {
                             settingsIcon("circle.lefthalf.filled", color: HCColor.brand)
                         }
                     }
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                        Label {
+                            Text("字體大小")
+                        } icon: {
+                            settingsIcon("textformat.size", color: HCColor.brand)
+                        }
+                        Picker("字體大小", selection: $appTextSize) {
+                            ForEach(AppTextSize.allCases) { size in
+                                Text(size.shortLabel).tag(size.rawValue)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        Text("警報來時，這行字就是這個大小")
+                            .font(.body)
+                        Text("跟隨系統會使用 iOS 設定 > 螢幕顯示與亮度 > 文字大小")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, HCSpacing.x1)
                 }
 
                 Section {
@@ -877,10 +898,19 @@ private struct AlertSettingsView: View {
     /// 「允許通知」按下後的結果（nil＝尚未按過）——按了沒反應等於壞掉，必須有可見回饋
     @State private var notificationGranted: Bool?
 
+    private var wakeThreshold: WakeThreshold {
+        WakeThreshold(rawValue: wakeThresholdRaw) ?? .standard
+    }
+
     var body: some View {
         Form {
             Section("提醒偏好") {
                 Toggle("啟用本機提醒", isOn: $alertsEnabled)
+                Text("提醒多寡")
+                    .font(.subheadline.weight(.semibold))
+                Text("調整你收到通知的多寡，不影響文字大小（文字大小在「外觀」設定另外調整）")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 Picker("通知頻率", selection: $alertFrequencyLevel) {
                     ForEach(AlertFrequency.allCases) { level in
                         Text(level.shortLabel).tag(level.rawValue)
@@ -914,15 +944,32 @@ private struct AlertSettingsView: View {
                 Text("吵醒＝突破靜音與勿擾的時效性通知；降級後通知仍會送達，只是不亮屏、不出聲。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Toggle("安靜時段", isOn: $quietHoursEnabled)
-                if quietHoursEnabled {
-                    Stepper("開始：\(quietStartHour):00", value: $quietStartHour, in: 0...23)
-                    Stepper("結束：\(quietEndHour):00", value: $quietEndHour, in: 0...23)
-                    Text("時段內僅地震・海嘯・火災與家人安否會吵醒你。")
+                // 「絕不吵醒」與「僅重大才吵」下，安靜時段對實際行為都沒有額外效果
+                // （見 NotificationScheduler.effectiveTimeSensitive：never 在安靜時段判斷前就 return false；
+                // majorOnly 下非重大已被攔在前面、重大又不受安靜時段影響，兩檔下開關形同虛設）。
+                // 與其留一顆「打得開但沒作用」的開關誤導使用者，改收起整塊並用一行話說明理由；
+                // 既有設定值（quietHoursEnabled／start／end）保留不清除，切回「標準」時原樣恢復。
+                switch wakeThreshold {
+                case .never:
+                    Text("已設為絕不吵醒：任何警報在任何時段都不會吵醒你，毋須設定安靜時段。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                case .majorOnly:
+                    Text("你已設定僅重大才吵：安靜時段內外行為相同（僅地震、海嘯、火災與家人安否會吵醒你），毋須另外設定安靜時段。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .standard:
+                    Toggle("安靜時段", isOn: $quietHoursEnabled)
+                    if quietHoursEnabled {
+                        Stepper("開始：\(quietStartHour):00", value: $quietStartHour, in: 0...23)
+                        Stepper("結束：\(quietEndHour):00", value: $quietEndHour, in: 0...23)
+                        Text("時段內僅地震・海嘯・火災與家人安否會吵醒你。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: wakeThresholdRaw)
             Section("每日安全摘要") {
                 Toggle("每天固定時間發送摘要", isOn: $digestEnabled)
                 if digestEnabled {

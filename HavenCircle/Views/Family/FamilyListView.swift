@@ -71,23 +71,22 @@ struct FamilyListView: View {
             myAccountSection
             if !isInFamilyCircle {
                 emptyStateSection
+                // 重要地點小節固定在成員／狀態卡之後：任何家庭狀態下都不消失、不沉底（2026-07 真機回饋）
+                placesSection
                 // 單人也能用：這正是使用者要的「我的即時圈」——純本地，不用登入
                 FollowCircleToggleSection()
-                addPlaceCard
-                placesSection
             } else if isCircleSolo {
                 waitingForFamilyCard
+                placesSection
                 FollowCircleToggleSection(disambiguateFromSharing: true)
                 LiveCircleSharingSection()
-                addPlaceCard
-                placesSection
                 leaveFamilySection
             } else {
                 familyCircleHeaderSection
                 familyMembersSection
+                placesSection
                 FollowCircleToggleSection(disambiguateFromSharing: true)
                 LiveCircleSharingSection()
-                placesSection
                 InviteFamilySection()
                 leaveFamilySection
             }
@@ -278,45 +277,6 @@ struct FamilyListView: View {
         .listRowBackground(Color.clear)
     }
 
-    /// 次要卡：一個人也能守護「不是自己」的地方（爸媽家、公司）。
-    private var addPlaceCard: some View {
-        Section {
-            Button {
-                gateAddPlace()
-            } label: {
-                HStack(spacing: HCSpacing.x3) {
-                    Image(systemName: "mappin.and.ellipse")
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40, height: 40)
-                        .background(.secondary.opacity(0.08), in: Circle())
-                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                        Text("新增重要地點").font(.body.weight(.medium))
-                        Text("爸媽家、公司，都能設警戒圈")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-                .hcCard()
-            }
-            .buttonStyle(.plain)
-        }
-        .listRowInsets(
-            EdgeInsets(
-                top: HCSpacing.x1,
-                leading: HCSpacing.x4,
-                bottom: HCSpacing.x1,
-                trailing: HCSpacing.x4
-            )
-        )
-        .listRowBackground(Color.clear)
-    }
-
     /// 建立家庭圈（若尚未建立）並開啟邀請碼畫面。首次建立家庭圈成功後先接身分選擇（C3），
     /// 選完／略過再開邀請碼畫面。
     private func startInviteFlow() async {
@@ -475,10 +435,15 @@ struct FamilyListView: View {
         }
     }
 
-    @ViewBuilder
+    /// 重要地點小節：不論家庭狀態一律顯示（未入圈／單人／多人家庭都固定在成員區之後），
+    /// 新增入口收在小節內這一列，不再另外放一張會在多人家庭時消失的獨立卡片。
     private var placesSection: some View {
-        if !places.isEmpty {
-            Section("重要地點") {
+        Section("重要地點") {
+            if places.isEmpty {
+                Text("還沒有守護地點，加一個爸媽家吧")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
                 ForEach(places) { place in
                     NavigationLink {
                         MemberDetailView(member: place)
@@ -490,7 +455,7 @@ struct FamilyListView: View {
                             VStack(alignment: .leading, spacing: HCSpacing.x1) {
                                 Text(place.name)
                                 let fixedCount = place.lifeCircles.filter { $0.kind == .fixed }.count
-                                Text("\(fixedCount) 個固定圈")
+                                Text("\(fixedCount) 個固定地點")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -505,6 +470,11 @@ struct FamilyListView: View {
                         }
                     }
                 }
+            }
+            Button {
+                gateAddPlace()
+            } label: {
+                Label("新增守護地點", systemImage: "plus.circle.fill")
             }
         }
     }
@@ -617,7 +587,7 @@ struct FamilyListView: View {
         adding = true
     }
 
-    /// 「新增重要地點」入口共用閘門：FamilyListView 的 toolbar 與 addPlaceCard 都呼叫這裡，
+    /// 「新增重要地點」入口共用閘門：FamilyListView 的 toolbar 與 placesSection 內的新增列都呼叫這裡，
     /// 保證兩處判斷的額度定義永遠一致。
     private func gateAddPlace() {
         guard entitlementStore.canAddPlace(currentCount: places.count) else {

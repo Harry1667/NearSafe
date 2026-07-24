@@ -19,8 +19,10 @@ struct SafetyMapView: View {
     /// 開啟後只在鏡頭夠近時顯示視野內最近的一批，全國點位一次全畫會拖垮地圖。
     /// 2026-07-23 使用者實測裁決：平時**不**預設顯示（城區帳篷海干擾主畫面），
     /// 需要的人從圖層選單開；新手帶領的保底段自帶單一避難所標記，不依賴此圖層。
-    @State private var showShelters = false
-    @State private var showHospitals = false
+    /// 2026-07-24：改用 @AppStorage 記住使用者在圖層選單裡的選擇——開過一次之後，
+    /// 下次開 App 不必重新再開一次（純顯示偏好，不影響通知判定）。
+    @AppStorage(SettingsKeys.mapShowShelters) private var showShelters = false
+    @AppStorage(SettingsKeys.mapShowHospitals) private var showHospitals = false
     /// 目前鏡頭範圍，供資源圖層做視野內過濾
     @State private var visibleRegion: MKCoordinateRegion?
     /// 空品圖層：日常環境資訊，預設關（開啟時才抓資料）
@@ -109,6 +111,17 @@ struct SafetyMapView: View {
 
     private var visibleCircles: [LocalLifeCircle] {
         visibleMembers.flatMap(\.lifeCircles)
+    }
+
+    /// 圖例用：目前畫面上有圈的成員，本人排第一、其餘依名字排序，
+    /// 讓「顏色 → 是誰」的對照表和地圖上實際畫出來的圈一致。
+    private var circleLegendMembers: [LocalFamilyMember] {
+        visibleMembers
+            .filter { !$0.lifeCircles.isEmpty }
+            .sorted { a, b in
+                if a.isCurrentUser != b.isCurrentUser { return a.isCurrentUser }
+                return a.name < b.name
+            }
     }
 
     /// 尚未開啟即時圈的家人，仍可顯示最近一次主動安否回報的位置。
@@ -367,7 +380,12 @@ struct SafetyMapView: View {
             }
             if showCircles {
                 ForEach(visibleCircles) { circle in
-                    let circleColor: Color = circle.kind == .live ? HCColor.safe : HCColor.brand
+                    // 顏色改依「守護對象是誰」而非「圈的類型」分——同一個人的即時圈與固定圈
+                    // 現在會是同一色，不同人盡量錯開；本人固定拿綠色（沿用舊語意）
+                    let circleColor = CircleColorPalette.color(
+                        for: circle.member?.memberKey ?? circle.circleKey,
+                        isCurrentUser: circle.member?.isCurrentUser == true
+                    )
                     let renderedColor = circle.isActiveForAlerts ? circleColor : Color.gray
                     // 調整面板開著時，這顆圈即時吃滑桿預覽值（放手前不寫回 SwiftData）；
                     // 沒在調整就照常顯示已存檔的半徑
@@ -575,11 +593,17 @@ struct SafetyMapView: View {
         }
         // 具名座標空間：guidance 脈動圈換算螢幕直徑要用 proxy.convert（見 circleScreenDiameter）
         .coordinateSpace(.named(Self.mapSpace))
-        // 調整面板開著時，點地圖其他處＝存檔＋收起面板；只加在調整模式下，
-        // 不影響平時的地圖平移／縮放手勢（onTapGesture 不吃 pan/pinch）
+        // 調整面板開著時，點地圖其他處＝存檔＋收起面板；圖例展開時，點地圖其他處＝收合圖例。
+        // 兩者共用同一個 onTapGesture，只加在各自模式成立時才動作，
+        // 不影響平時的地圖平移／縮放手勢，也不吃大頭針/標註本身的點擊（onTapGesture 不吃 pan/pinch，
+        // 且標註自己的手勢辨識優先於地圖底層這個 tap，實測與既有的調整面板收合邏輯一致）
         .onTapGesture {
-            guard adjustingCircleKey != nil else { return }
-            finishAdjustingCircle()
+            if adjustingCircleKey != nil {
+                finishAdjustingCircle()
+            }
+            if isLegendExpanded {
+                withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = false }
+            }
         }
         }
     }
@@ -980,47 +1004,57 @@ struct SafetyMapView: View {
         if showsSeverity || showCrimeLayer || resourceHint || showCircles {
             Group {
                 if isLegendExpanded {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Label("地圖圖例", systemImage: "info.circle.fill")
-                                .font(.caption.bold())
-                            Spacer(minLength: 12)
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = false }
-                            } label: {
+                    // 整卡都能點收合（不只 chevron）：用 Button 包住整個卡片內容，
+                    // .buttonStyle(.plain) 讓 hit-test 涵蓋整個 label 範圍（含背景），
+                    // 而不是只有 chevron 那個小圖示——真機回報「一定要點三角形才收得起來」的修法。
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = false }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                Label("地圖圖例", systemImage: "info.circle.fill")
+                                    .font(.caption.bold())
+                                Spacer(minLength: 12)
                                 Image(systemName: "chevron.down")
                                     .font(.caption.weight(.semibold))
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("收合地圖圖例")
+                            if showCircles {
+                                // 顏色現在代表「守護對象是誰」而非「圈的類型」，
+                                // 圖例改列出每個目前有圈的人＋對應顏色，不再是固定的「即時圈=綠、固定圈=藍」
+                                Text("警戒圈：每個守護對象一個顏色").font(.caption2.bold())
+                                ForEach(circleLegendMembers, id: \.memberKey) { member in
+                                    legendRow(
+                                        CircleColorPalette.color(for: member.memberKey, isCurrentUser: member.isCurrentUser).opacity(0.8),
+                                        member.displayName
+                                    )
+                                }
+                                legendRow(Color.gray.opacity(0.8), "即時位置已過期")
+                            }
+                            if showsSeverity {
+                                Text("警報區").font(.caption2.bold())
+                                legendRow(RegionAlert.severityColor(rank: 3), "警戒／危急")
+                                legendRow(RegionAlert.severityColor(rank: 1), "注意")
+                                legendRow(RegionAlert.severityColor(rank: 0), "留意／提醒")
+                            }
+                            if showCrimeLayer {
+                                Text("治安參考").font(.caption2.bold())
+                                legendRow(HCColor.reference.opacity(0.7), "季度統計高於全國中位數（越深越多）")
+                                Text("統計≠即時安全程度，僅供參考")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if resourceHint {
+                                Label("放大地圖即可顯示避難所／醫院", systemImage: "plus.magnifyingglass")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                        if showCircles {
-                            Text("警戒圈").font(.caption2.bold())
-                            legendRow(HCColor.safe.opacity(0.8), "即時圈（跟隨家人手機）")
-                            legendRow(HCColor.brand.opacity(0.8), "固定圈（住家／資產）")
-                            legendRow(Color.gray.opacity(0.8), "即時位置已過期")
-                        }
-                        if showsSeverity {
-                            Text("警報區").font(.caption2.bold())
-                            legendRow(RegionAlert.severityColor(rank: 3), "警戒／危急")
-                            legendRow(RegionAlert.severityColor(rank: 1), "注意")
-                            legendRow(RegionAlert.severityColor(rank: 0), "留意／提醒")
-                        }
-                        if showCrimeLayer {
-                            Text("治安參考").font(.caption2.bold())
-                            legendRow(HCColor.reference.opacity(0.7), "季度統計高於全國中位數（越深越多）")
-                            Text("統計≠即時安全程度，僅供參考")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        if resourceHint {
-                            Label("放大地圖即可顯示避難所／醫院", systemImage: "plus.magnifyingglass")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+                        .padding(10)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .contentShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .padding(10)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .buttonStyle(.plain)
+                    .accessibilityHint("點兩下收合地圖圖例")
                     .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottomLeading)))
                 } else {
                     Button {

@@ -8,7 +8,7 @@ enum LifeCircleKind: String, CaseIterable {
     var title: String {
         switch self {
         case .live: "即時圈"
-        case .fixed: "固定圈"
+        case .fixed: "固定地點"
         }
     }
 
