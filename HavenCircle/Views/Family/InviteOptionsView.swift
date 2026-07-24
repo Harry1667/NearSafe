@@ -8,6 +8,11 @@ struct InviteOptionsView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(\.dismiss) private var dismiss
 
+    /// C3：重新產生進行中狀態；避免重複點擊送出多個請求。
+    @State private var isRegenerating = false
+    /// C3：重新產生失敗的人話錯誤（不直接丟 error.localizedDescription 給使用者看）。
+    @State private var regenerateError: String?
+
     private var inviteCode: String? { sync.currentInviteCode }
 
     var body: some View {
@@ -15,11 +20,17 @@ struct InviteOptionsView: View {
             List {
                 if let code = inviteCode {
                     codeSection(code: code)
+                    expirySection
                     qrSection(code: code)
                     Section {
                         ShareLink(item: shareText(code: code)) {
                             Label("用訊息或 AirDrop 分享邀請碼", systemImage: "square.and.arrow.up")
                         }
+                    }
+                    // C5：重新產生只有圈主看得到——非圈主沒有權限刪舊碼（rules 的
+                    // isOwner），顯示了按也沒用，反而讓人以為自己能改碼。
+                    if sync.isFamilyOwner {
+                        regenerateSection
                     }
                 } else {
                     Section {
@@ -38,6 +49,67 @@ struct InviteOptionsView: View {
             .analyticsScreen("invite_options")
         }
     }
+
+    /// C4：顯示邀請碼效期；nil（舊碼沒有 expiresAt 欄位，或尚未讀到）一律顯示長期有效文案。
+    private var expirySection: some View {
+        Section {
+            if let expiresAt = sync.currentInviteCodeExpiresAt {
+                Label(
+                    "效期至\(Self.expiryDateFormatter.string(from: expiresAt))",
+                    systemImage: "clock"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                Label("長期有效（建議重新產生）", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var regenerateSection: some View {
+        Section {
+            if isRegenerating {
+                HStack {
+                    ProgressView()
+                    Text("正在產生新邀請碼⋯")
+                }
+            } else {
+                Button {
+                    Task { await regenerate() }
+                } label: {
+                    Label("重新產生邀請碼", systemImage: "arrow.clockwise")
+                }
+            }
+            if let regenerateError {
+                Text(regenerateError)
+                    .font(.caption)
+                    .foregroundStyle(HCColor.danger)
+            }
+        } footer: {
+            Text("重新產生後，舊邀請碼會立即失效，請把新碼分享給還沒加入的家人。")
+        }
+    }
+
+    private func regenerate() async {
+        isRegenerating = true
+        regenerateError = nil
+        defer { isRegenerating = false }
+        do {
+            try await sync.regenerateInviteCode()
+        } catch {
+            regenerateError = "重新產生邀請碼失敗，請檢查網路後再試一次。"
+            AppLog.cloudError("重新產生邀請碼失敗：\(error.localizedDescription)")
+        }
+    }
+
+    private static let expiryDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M 月 d 日"
+        formatter.locale = Locale(identifier: "zh_TW")
+        return formatter
+    }()
 
     private func codeSection(code: String) -> some View {
         Section("你的家庭邀請碼") {

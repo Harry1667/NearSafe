@@ -32,6 +32,9 @@ final class FamilySyncService {
     private(set) var liveLocationError: String?
     /// 目前家庭圈的邀請碼（給 UI 顯示、分享給家人）；未在家庭圈時為 nil
     private(set) var currentInviteCode: String?
+    /// 目前邀請碼的到期時間（C4：InviteOptionsView 顯示「效期至」用）。
+    /// nil 代表「舊邀請碼沒有 expiresAt 欄位」（長期有效）或尚未讀到，兩者 UI 上顯示同一種文案。
+    private(set) var currentInviteCodeExpiresAt: Date?
     /// 目前家庭圈的名稱（A4 header 用）；未在家庭圈或尚未讀到時為 nil
     private(set) var familyName: String?
     /// 目前家庭圈的成員 uid 清單（雲端真相）；未在家庭圈時為空陣列。
@@ -103,13 +106,13 @@ final class FamilySyncService {
                 // 本機沒存 familyId 就用 uid 反查（換裝置、重裝後還原所屬家庭）
                 if let family = try await FirestoreFamilyBackend.findFamily(forUid: uid) {
                     currentFamilyID = family.id
-                    applyFamily(family)
+                    await applyFamily(family)
                 }
             } else if let familyID = currentFamilyID {
                 // 每次都重讀根文件，讓 familyName/memberUids（A4 header、D1 單人判斷）保持新鮮，
                 // 而不是只在「邀請碼尚未快取」時才補讀一次。
                 let family = try await FirestoreFamilyBackend.fetchFamily(familyId: familyID)
-                applyFamily(family)
+                await applyFamily(family)
             }
         } catch {
             AppLog.cloud.error("查詢所屬家庭失敗：\(error.localizedDescription)")
@@ -117,12 +120,16 @@ final class FamilySyncService {
         state = currentFamilyID == nil ? .ready : .sharing
     }
 
-    /// 把家庭圈根文件套用到本服務暴露的欄位（邀請碼／名稱／成員 uid 清單）。
-    private func applyFamily(_ family: FamilyCircleDoc) {
+    /// 把家庭圈根文件套用到本服務暴露的欄位（邀請碼／名稱／成員 uid 清單），
+    /// 並附帶讀一次邀請碼的到期時間（C4）。到期時間存在 inviteCodes/{code} 文件而不是家庭
+    /// 根文件上，所以這裡多一次讀取；讀取失敗（例如剛好離線）不擋主流程，頂多這次先顯示
+    /// nil，下次呼叫再補上，不影響其他欄位。
+    private func applyFamily(_ family: FamilyCircleDoc) async {
         currentInviteCode = family.inviteCode
         familyName = family.name
         memberUids = family.memberUids
         isFamilyOwner = family.ownerUid == uid
+        currentInviteCodeExpiresAt = try? await FirestoreFamilyBackend.fetchInviteCodeExpiry(code: family.inviteCode)
     }
 
     // MARK: - 建立 / 加入家庭圈（邀請碼取代 CKShare）
@@ -139,7 +146,7 @@ final class FamilySyncService {
             familyName: name
         )
         currentFamilyID = family.id
-        applyFamily(family)
+        await applyFamily(family)
         state = .sharing
         if let context {
             await refreshFamilyMembers(context: context)
@@ -157,13 +164,24 @@ final class FamilySyncService {
         )
         currentFamilyID = familyID
         if let family = try? await FirestoreFamilyBackend.fetchFamily(familyId: familyID) {
-            applyFamily(family)
+            await applyFamily(family)
         }
         state = .sharing
         await fetchPings()
         if let context {
             await refreshFamilyMembers(context: context)
         }
+    }
+
+    /// 重新產生邀請碼（C3）：只有圈主能真正生效（對照 firestore.rules `inviteCodes/{code}`
+    /// 的 `isOwner` 刪除權；非圈主呼叫舊碼刪不掉，但 UI 本來就只對圈主顯示這顆按鈕，見
+    /// InviteOptionsView 用 [isFamilyOwner] 判斷）。成功後立即更新 currentInviteCode／
+    /// currentInviteCodeExpiresAt，讓 QR code 與分享文案馬上換成新碼，不必等下次刷新。
+    func regenerateInviteCode() async throws {
+        guard let familyID = currentFamilyID else { return }
+        let result = try await FirestoreFamilyBackend.regenerateInviteCode(familyId: familyID)
+        currentInviteCode = result.code
+        currentInviteCodeExpiresAt = result.expiresAt
     }
 
     /// 確保有家庭圈可寫入；沒有就自動建一個（給「還沒建家庭圈就發位置／回報」的情境）。回傳 familyId。
@@ -187,7 +205,7 @@ final class FamilySyncService {
         guard let familyID = currentFamilyID, let selfUID = uid else { return }
         do {
             let family = try await FirestoreFamilyBackend.fetchFamily(familyId: familyID)
-            applyFamily(family)
+            await applyFamily(family)
 
             let remoteMembers = try await FirestoreFamilyBackend.fetchMembers(familyId: familyID)
             var localMembers = (try? context.fetch(FetchDescriptor<LocalFamilyMember>())) ?? []
@@ -575,6 +593,7 @@ final class FamilySyncService {
         liveLocations = []
         currentFamilyID = nil
         currentInviteCode = nil
+        currentInviteCodeExpiresAt = nil
         familyName = nil
         memberUids = []
         isFamilyOwner = false

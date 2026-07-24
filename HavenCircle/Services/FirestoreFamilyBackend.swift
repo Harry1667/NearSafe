@@ -38,6 +38,9 @@ enum FamilyBackendError: LocalizedError {
     case notSignedIn
     case invalidInviteCode
     case familyNotFound
+    /// 邀請碼格式合法、查得到 familyId，但已超過 7 天效期（C2）。
+    /// 舊邀請碼（沒有 expiresAt 欄位）一律視為有效，不會落到這個分支。
+    case inviteExpired
 
     var errorDescription: String? {
         switch self {
@@ -47,6 +50,8 @@ enum FamilyBackendError: LocalizedError {
             return "邀請碼不正確或已失效，請向家人確認後重新輸入。"
         case .familyNotFound:
             return "找不到對應的家庭圈，可能已被解散。"
+        case .inviteExpired:
+            return "這組邀請碼已過期，請家人重新產生一組。"
         }
     }
 }
@@ -86,9 +91,12 @@ enum FirestoreFamilyBackend {
         // 邀請碼索引：家人輸入碼 → 查到 familyId。獨立 collection 讓「用碼查家庭」不必掃全表。
         // familyName/ownerName（C1）額外寫入：讓對方輸碼後能在加入前看到「要加入誰的家庭圈」，
         // 不必先加入才知道加錯人。
+        // expiresAt（7 天效期）：只是欄位，過期判斷由 lookupInvite/joinFamily 在讀取端做；
+        // 舊邀請碼（此欄位補上之前建立的）沒有這個欄位，視為長期有效，相容既有家庭。
         try await db.collection(FirestoreConfig.Path.inviteCodes).document(code).setData([
             "familyId": familyRef.documentID,
             "createdAt": Timestamp(date: now),
+            "expiresAt": Timestamp(date: now.addingTimeInterval(inviteCodeLifetime)),
             "familyName": familyName,
             "ownerName": ownerDisplayName
         ])
@@ -113,8 +121,12 @@ enum FirestoreFamilyBackend {
         let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
 
         let codeDoc = try await db.collection(FirestoreConfig.Path.inviteCodes).document(normalized).getDocument()
-        guard codeDoc.exists, let familyId = codeDoc.data()?["familyId"] as? String else {
+        guard codeDoc.exists, let data = codeDoc.data(), let familyId = data["familyId"] as? String else {
             throw FamilyBackendError.invalidInviteCode
+        }
+        // C2：expiresAt 存在且已過期 → 專屬錯誤；欄位不存在（舊碼）視為有效，相容既有家庭。
+        if let expiresAt = (data["expiresAt"] as? Timestamp)?.dateValue(), expiresAt < Date() {
+            throw FamilyBackendError.inviteExpired
         }
         let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
         // 併發安全：arrayUnion 不會重複加入同一個 uid。
@@ -150,26 +162,58 @@ enum FirestoreFamilyBackend {
     /// 解散家庭圈：只有圈主能呼叫（對照 firestore.rules `families/{familyId}` 的
     /// `allow delete: if ... resource.data.ownerUid == request.auth.uid`）。
     ///
-    /// 刪根文件前先盡力清掉「自己」的成員／位置子文件（rules 允許本人寫入自己的
-    /// members/{uid}、locations/{uid}，寫入含刪除）。
+    /// 現在會把整個家庭圈的資料清乾淨，不再留孤兒資料。順序固定且刻意如此（每一步都對照
+    /// firestore.rules 為什麼在「根文件還在」的當下有權限）：
+    /// ①刪所有 members/*、locations/* 子文件（rules 新增的 `isOwner(familyId)` 給圈主刪
+    ///   其他成員文件的權限；這個 get() 查根文件的 ownerUid，此時根文件必須還在）
+    /// ②分頁批次刪 pings（同樣靠 isOwner；每批最多 400 筆，用 WriteBatch 減少往返）
+    /// ③刪 inviteCodes/{familyDoc.inviteCode}（rules 的 isOwner 一樣要查得到根文件的
+    ///   ownerUid，所以必須在刪根文件「之前」做）
+    /// ④最後才刪 families/{id} 根文件本身
     ///
-    /// 已知限制（刻意不處理，留註解說明）：
-    /// - 其他成員的 members/{uid}、locations/{uid} 子文件不會被清掉——rules 只允許
-    ///   本人寫入自己的子文件，圈主沒有權限代刪；根文件一旦刪除，這些子文件會變成
-    ///   沒有母文件的孤兒資料，但因為所有讀取路徑都先查根文件是否存在，不會再被
-    ///   任何功能讀到。
-    /// - 所有 pings/{pingId} 一律禁止刪除（rules `allow delete: if false`），解散後
-    ///   同樣變成孤兒資料，無法清除。
-    /// - inviteCodes/{code} 索引禁止 update/delete，解散後這組碼會永久指向一個已刪除
-    ///   的 familyId。[lookupInvite] 本身讀不到家庭根文件（非成員讀取一律 permission-denied，
-    ///   無法藉此判斷是否存在），因此「優雅失敗」改在 [joinFamily] 實際寫入 memberUids 時
-    ///   偵測——那次寫入被拒時會轉譯成 [FamilyBackendError.familyNotFound] 讓 UI 優雅顯示，
-    ///   不會讓使用者誤以為能加入一個早就解散的家庭圈。
+    /// 任何一步失敗都直接往上拋（不再用 try? 吞掉），根文件此時仍然存在——使用者重試
+    /// 「解散家庭圈」即可從失敗處續刪（每一步都是刪除操作，天然冪等，重跑不會出錯）。
+    /// 唯一無法完全避免的殘留情境：解散途中斷網／App 被殺掉、根文件還在但部分子資料
+    /// 已被清掉，這種「解散中途」的殘留可重試修復，不是永久孤兒。
     static func deleteFamily(familyId: String, uid: String) async throws {
         let db = FirestoreConfig.store()
         let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
-        try? await familyRef.collection(FirestoreConfig.Path.members).document(uid).delete()
-        try? await familyRef.collection(FirestoreConfig.Path.locations).document(uid).delete()
+
+        // 解散前讀一次根文件：拿 inviteCode（③要用）；此時根文件必須還在，
+        // 之後每一步 rules 的 isOwner() 才查得到 ownerUid。
+        let family = try await fetchFamily(familyId: familyId)
+
+        // ①members/*、locations/* 子文件：列出目前實際存在的文件逐一刪，
+        // 而不是只刪 memberUids 陣列裡的 uid——陣列可能因為某些歷史因素跟子集合不完全同步，
+        // 直接列 collection 才能保證刪乾淨。
+        let membersSnapshot = try await familyRef.collection(FirestoreConfig.Path.members).getDocuments()
+        for doc in membersSnapshot.documents {
+            try await doc.reference.delete()
+        }
+        let locationsSnapshot = try await familyRef.collection(FirestoreConfig.Path.locations).getDocuments()
+        for doc in locationsSnapshot.documents {
+            try await doc.reference.delete()
+        }
+
+        // ②pings：分頁批次刪，每批最多 400 筆（Firestore WriteBatch 上限），
+        // 反覆抓下一批直到抓不到為止，避免安否回報量大時一次性操作逾時。
+        while true {
+            let batchSnapshot = try await familyRef.collection(FirestoreConfig.Path.pings)
+                .limit(to: 400)
+                .getDocuments()
+            if batchSnapshot.documents.isEmpty { break }
+            let batch = db.batch()
+            for doc in batchSnapshot.documents {
+                batch.deleteDocument(doc.reference)
+            }
+            try await batch.commit()
+            if batchSnapshot.documents.count < 400 { break }
+        }
+
+        // ③inviteCodes/{code}：家庭文件還在，rules 的 isOwner() 查得到 ownerUid，這裡才刪得掉。
+        try await db.collection(FirestoreConfig.Path.inviteCodes).document(family.inviteCode).delete()
+
+        // ④最後才刪根文件——必須是最後一步，前面三步都依賴它還存在才有刪除權限。
         try await familyRef.delete()
     }
 
@@ -211,6 +255,9 @@ enum FirestoreFamilyBackend {
     /// 抽成共用常數讓輸入端（JoinByCodeView）能驗證字元合法性，不只是驗長度。
     static let inviteCodeCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
+    /// 邀請碼效期（C1）：7 天。createFamily／regenerateInviteCode 寫入 expiresAt 時共用這個常數。
+    static let inviteCodeLifetime: TimeInterval = 7 * 24 * 60 * 60
+
     /// 產生 8 碼邀請碼。
     static func generateInviteCode() -> String {
         let charset = Array(inviteCodeCharset)
@@ -242,11 +289,59 @@ enum FirestoreFamilyBackend {
         guard codeDoc.exists, let data = codeDoc.data(), let familyId = data["familyId"] as? String else {
             throw FamilyBackendError.invalidInviteCode
         }
+        // C2：expiresAt 存在且已過期 → 專屬錯誤；欄位不存在（舊碼）視為有效，相容既有家庭。
+        if let expiresAt = (data["expiresAt"] as? Timestamp)?.dateValue(), expiresAt < Date() {
+            throw FamilyBackendError.inviteExpired
+        }
         return InvitePreview(
             familyId: familyId,
             familyName: data["familyName"] as? String,
             ownerName: data["ownerName"] as? String
         )
+    }
+
+    /// 讀取邀請碼索引文件的效期（C4：InviteOptionsView 顯示「效期至 M 月 d 日」用）。
+    /// 沒有 expiresAt 欄位（舊碼）回傳 nil，呼叫端顯示「長期有效（建議重新產生）」。
+    static func fetchInviteCodeExpiry(code: String) async throws -> Date? {
+        let db = FirestoreConfig.store()
+        let doc = try await db.collection(FirestoreConfig.Path.inviteCodes).document(code).getDocument()
+        guard let data = doc.data() else { return nil }
+        return (data["expiresAt"] as? Timestamp)?.dateValue()
+    }
+
+    /// 重新產生邀請碼（C3）：圈主專用（對照 firestore.rules `inviteCodes/{code}` 的
+    /// `allow delete: if isOwner(...)`——非圈主呼叫這裡，刪舊碼那步會被拒但不擋主流程，
+    /// UI 層本來就只對圈主顯示這個按鈕，見 InviteOptionsView）。
+    ///
+    /// 順序：先讀根文件拿 familyName/ownerUid（保留跟 createFamily 一致的預覽欄位）→
+    /// 產新碼寫入 inviteCodes（含 7 天效期）→ 更新 families/{id}.inviteCode 指向新碼 →
+    /// 盡力刪舊碼索引文件（失敗不擋：Firestore TTL 政策到期會自動清除，且加入邏輯真正
+    /// 依賴的是 familyId，舊碼頂多讓「已經知道舊碼的人」還能看到加入前預覽）。
+    static func regenerateInviteCode(familyId: String) async throws -> (code: String, expiresAt: Date) {
+        let db = FirestoreConfig.store()
+        let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
+        let family = try await fetchFamily(familyId: familyId)
+        let oldCode = family.inviteCode
+
+        let ownerDoc = try? await familyRef.collection(FirestoreConfig.Path.members)
+            .document(family.ownerUid).getDocument()
+        let ownerName = (ownerDoc?.data()?["displayName"] as? String) ?? "圈主"
+
+        let newCode = generateInviteCode()
+        let now = Date()
+        let expiresAt = now.addingTimeInterval(inviteCodeLifetime)
+        try await db.collection(FirestoreConfig.Path.inviteCodes).document(newCode).setData([
+            "familyId": familyId,
+            "createdAt": Timestamp(date: now),
+            "expiresAt": Timestamp(date: expiresAt),
+            "familyName": family.name,
+            "ownerName": ownerName
+        ])
+        try await familyRef.updateData(["inviteCode": newCode])
+        // 舊碼盡力刪除；失敗（例如網路中斷）不擋，因為家庭根文件已指向新碼，
+        // 舊碼殘留頂多是「查得到過期的預覽」，且 TTL 政策到期會自動清掉。
+        try? await db.collection(FirestoreConfig.Path.inviteCodes).document(oldCode).delete()
+        return (newCode, expiresAt)
     }
 
     // MARK: - 即時位置（同意式：只有開啟分享的人才會被寫入 locations 子集合）
@@ -308,12 +403,16 @@ enum FirestoreFamilyBackend {
         let db = FirestoreConfig.store()
         let ref = db.collection(FirestoreConfig.Path.families).document(familyId)
             .collection(FirestoreConfig.Path.pings).document()
+        let now = Date()
         var data: [String: Any] = [
             "senderUid": senderUid,
             "senderName": senderName,
             "status": status.rawValue,
             "note": note,
-            "createdAt": Timestamp(date: Date()),
+            "createdAt": Timestamp(date: now),
+            // D1：30 天 TTL 欄位，只負責寫入；Firestore 原生 TTL 政策（另行於 Console／REST 設定）
+            // 才是實際刪除的機制，這裡到期後讀取端不用特別過濾，刪除本身有延遲也無妨。
+            "expireAt": Timestamp(date: now.addingTimeInterval(30 * 24 * 60 * 60)),
             "readBy": [String]()
         ]
         // 位置為回報者「自願附上」的一次性座標，nil＝沒附

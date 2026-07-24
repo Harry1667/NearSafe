@@ -217,6 +217,8 @@ struct JoinByCodeView: View {
         switch error {
         case FamilyBackendError.invalidInviteCode, FamilyBackendError.familyNotFound:
             return notFound
+        case FamilyBackendError.inviteExpired:
+            return "這組邀請碼已過期，請家人重新產生一組。"
         default:
             return "網路連線有問題，請檢查網路後再試一次。"
         }

@@ -12,6 +12,15 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.memberUids;
     }
 
+    // 判斷 request.auth.uid 是否為某家庭圈的圈主（用根文件的 ownerUid 欄位）。
+    // 只給「解散家庭圈」這條路徑額外授權用：圈主刪除其他成員留下的子文件／邀請碼，
+    // 讓解散不再留孤兒資料。家庭根文件一旦被刪，這個 get() 會失敗而整條規則判為 false，
+    // 這是刻意的：根文件必須是解散順序中最後被刪的一個。
+    function isOwner(familyId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/families/$(familyId)).data.ownerUid == request.auth.uid;
+    }
+
     match /families/{familyId} {
       // 讀：只有家庭成員能讀家庭根文件
       allow read: if isMember(familyId);
@@ -34,32 +43,45 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && resource.data.ownerUid == request.auth.uid;
 
-      // 成員：家庭成員可讀；每人只能寫自己的成員文件
+      // 成員：家庭成員可讀；每人只能新增/修改自己的成員文件。
+      // 刪除另外開一條：本人可刪自己的（離開家庭圈），或圈主可刪任何人的（解散家庭圈時
+      // 清掉其他成員留下的成員文件，不再留孤兒資料）——create/update 條件完全不變，
+      // 只是把原本涵蓋 delete 的 write 拆開，delete 用更寬的條件。
       match /members/{uid} {
         allow read: if isMember(familyId);
-        allow write: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow delete: if request.auth != null && (request.auth.uid == uid || isOwner(familyId));
       }
 
-      // 即時位置：家庭成員可讀；每人只能寫自己的位置（同意式分享的技術保證）
+      // 即時位置：家庭成員可讀；每人只能新增/修改自己的位置（同意式分享的技術保證）。
+      // 刪除同 members：本人或圈主（解散時清掉其他成員留下的位置文件）。
       match /locations/{uid} {
         allow read: if isMember(familyId);
-        allow write: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow delete: if request.auth != null && (request.auth.uid == uid || isOwner(familyId));
       }
 
-      // 安否回報：家庭成員可讀、可發、可標記已讀（更新）；不開放刪除
+      // 安否回報：家庭成員可讀、可發、可標記已讀（更新）；一般情況下不開放刪除，
+      // 只有圈主解散家庭圈時能刪（避免解散後留下永久孤兒資料）。
       match /pings/{pingId} {
         allow read: if isMember(familyId);
         allow create: if isMember(familyId);
         allow update: if isMember(familyId);
-        allow delete: if false;
+        allow delete: if isOwner(familyId);
       }
     }
 
-    // 邀請碼索引：登入者可讀（輸碼加入時查 familyId）與建立；不可竄改或刪除
+    // 邀請碼索引：登入者可讀（輸碼加入時查 familyId）與建立；不可竄改。
+    // 刪除只開放給該邀請碼所屬家庭圈的圈主（解散家庭圈、或重新產生邀請碼時清掉舊碼）——
+    // 家庭文件已被刪除時 get() 求值失敗、規則判為 false，是可接受的殘留：解散順序保證
+    // 邀請碼一定先於根文件被刪，只有「解散中途斷網」這種極端情況才會留下無法再刪的舊碼，
+    // 之後交由 Firestore 原生 TTL 政策（expiresAt 欄位）清除。
     match /inviteCodes/{code} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && isOwner(resource.data.familyId);
     }
   }
 }
