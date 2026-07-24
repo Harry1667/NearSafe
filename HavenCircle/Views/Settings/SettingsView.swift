@@ -30,32 +30,42 @@ struct SettingsView: View {
                     NavigationLink {
                         AppleAccountView()
                     } label: {
-                        HStack(spacing: 14) {
+                        HStack(spacing: HCSpacing.x3) {
                             avatar
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: HCSpacing.x1) {
                                 Text(displayName.isEmpty ? "設定你的名稱" : displayName)
-                                    .font(.title3.weight(.semibold))
+                                    .font(.title3.weight(.bold))
                                 if !appleEmail.isEmpty {
                                     Text(appleEmail)
-                                        .font(.footnote)
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                                 Text(accountStatusText)
-                                    .font(.footnote)
-                                    .foregroundStyle(appleEmail.isEmpty ? .secondary : .tertiary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .hcCard()
                     }
                 }
+                .listRowInsets(
+                    EdgeInsets(
+                        top: HCSpacing.x1,
+                        leading: HCSpacing.x4,
+                        bottom: HCSpacing.x1,
+                        trailing: HCSpacing.x4
+                    )
+                )
+                .listRowBackground(Color.clear)
 
                 Section {
                     Button {
                         showPaywall = true
                     } label: {
-                        HStack(spacing: 14) {
-                            settingsIcon("crown.fill", color: HCColor.notice)
-                            VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: HCSpacing.x3) {
+                            settingsIcon("crown.fill", color: HCColor.brand)
+                            VStack(alignment: .leading, spacing: HCSpacing.x1) {
                                 Text("升級 Guardian+")
                                     .font(.body.weight(.semibold))
                                     .foregroundStyle(.primary)
@@ -80,11 +90,11 @@ struct SettingsView: View {
 
                 Section {
                     settingsRow("個人資訊", subtitle: "顯示名稱與緊急聯絡備註",
-                                icon: "person.text.rectangle.fill", color: .blue) {
+                                icon: "person.text.rectangle.fill", color: HCColor.brand) {
                         PersonalProfileView()
                     }
                     settingsRow("提醒設定", subtitle: "本機提醒、可信度與每日摘要",
-                                icon: "bell.badge.fill", color: .red) {
+                                icon: "bell.badge.fill", color: HCColor.brand) {
                         AlertSettingsView()
                     }
                     Picker(selection: $appearanceMode) {
@@ -102,11 +112,11 @@ struct SettingsView: View {
 
                 Section {
                     settingsRow("法律與隱私", subtitle: "隱私權政策、用戶協議與使用條款",
-                                icon: "hand.raised.square.fill", color: .purple) {
+                                icon: "hand.raised.square.fill", color: HCColor.brand) {
                         LegalCenterView()
                     }
                     settingsRow("資料來源", subtitle: "政府示警來源與資料新鮮度",
-                                icon: "antenna.radiowaves.left.and.right", color: .teal) {
+                                icon: "antenna.radiowaves.left.and.right", color: HCColor.brand) {
                         DataSourceView()
                     }
                     // 匿名統計可整個關掉：隱私承諾不是只寫在政策裡，要給使用者實際的關閉權
@@ -120,7 +130,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         } icon: {
-                            settingsIcon("chart.bar.fill", color: HCColor.medical)
+                            settingsIcon("chart.bar.fill", color: HCColor.brand)
                         }
                     }
                     .onChange(of: analyticsEnabled) { _, enabled in
@@ -128,7 +138,7 @@ struct SettingsView: View {
                         Analytics.applyFirebaseCollectionSetting() // 同步 Firebase 收集開關
                     }
                     settingsRow("關於安心圈", subtitle: "版本、官網與隱私原則",
-                                icon: "info.circle.fill", color: .gray) {
+                                icon: "info.circle.fill", color: HCColor.brand) {
                         AboutView()
                     }
                     Button {
@@ -146,7 +156,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         } icon: {
-                            settingsIcon("book.fill", color: HCColor.safe)
+                            settingsIcon("book.fill", color: HCColor.brand)
                         }
                     }
                     // 舊版 coach marks 導覽（homeTourPending）不再提供入口：新手流程重寫後
@@ -161,11 +171,7 @@ struct SettingsView: View {
                         Label {
                             Text("刪除帳號與所有資料")
                         } icon: {
-                            Image(systemName: "trash.fill")
-                                .font(.callout)
-                                .foregroundStyle(.white)
-                                .frame(width: 29, height: 29)
-                                .background(HCColor.danger.gradient, in: RoundedRectangle(cornerRadius: 7))
+                            settingsIcon("trash.fill", color: HCColor.danger)
                         }
                     }
                     .disabled(isDeleting)
@@ -179,10 +185,11 @@ struct SettingsView: View {
 
                 Section {
                     Label("安心圈不是緊急服務。遇立即危險請直接撥打 110 或 119。", systemImage: "phone.fill")
-                        .font(.footnote)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            .listSectionSpacing(HCSpacing.x6)
             .navigationTitle("設定")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -484,15 +491,18 @@ struct SettingsView: View {
     /// 頭像：取顯示名稱第一個字，沒設名稱用預設盾牌
     private var avatar: some View {
         ZStack {
-            Circle().fill(HCColor.brand.gradient)
+            Circle()
+                .fill(HCColor.brand.opacity(0.10))
+            Circle()
+                .stroke(HCColor.brand.opacity(0.18), lineWidth: HCSpacing.x1 / 2)
             if let initial = displayName.first {
                 Text(String(initial))
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(HCColor.brand)
             } else {
                 Image(systemName: "shield.lefthalf.filled")
-                    .font(.title3)
-                    .foregroundStyle(.white)
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(HCColor.brand)
             }
         }
         .frame(width: 56, height: 56)
@@ -511,7 +521,7 @@ struct SettingsView: View {
             destination()
         } label: {
             Label {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text(title)
                     Text(subtitle)
                         .font(.caption)
@@ -525,9 +535,9 @@ struct SettingsView: View {
 
     private func settingsIcon(_ icon: String, color: Color) -> some View {
         Image(systemName: icon)
-            .font(.callout.weight(.semibold))
+            .font(.callout.weight(.medium))
             .foregroundStyle(color)
-            .frame(width: 29, height: 29)
+            .frame(width: HCSpacing.x6 + HCSpacing.x2, height: HCSpacing.x6 + HCSpacing.x2)
             .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: HCRadius.badge))
     }
 
@@ -719,50 +729,60 @@ private struct DeleteAccountReauthSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: HCSpacing.x4) {
-                Spacer(minLength: 4)
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(HCColor.danger)
-                VStack(spacing: 6) {
+            VStack(spacing: HCSpacing.x6) {
+                Spacer(minLength: HCSpacing.x1)
+                ZStack {
+                    Circle()
+                        .fill(HCColor.danger.opacity(0.08))
+                        .frame(width: HCSpacing.x6 * 4, height: HCSpacing.x6 * 4)
+                    Circle()
+                        .stroke(HCColor.danger.opacity(0.16), lineWidth: HCSpacing.x1 / 2)
+                        .frame(width: HCSpacing.x6 * 5, height: HCSpacing.x6 * 5)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.largeTitle.weight(.medium))
+                        .foregroundStyle(HCColor.danger)
+                }
+                .accessibilityHidden(true)
+                VStack(spacing: HCSpacing.x2) {
                     Text("最後確認")
-                        .font(.title3.bold())
+                        .font(.title2.weight(.bold))
                     Text("為了安全，請再用 Apple 帳號驗證一次，驗證完成後立即刪除。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
 
-                if isDeleting {
-                    ProgressView("正在刪除…")
-                        .padding(.vertical, 8)
-                } else {
-                    SignInWithAppleButton(.continue) { request in
-                        AuthService.shared.prepareAppleRequest(request)
-                    } onCompletion: { result in
-                        handle(result)
+                VStack(spacing: HCSpacing.x4) {
+                    if isDeleting {
+                        ProgressView("正在刪除…")
+                            .padding(.vertical, HCSpacing.x2)
+                    } else {
+                        SignInWithAppleButton(.continue) { request in
+                            AuthService.shared.prepareAppleRequest(request)
+                        } onCompletion: { result in
+                            handle(result)
+                        }
+                        .frame(height: 50)
                     }
-                    .frame(height: 50)
-                    .padding(.horizontal, 32)
+
+                    if let errorMessage {
+                        Label(errorMessage, systemImage: "exclamationmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(HCColor.danger)
+                            .multilineTextAlignment(.leading)
+                    }
+
+                    Button("取消") { dismiss() }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .disabled(isDeleting)
                 }
+                .hcCard()
 
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(HCColor.danger)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-
-                Button("取消") { dismiss() }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .disabled(isDeleting)
-
-                Spacer(minLength: 4)
+                Spacer(minLength: HCSpacing.x1)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 12)
+            .padding(.horizontal, HCSpacing.x6)
+            .padding(.top, HCSpacing.x3)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("關閉", systemImage: "xmark") { dismiss() }

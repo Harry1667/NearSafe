@@ -153,17 +153,24 @@ struct HomeStatusView: View {
         if status.isAllClear {
             let needsLocationUpdate = staleLiveCircleCount > 0
             let clearColor = needsLocationUpdate ? HCColor.attention : HCColor.safe
-            VStack(spacing: HCSpacing.x4) {
+            VStack(spacing: HCSpacing.x6) {
                 ZStack {
                     // 守護圈環：同心圓 motif（與地圖盾牌、Onboarding 同一簽名語言）
-                    Circle().stroke(clearColor.opacity(0.10), lineWidth: 2).frame(width: 168, height: 168)
-                    Circle().stroke(clearColor.opacity(0.22), lineWidth: 2).frame(width: 132, height: 132)
+                    Circle()
+                        .fill(clearColor.opacity(0.04))
+                        .frame(width: HCSpacing.x6 * 7, height: HCSpacing.x6 * 7)
+                    Circle()
+                        .stroke(clearColor.opacity(0.10), lineWidth: HCSpacing.x1 / 2)
+                        .frame(width: HCSpacing.x6 * 7, height: HCSpacing.x6 * 7)
+                    Circle()
+                        .stroke(clearColor.opacity(0.22), lineWidth: HCSpacing.x1 / 2)
+                        .frame(width: HCSpacing.x6 * 5.5, height: HCSpacing.x6 * 5.5)
                     Circle()
                         .fill(clearColor.gradient)
-                        .frame(width: 96, height: 96)
-                        .shadow(color: clearColor.opacity(0.35), radius: 18, y: 6)
+                        .frame(width: HCSpacing.x6 * 4, height: HCSpacing.x6 * 4)
+                        .shadow(color: clearColor.opacity(0.28), radius: HCSpacing.x4, y: HCSpacing.x1)
                     Image(systemName: needsLocationUpdate ? "location.slash.fill" : "checkmark.shield.fill")
-                        .font(.system(size: 44))
+                        .font(.largeTitle.weight(.medium))
                         .foregroundStyle(.white)
                 }
                 // 呼吸動效：緩慢、低幅度——安心不是興奮；reduceMotion 時靜止
@@ -177,55 +184,69 @@ struct HomeStatusView: View {
 
                 // 單人態不能說「全家」——這行只顯示一個人的警戒圈，說「全家」是謊言；
                 // 待更新那句沒有「全家」字眼，兩態文字相同即可
-                Text(needsLocationUpdate ? "部分即時圈待更新" : (isSoloUser ? "守護中：你" : "警戒圈一切平安"))
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                // 單人副句跟著事件串的口徑走：串裡有事件卻說「附近無事件」是自打嘴巴，
-                // 有事件時改說「你的圈平安」——附近有事 ≠ 圈被影響，兩件事分開講才誠實
-                Text(needsLocationUpdate
-                     ? "\(staleLiveCircleCount) 個即時圈超過 15 分鐘未更新，舊位置不會用來判斷警報。"
-                     : (isSoloUser
-                        ? (eventFeed.isEmpty ? "附近 24 小時無事件" : "附近有 \(eventFeed.count) 件事件，你的警戒圈平安")
-                        : "目前沒有需要注意的事件，安心圈持續看守中。"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: HCSpacing.x2) {
+                    Text(needsLocationUpdate ? "部分即時圈待更新" : (isSoloUser ? "守護中：你" : "警戒圈一切平安"))
+                        .font(.title2.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    // 單人副句跟著事件串的口徑走：串裡有事件卻說「附近無事件」是自打嘴巴，
+                    // 有事件時改說「你的圈平安」——附近有事 ≠ 圈被影響，兩件事分開講才誠實
+                    Text(needsLocationUpdate
+                         ? "\(staleLiveCircleCount) 個即時圈超過 15 分鐘未更新，舊位置不會用來判斷警報。"
+                         : (isSoloUser
+                            ? (eventFeed.isEmpty ? "附近 24 小時無事件" : "附近有 \(eventFeed.count) 件事件，你的警戒圈平安")
+                            : "目前沒有需要注意的事件，安心圈持續看守中。"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
+                }
             }
-            .padding(.vertical, HCSpacing.x6)
+            .padding(.vertical, HCSpacing.x6 * 2)
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
         } else {
             // 有事件靠近生活圈：全 App 唯一「變臉」的時刻
-            VStack(spacing: HCSpacing.x4) {
+            VStack(spacing: HCSpacing.x6) {
                 ZStack {
                     Circle()
+                        .fill(HCColor.danger.opacity(0.04))
+                        .frame(width: HCSpacing.x6 * 6, height: HCSpacing.x6 * 6)
+                    Circle()
+                        .stroke(HCColor.danger.opacity(0.16), lineWidth: HCSpacing.x1 / 2)
+                        .frame(width: HCSpacing.x6 * 6, height: HCSpacing.x6 * 6)
+                    Circle()
                         .fill(HCColor.danger.gradient)
-                        .frame(width: 96, height: 96)
-                        .shadow(color: HCColor.danger.opacity(0.35), radius: 18, y: 6)
+                        .frame(width: HCSpacing.x6 * 4, height: HCSpacing.x6 * 4)
+                        .shadow(color: HCColor.danger.opacity(0.28), radius: HCSpacing.x4, y: HCSpacing.x1)
                     Image(systemName: "exclamationmark.shield.fill")
-                        .font(.system(size: 44))
+                        .font(.largeTitle.weight(.medium))
                         .foregroundStyle(.white)
                 }
                 .accessibilityHidden(true)
 
-                Text("\(status.attentionCount) 件事件靠近警戒圈")
-                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    .foregroundStyle(HCColor.danger)
-                    .multilineTextAlignment(.center)
-                Text("官方已確認的事件落在提醒範圍內，點開地圖確認位置與建議。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: HCSpacing.x2) {
+                    Text("\(status.attentionCount) 件事件靠近警戒圈")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(HCColor.danger)
+                        .multilineTextAlignment(.center)
+                    Text("官方已確認的事件落在提醒範圍內，點開地圖確認位置與建議。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
+                }
                 Button {
                     router.selection = TabRouter.mapTab
                 } label: {
                     Label("查看地圖", systemImage: "map.fill")
-                        .font(.headline)
+                        .font(.body.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(HCColor.danger)
+                .controlSize(.large)
             }
-            .padding(.vertical, HCSpacing.x4)
+            .padding(.vertical, HCSpacing.x6)
             .frame(maxWidth: .infinity)
         }
     }
@@ -233,7 +254,7 @@ struct HomeStatusView: View {
     // MARK: - 家人列
 
     private var familySection: some View {
-        VStack(alignment: .leading, spacing: HCSpacing.x2) {
+        VStack(alignment: .leading, spacing: HCSpacing.x3) {
             ForEach(members) { member in
                 memberRow(member)
             }
@@ -260,9 +281,14 @@ struct HomeStatusView: View {
         } label: {
             HStack(spacing: HCSpacing.x3) {
                 Image(systemName: member.isPlace ? "mappin.circle.fill" : "person.crop.circle.fill")
-                    .font(.title2)
+                    .font(.title3.weight(.medium))
                     .foregroundStyle(member.isPlace ? HCColor.medical : HCColor.brand)
-                VStack(alignment: .leading, spacing: 2) {
+                    .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                    .background(
+                        (member.isPlace ? HCColor.medical : HCColor.brand).opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+                    )
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text(member.displayName).font(.body.weight(.medium))
                     if let nearbyEvent {
                         Text(nearbyEvent.title)
@@ -384,7 +410,7 @@ struct HomeStatusView: View {
     }
 
     private var eventFeedSection: some View {
-        VStack(alignment: .leading, spacing: HCSpacing.x2) {
+        VStack(alignment: .leading, spacing: HCSpacing.x3) {
             if eventFeed.isEmpty {
                 quietFeedRow
                 nearestShelterRow
@@ -468,14 +494,18 @@ struct HomeStatusView: View {
         } label: {
             HStack(spacing: HCSpacing.x3) {
                 Image(systemName: EventCategory.icon(for: event.eventType))
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(ended ? .secondary : trustColor)
-                    .frame(width: 28, height: 28)
+                    .frame(width: HCSpacing.x6 + HCSpacing.x2, height: HCSpacing.x6 + HCSpacing.x2)
+                    .background(
+                        (ended ? Color.secondary : trustColor).opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+                    )
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text(event.isDrill ? "【演練】\(event.title)" : event.title)
                         .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
+                        .lineLimit(2)
                     Text("\(relativeDistance(event, members)) · \(relativeTime(event.occurredAt))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -489,6 +519,7 @@ struct HomeStatusView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.vertical, HCSpacing.x1)
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
     }
@@ -497,7 +528,13 @@ struct HomeStatusView: View {
     private var quietFeedRow: some View {
         HStack(spacing: HCSpacing.x3) {
             Image(systemName: "checkmark.shield.fill")
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(HCColor.safe)
+                .frame(width: HCSpacing.x6 + HCSpacing.x2, height: HCSpacing.x6 + HCSpacing.x2)
+                .background(
+                    HCColor.safe.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+                )
                 .accessibilityHidden(true)
             Text("這 24 小時你附近很平靜")
                 .font(.subheadline)
@@ -521,9 +558,15 @@ struct HomeStatusView: View {
             } label: {
                 HStack(spacing: HCSpacing.x3) {
                     Image(systemName: "tent.fill")
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(HCColor.brand)
+                        .frame(width: HCSpacing.x6 + HCSpacing.x2, height: HCSpacing.x6 + HCSpacing.x2)
+                        .background(
+                            HCColor.brand.opacity(0.10),
+                            in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+                        )
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
                         Text(nearest.resource.name)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
@@ -560,12 +603,18 @@ struct HomeStatusView: View {
         Button {
             router.openHome(.history)
         } label: {
-            HStack {
+            HStack(spacing: HCSpacing.x3) {
                 Image(systemName: "clock.arrow.circlepath")
-                    .foregroundStyle(HCColor.brand)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: HCSpacing.x6 + HCSpacing.x2, height: HCSpacing.x6 + HCSpacing.x2)
+                    .background(
+                        Color.secondary.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+                    )
                 // 天數依方案分層跟著變（見 HistoryView／FreeTier），不寫死 30 天避免 Guardian+ 使用者看到錯誤天數
                 Text("回顧過去 \(entitlementStore.isPlus ? FreeTier.plusHistoryDays : FreeTier.historyDays) 天")
-                    .font(.footnote)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -584,9 +633,9 @@ struct HomeStatusView: View {
             showCheckIn = true
         } label: {
             Label("回報我平安", systemImage: "checkmark.shield.fill")
-                .font(.headline)
+                .font(.body.weight(.medium))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+                .padding(.vertical, HCSpacing.x1)
         }
         .buttonStyle(.borderedProminent)
         .tint(HCColor.brand)
@@ -606,10 +655,12 @@ struct HomeStatusView: View {
         } label: {
             HStack(spacing: HCSpacing.x3) {
                 Image(systemName: "mappin.and.ellipse")
-                    .font(.title2)
-                    .foregroundStyle(HCColor.medical)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("守護更多地方").font(.body.weight(.medium))
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(HCColor.brand)
+                    .frame(width: HCSpacing.x6 * 2, height: HCSpacing.x6 * 2)
+                    .background(HCColor.brand.opacity(0.10), in: Circle())
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                    Text("守護更多地方").font(.body.weight(.semibold))
                     Text("爸媽家、公司，都能設警戒圈")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -634,8 +685,11 @@ struct HomeStatusView: View {
         } label: {
             HStack(spacing: HCSpacing.x3) {
                 Image(systemName: "person.2.fill")
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
+                    .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                    .background(Color.secondary.opacity(0.08), in: Circle())
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text("邀請家人").font(.subheadline.weight(.medium))
                     Text("加入後可以互報平安")
                         .font(.caption2)
@@ -649,7 +703,7 @@ struct HomeStatusView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, HCSpacing.x2)
+        .hcCard()
     }
 
     // MARK: - 付費閘門（地點額度）

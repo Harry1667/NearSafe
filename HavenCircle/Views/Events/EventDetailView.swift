@@ -48,6 +48,7 @@ struct EventDetailView: View {
                 resourceSection
                 actionSection
             }
+            .listSectionSpacing(HCSpacing.x6)
             .navigationTitle(event.isDrill ? "【演練】\(event.title)" : event.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -199,22 +200,50 @@ struct EventDetailView: View {
     }
 
     private var statusSection: some View {
-        Section {
-            Label(
-                "\(event.statusText)・\(event.trustStatus)",
-                systemImage: event.isEnded
-                    ? "checkmark.circle"
-                    : (event.isOfficiallyConfirmed ? "checkmark.seal.fill" : "clock.badge.questionmark")
-            )
-            .foregroundStyle(event.isEnded ? Color.secondary : (event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention))
-            if event.isEnded {
-                Text("此事件已結束，無需進一步行動。")
-            } else {
-                Text(event.isOfficiallyConfirmed
-                     ? "官方來源已確認。若有立即危險，請直接撥打 110 或 119。"
-                     : "這是未驗證線索，資料仍在確認中，不會自動通知家人。")
+        let statusColor = event.isEnded
+            ? Color.secondary
+            : (event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention)
+        return Section {
+            VStack(alignment: .leading, spacing: HCSpacing.x3) {
+                HStack(spacing: HCSpacing.x3) {
+                    Image(
+                        systemName: event.isEnded
+                            ? "checkmark.circle"
+                            : (event.isOfficiallyConfirmed ? "checkmark.seal.fill" : "clock.badge.questionmark")
+                    )
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(statusColor)
+                    .frame(width: HCSpacing.x6 * 2, height: HCSpacing.x6 * 2)
+                    .background(statusColor.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+                    Text("\(event.statusText)・\(event.trustStatus)")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(statusColor)
+                }
+                Divider()
+                if event.isEnded {
+                    Text("此事件已結束，無需進一步行動。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(event.isOfficiallyConfirmed
+                         ? "官方來源已確認。若有立即危險，請直接撥打 110 或 119。"
+                         : "這是未驗證線索，資料仍在確認中，不會自動通知家人。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .hcCard()
         }
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
+        .listRowBackground(Color.clear)
     }
 
     /// AI 整理的詳細描述：新聞事件是爬蟲 LLM 產的白話說明、官方事件是政府原始 description。
@@ -223,14 +252,17 @@ struct EventDetailView: View {
     private var detailSection: some View {
         if let detail = event.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
             Section("事件說明") {
-                Text(detail)
-                    .font(.subheadline)
-                    .textSelection(.enabled)
-                Text(event.isOfficiallyConfirmed
-                     ? "以上為官方發布內容。"
-                     : "以上為新聞來源經整理後的說明，非官方確認資訊。")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: HCSpacing.x3) {
+                    Text(detail)
+                        .font(.subheadline)
+                        .textSelection(.enabled)
+                    Divider()
+                    Text(event.isOfficiallyConfirmed
+                         ? "以上為官方發布內容。"
+                         : "以上為新聞來源經整理後的說明，非官方確認資訊。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -247,6 +279,7 @@ struct EventDetailView: View {
                 .font(.caption)
             }
         }
+        .listRowSeparatorTint(.secondary.opacity(0.16))
     }
 
     /// 安否操作：與通知按鈕同一套「主角」邏輯，讓錯過通知的人也能在詳情頁快速回報。
@@ -260,26 +293,45 @@ struct EventDetailView: View {
                         report(.safe)
                     } label: {
                         Label("回報我平安", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(HCColor.safe)
+                            .font(.body.weight(.medium))
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(HCColor.safe)
+                    .controlSize(.large)
                     Button {
                         report(.inDanger)
                     } label: {
                         Label("尚未脫離危險", systemImage: "exclamationmark.triangle.fill")
+                            .font(.body.weight(.medium))
                             .foregroundStyle(HCColor.danger)
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.bordered)
+                    .tint(HCColor.danger)
+                    .controlSize(.large)
                 } else {
                     Button {
                         report(.pleaseReport)
                     } label: {
                         Label("詢問\(match.memberName)是否平安", systemImage: "questionmark.circle.fill")
-                            .foregroundStyle(HCColor.brand)
+                            .font(.body.weight(.medium))
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(HCColor.brand)
+                    .controlSize(.large)
                 }
                 if let checkInFeedback {
                     Label(checkInFeedback, systemImage: "checkmark.circle")
                         .font(.caption)
                         .foregroundStyle(HCColor.safe)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(HCSpacing.x2)
+                        .background(
+                            HCColor.safe.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                        )
                 }
                 if showSoloInviteCard {
                     soloInviteCard
@@ -292,18 +344,29 @@ struct EventDetailView: View {
     /// C1：情境觸發邀請——災害當下、剛按完「我平安」是邀請意願最高的瞬間，
     /// 圈內卻沒有其他人能看到這則回報，原地補一張卡把人導去邀請動線。
     private var soloInviteCard: some View {
-        VStack(alignment: .leading, spacing: HCSpacing.x2) {
-            Text("你的回報已記錄，但還沒有家人會看到。邀請家人，讓他們安心。")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: HCSpacing.x3) {
+            HStack(alignment: .top, spacing: HCSpacing.x3) {
+                Image(systemName: "person.2.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(HCColor.brand)
+                    .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                    .background(HCColor.brand.opacity(0.10), in: Circle())
+                    .accessibilityHidden(true)
+                Text("你的回報已記錄，但還沒有家人會看到。邀請家人，讓他們安心。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             Button {
                 Analytics.track("solo_checkin_invite_tapped")
                 signInGate.perform { await startInviteFlow() }
             } label: {
                 Label("邀請家人", systemImage: "person.crop.circle.badge.plus")
+                    .font(.body.weight(.medium))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .tint(HCColor.brand)
+            .controlSize(.large)
             .disabled(isInviting)
             if isInviting {
                 ProgressView()
@@ -314,7 +377,7 @@ struct EventDetailView: View {
                     .foregroundStyle(HCColor.danger)
             }
         }
-        .padding(.vertical, HCSpacing.x1)
+        .hcCard()
     }
 
     private func report(_ status: SafetyStatus) {
@@ -373,6 +436,8 @@ struct EventDetailView: View {
             LabeledContent("發生時間", value: localizedDate(event.occurredAt))
             LabeledContent("最近更新", value: localizedDate(event.updatedAt))
         }
+        .font(.subheadline)
+        .listRowSeparatorTint(.secondary.opacity(0.16))
     }
 
     private var sourceSection: some View {
@@ -385,6 +450,8 @@ struct EventDetailView: View {
                 LabeledContent("來源網址", value: event.sourceURL)
             }
         }
+        .font(.subheadline)
+        .listRowSeparatorTint(.secondary.opacity(0.16))
     }
 
     /// 事件「發生後怎麼辦」：離事件最近的避難收容所與急救責任醫院＋一鍵導航。

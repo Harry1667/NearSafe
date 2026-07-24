@@ -28,6 +28,7 @@ struct SafetyCheckInView: View {
                 familyPingsSection
             }
         }
+        .listSectionSpacing(HCSpacing.x6)
         .signInPreflight(gate)
         .analyticsScreen("check_in")
         .toolbar {
@@ -63,8 +64,15 @@ struct SafetyCheckInView: View {
         switch sync.state {
         case .noAccount:
             Section {
-                Label("尚未登入 Apple 帳號", systemImage: "person.crop.circle.badge.exclamationmark")
-                    .foregroundStyle(HCColor.attention)
+                HStack(spacing: HCSpacing.x3) {
+                    Image(systemName: "person.crop.circle.badge.exclamationmark")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(HCColor.attention)
+                        .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                        .background(HCColor.attention.opacity(0.10), in: Circle())
+                    Text("尚未登入 Apple 帳號")
+                        .font(.body.weight(.semibold))
+                }
                 Text("回報平安需要 Apple 帳號，才能同步給家人。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -77,8 +85,15 @@ struct SafetyCheckInView: View {
             }
         case .error(let message):
             Section {
-                Label("同步發生問題", systemImage: "exclamationmark.icloud")
-                    .foregroundStyle(HCColor.danger)
+                HStack(spacing: HCSpacing.x3) {
+                    Image(systemName: "exclamationmark.icloud")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(HCColor.danger)
+                        .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                        .background(HCColor.danger.opacity(0.10), in: Circle())
+                    Text("同步發生問題")
+                        .font(.body.weight(.semibold))
+                }
                 Text(message).font(.caption).foregroundStyle(.secondary)
             }
         case .ready:
@@ -102,14 +117,36 @@ struct SafetyCheckInView: View {
                 // 開啟當下就要權限，別等到按回報才跳系統框打斷流程
                 if isOn { LocationService.shared.requestPermissionIfNeeded() }
             }
-            ForEach(SafetyStatus.selfReportable, id: \.self) { status in
-                Button {
-                    Task { await report(status) }
-                } label: {
-                    Label(status.rawValue, systemImage: status.systemImage)
-                        .foregroundStyle(status == .safe ? HCColor.safe : HCColor.danger)
+            HStack(spacing: HCSpacing.x3) {
+                ForEach(SafetyStatus.selfReportable, id: \.self) { status in
+                    Button {
+                        Task { await report(status) }
+                    } label: {
+                        VStack(spacing: HCSpacing.x2) {
+                            Image(systemName: status.systemImage)
+                                .font(.title3.weight(.medium))
+                            Text(status.rawValue)
+                                .font(.body.weight(.semibold))
+                        }
+                        .foregroundStyle(status == .safe ? Color.white : HCColor.danger)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: HCSpacing.x6 * 4)
+                        .background(
+                            status == .safe ? HCColor.safe : HCColor.danger.opacity(0.10),
+                            in: RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous)
+                                .stroke(
+                                    status == .safe ? HCColor.safe.opacity(0) : HCColor.danger.opacity(0.24),
+                                    lineWidth: 1
+                                )
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isWorking)
                 }
-                .disabled(isWorking)
             }
         } header: {
             Text("回報我的狀態")
@@ -122,7 +159,11 @@ struct SafetyCheckInView: View {
     private var familyPingsSection: some View {
         Section("家人回報") {
             if sync.pings.isEmpty {
-                Text("目前還沒有家人的回報").foregroundStyle(.secondary)
+                Text("目前還沒有家人的回報")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, HCSpacing.x4)
             } else {
                 ForEach(sync.pings) { ping in
                     pingRow(ping)
@@ -132,29 +173,51 @@ struct SafetyCheckInView: View {
     }
 
     private func pingRow(_ ping: SafetyPing) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: ping.status.systemImage)
+        HStack(alignment: .top, spacing: HCSpacing.x3) {
+            Image(systemName: ping.status.systemImage)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(ping.status == .safe ? HCColor.safe : HCColor.danger)
+                .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                .background(
+                    (ping.status == .safe ? HCColor.safe : HCColor.danger).opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous)
+                )
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                HStack(alignment: .firstTextBaseline, spacing: HCSpacing.x2) {
+                    Text(ping.senderName)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(ping.createdAt.formatted(date: .omitted, time: .shortened))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text(ping.status.rawValue)
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(ping.status == .safe ? HCColor.safe : HCColor.danger)
-                Text(ping.senderName).font(.subheadline.bold())
-                Spacer()
-                Text(ping.createdAt.formatted(date: .omitted, time: .shortened))
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Text(ping.status.rawValue).font(.caption).foregroundStyle(.secondary)
-            if !ping.note.isEmpty {
-                Text(ping.note).font(.caption)
-            }
-            if ping.hasLocation {
-                Label(ping.placeName ?? "已附上位置", systemImage: "mappin.and.ellipse")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            if !ping.readBy.isEmpty {
-                Text("已讀：\(ping.readBy.joined(separator: "、"))")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                if !ping.note.isEmpty {
+                    Text(ping.note)
+                        .font(.caption)
+                }
+                if ping.hasLocation {
+                    Label(ping.placeName ?? "已附上位置", systemImage: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !ping.readBy.isEmpty {
+                    Label("已讀：\(ping.readBy.joined(separator: "、"))", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, HCSpacing.x2)
+                        .padding(.vertical, HCSpacing.x1)
+                        .background(
+                            Color.secondary.opacity(0.08),
+                            in: Capsule()
+                        )
+                }
             }
         }
+        .padding(.vertical, HCSpacing.x1)
         .task {
             // 顯示他人回報時，自動標記我已讀（已讀回條）
             if ping.senderName != myName && !ping.readBy.contains(myName) {

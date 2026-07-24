@@ -43,6 +43,7 @@ struct JoinByCodeView: View {
                     inputSection
                 }
             }
+            .listSectionSpacing(HCSpacing.x6)
             .navigationTitle(preview == nil ? "用邀請碼加入" : "確認加入")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -87,39 +88,55 @@ struct JoinByCodeView: View {
 
     private var inputSection: some View {
         Section {
-            TextField("例如 AB12CD34", text: $code)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .font(.system(.title2, design: .monospaced))
-                .onChange(of: code) { _, newValue in
-                    // 只留合法字元、最多 8 碼，貼上帶空格也能正常
-                    code = String(newValue.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8))
-                }
-            HStack {
+            VStack(spacing: HCSpacing.x3) {
+                TextField("例如 AB12CD34", text: $code)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.system(.title2, design: .monospaced, weight: .bold))
+                    .kerning(HCSpacing.x1)
+                    .multilineTextAlignment(.center)
+                    .padding(.vertical, HCSpacing.x3)
+                    .background(
+                        HCColor.brand.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous)
+                    )
+                    .onChange(of: code) { _, newValue in
+                        // 只留合法字元、最多 8 碼，貼上帶空格也能正常
+                        code = String(newValue.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8))
+                    }
                 // PasteButton 不會觸發剪貼簿存取的系統提示（比 UIPasteboard 直讀更禮貌）
                 PasteButton(payloadType: String.self) { strings in
                     guard let first = strings.first else { return }
                     code = String(first.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8))
                 }
                 .buttonBorderShape(.capsule)
-                Spacer()
             }
             Button {
                 Task { await lookupCode() }
             } label: {
                 HStack {
                     Label("下一步", systemImage: "arrow.right.circle.fill")
+                        .font(.body.weight(.medium))
                     if isLookingUp {
                         Spacer()
                         ProgressView()
                     }
                 }
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(HCColor.brand)
+            .controlSize(.large)
             .disabled(!isCodeValid || isLookingUp)
             if let lookupError {
-                Text(lookupError)
+                Label(lookupError, systemImage: "exclamationmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(HCColor.danger)
+                    .padding(HCSpacing.x2)
+                    .background(
+                        HCColor.danger.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                    )
             }
         } header: {
             Text("輸入家人給你的 8 位邀請碼")
@@ -132,13 +149,28 @@ struct JoinByCodeView: View {
 
     private func confirmSection(_ preview: InvitePreview) -> some View {
         Section {
-            VStack(spacing: HCSpacing.x3) {
-                Text("你即將加入")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text(inviteTitle(preview))
-                    .font(.title2.weight(.bold))
-                    .multilineTextAlignment(.center)
+            VStack(spacing: HCSpacing.x6) {
+                ZStack {
+                    Circle()
+                        .fill(HCColor.brand.opacity(0.08))
+                        .frame(width: HCSpacing.x6 * 4, height: HCSpacing.x6 * 4)
+                    Circle()
+                        .stroke(HCColor.brand.opacity(0.16), lineWidth: HCSpacing.x1 / 2)
+                        .frame(width: HCSpacing.x6 * 5, height: HCSpacing.x6 * 5)
+                    Image(systemName: "person.2.fill")
+                        .font(.largeTitle.weight(.medium))
+                        .foregroundStyle(HCColor.brand)
+                }
+                .accessibilityHidden(true)
+
+                VStack(spacing: HCSpacing.x2) {
+                    Text("你即將加入")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(inviteTitle(preview))
+                        .font(.title2.weight(.bold))
+                        .multilineTextAlignment(.center)
+                }
 
                 if isJoining {
                     ProgressView()
@@ -148,10 +180,12 @@ struct JoinByCodeView: View {
                         Task { await join(familyId: preview.familyId) }
                     } label: {
                         Text("加入")
-                            .font(.headline)
+                            .font(.body.weight(.medium))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(HCColor.brand)
+                    .controlSize(.large)
 
                     Button("取消") {
                         self.preview = nil
@@ -166,12 +200,25 @@ struct JoinByCodeView: View {
                         .font(.caption)
                         .foregroundStyle(HCColor.danger)
                         .multilineTextAlignment(.center)
+                        .padding(HCSpacing.x2)
+                        .background(
+                            HCColor.danger.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                        )
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, HCSpacing.x4)
+            .padding(.vertical, HCSpacing.x6)
+            .hcCard()
         }
-        .listRowInsets(EdgeInsets())
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
         .listRowBackground(Color.clear)
     }
 

@@ -25,8 +25,14 @@ struct InviteOptionsView: View {
                     Section {
                         ShareLink(item: shareText(code: code)) {
                             Label("用訊息或 AirDrop 分享邀請碼", systemImage: "square.and.arrow.up")
+                                .font(.body.weight(.medium))
+                                .frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(HCColor.brand)
+                        .controlSize(.large)
                     }
+                    .listRowBackground(Color.clear)
                     // C5：重新產生只有圈主看得到——非圈主沒有權限刪舊碼（rules 的
                     // isOwner），顯示了按也沒用，反而讓人以為自己能改碼。
                     if sync.isFamilyOwner {
@@ -41,6 +47,7 @@ struct InviteOptionsView: View {
                     }
                 }
             }
+            .listSectionSpacing(HCSpacing.x6)
             .navigationTitle("邀請家人")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -62,10 +69,11 @@ struct InviteOptionsView: View {
                 .foregroundStyle(.secondary)
             } else {
                 Label("長期有效（建議重新產生）", systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
+        .listRowBackground(Color.clear)
     }
 
     private var regenerateSection: some View {
@@ -80,12 +88,19 @@ struct InviteOptionsView: View {
                     Task { await regenerate() }
                 } label: {
                     Label("重新產生邀請碼", systemImage: "arrow.clockwise")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
             }
             if let regenerateError {
-                Text(regenerateError)
+                Label(regenerateError, systemImage: "exclamationmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(HCColor.danger)
+                    .padding(HCSpacing.x2)
+                    .background(
+                        HCColor.danger.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                    )
             }
         } footer: {
             Text("重新產生後，舊邀請碼會立即失效，請把新碼分享給還沒加入的家人。")
@@ -113,26 +128,43 @@ struct InviteOptionsView: View {
 
     private func codeSection(code: String) -> some View {
         Section("你的家庭邀請碼") {
-            HStack {
+            VStack(spacing: HCSpacing.x4) {
                 Text(code)
-                    .font(.system(.largeTitle, design: .monospaced).bold())
-                    .kerning(4)
-                Spacer()
-                Button("拷貝", systemImage: "doc.on.doc") {
+                    .font(.system(.largeTitle, design: .monospaced, weight: .bold))
+                    .kerning(HCSpacing.x1)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+                Button {
                     UIPasteboard.general.string = code
+                } label: {
+                    Label("拷貝邀請碼", systemImage: "doc.on.doc")
+                        .font(.caption.weight(.medium))
                 }
-                .labelStyle(.iconOnly)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, HCSpacing.x4)
+            .hcCard()
             Text("家人在「家人」分頁點「用邀請碼加入家庭圈」輸入這組碼即可加入。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .listRowSeparator(.hidden)
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
+        .listRowBackground(Color.clear)
     }
 
     private func qrSection(code: String) -> some View {
         Section("或掃 QR code") {
-            HStack {
-                Spacer()
+            VStack(spacing: HCSpacing.x4) {
                 if let image = Self.qrImage(for: joinURL(code: code)) {
                     Image(uiImage: image)
                         .interpolation(.none) // QR 要銳利邊緣，禁用平滑縮放
@@ -144,13 +176,24 @@ struct InviteOptionsView: View {
                     Label("QR code 產生失敗", systemImage: "xmark.circle")
                         .foregroundStyle(HCColor.danger)
                 }
-                Spacer()
+                Text("已裝 App 的家人直接用相機掃描即可跳轉加入；沒裝的人掃到會看到下載連結。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.vertical, 8)
-            Text("已裝 App 的家人直接用相機掃描即可跳轉加入；沒裝的人掃到會看到下載連結。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, HCSpacing.x4)
+            .hcCard()
         }
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
+        .listRowBackground(Color.clear)
     }
 
     /// B1：QR 內容改編碼成 deep link（取代純文字碼），讓「掃碼」跟「輸碼」不再是兩套體驗——

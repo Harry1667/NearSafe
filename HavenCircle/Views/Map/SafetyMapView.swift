@@ -621,17 +621,27 @@ struct SafetyMapView: View {
     @ViewBuilder
     private var circleAdjustPanel: some View {
         if let key = adjustingCircleKey, let circle = visibleCircles.first(where: { $0.circleKey == key }) {
-            VStack(spacing: 12) {
-                HStack {
-                    Text(circle.name)
-                        .font(.subheadline.bold())
-                        .lineLimit(1)
-                    Spacer(minLength: 12)
+            VStack(spacing: HCSpacing.x3) {
+                HStack(spacing: HCSpacing.x3) {
+                    Image(systemName: "scope")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(HCColor.brand)
+                        .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                        .background(HCColor.brand.opacity(0.10), in: Circle())
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                        Text(circle.name)
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                        Text("警戒半徑")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: HCSpacing.x3)
                     Button("完成") { finishAdjustingCircle() }
-                        .font(.subheadline.weight(.semibold))
+                        .font(.subheadline.weight(.medium))
                 }
                 Text(Self.radiusDisplayText(Int(previewRadiusMeters)))
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .font(.title2.weight(.bold))
                     .contentTransition(.numericText())
                     .accessibilityHidden(true)
                 Slider(value: $previewRadiusMeters, in: 200...5_000, step: 100)
@@ -641,8 +651,12 @@ struct SafetyMapView: View {
             }
             .padding(HCSpacing.x4)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
-            .padding(.horizontal)
-            .padding(.bottom, 8)
+            .overlay(
+                RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+                    .stroke(HCColor.brand.opacity(0.16), lineWidth: 1)
+            )
+            .padding(.horizontal, HCSpacing.x4)
+            .padding(.bottom, HCSpacing.x2)
             // iPad 上限制面板寬度並置中，外層仍貼底（safeAreaInset(edge: .bottom) 負責貼底，不受影響）
             .frame(maxWidth: 500)
             .frame(maxWidth: .infinity)
@@ -721,12 +735,12 @@ struct SafetyMapView: View {
     /// 帶領用的小標籤（極短、彩色膠囊）。
     private func guidancePill(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.subheadline.weight(.bold))
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, HCSpacing.x3)
+            .padding(.vertical, HCSpacing.x2)
             .background(color, in: Capsule())
-            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+            .shadow(color: .black.opacity(0.18), radius: HCSpacing.x1, y: HCSpacing.x1 / 2)
             .fixedSize()
     }
 
@@ -902,8 +916,8 @@ struct SafetyMapView: View {
 
     private var topOverlays: some View {
         safetySummary
-        .padding(.horizontal)
-        .padding(.top, 8)
+        .padding(.horizontal, HCSpacing.x4)
+        .padding(.top, HCSpacing.x2)
         // 開場時摘要卡先退場，鏡頭抵達生活圈後縮放進場（Reduce Motion 只做淡入不縮放）
         .scaleEffect(isIntroRunning && !reduceMotion ? 0.9 : 1, anchor: .top)
         .opacity(isIntroRunning ? 0 : 1)
@@ -1050,11 +1064,11 @@ struct SafetyMapView: View {
         return Button {
             withAnimation { isSummaryExpanded = true }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: HCSpacing.x2) {
                 Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.white)
-                    .frame(width: 26, height: 26)
+                    .frame(width: HCSpacing.x6 + HCSpacing.x1, height: HCSpacing.x6 + HCSpacing.x1)
                     .background(statusColor, in: Circle())
                     .symbolEffect(.bounce, value: shieldConfirmPulse)
                 Text(hasAttention ? "\(attentionCount) 件需要注意" : "警戒圈平安")
@@ -1068,8 +1082,8 @@ struct SafetyMapView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .padding(.horizontal, HCSpacing.x3)
+            .padding(.vertical, HCSpacing.x2)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().stroke(statusColor.opacity(0.35), lineWidth: 1))
         }
@@ -1084,25 +1098,25 @@ struct SafetyMapView: View {
     /// 展開版：完整安全狀態卡（各層級數字、區域警報入口、資料新鮮度）
     private var summaryCard: some View {
         let hasAttention = attentionCount > 0
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
+        return VStack(alignment: .leading, spacing: HCSpacing.x3) {
+            HStack(alignment: .center, spacing: HCSpacing.x3) {
                 // 盾牌放進色底圓形 chip：狀態色作底、白色圖示，讓「目前安全與否」一眼可辨
                 Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
+                    .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
                     .background(hasAttention ? HCColor.danger : HCColor.safe, in: Circle())
                     // 守護圈細環：與 Onboarding hero、提醒中心平安狀態同一個圓環 motif
                     .overlay(
                         Circle()
                             .stroke((hasAttention ? HCColor.danger : HCColor.safe).opacity(0.35), lineWidth: 1.5)
-                            .frame(width: 42, height: 42)
+                            .frame(width: HCSpacing.x6 + HCSpacing.x4, height: HCSpacing.x6 + HCSpacing.x4)
                     )
                     .symbolEffect(.bounce, value: shieldConfirmPulse)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text(hasAttention ? "警戒圈有需要注意的事件" : "警戒圈目前沒有需要注意的事件")
-                        .font(.subheadline.bold())
+                        .font(.body.weight(.semibold))
                     Text(hasAttention ? "已確認且位於提醒範圍內：\(attentionCount) 件" : "持續留意資料更新即可")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1119,7 +1133,7 @@ struct SafetyMapView: View {
                 .accessibilityLabel("收合摘要")
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: HCSpacing.x2) {
                 summaryMetric("需要注意", count: attentionCount, emphasis: hasAttention)
                 summaryMetric("未驗證線索（不限警戒圈）", count: confirmingCount, emphasis: false)
                 summaryMetric("其他區域", count: elsewhereCount, emphasis: false)
@@ -1129,8 +1143,9 @@ struct SafetyMapView: View {
                 Button {
                     selectedAlert = alert
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: HCSpacing.x2) {
                         Image(systemName: alert.iconName)
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(HCColor.attention)
                             .accessibilityHidden(true)
                         Text("區域警報：\(alert.kind)｜\(alert.title)")
@@ -1146,7 +1161,7 @@ struct SafetyMapView: View {
                 .accessibilityLabel("區域警報：\(alert.kind)，\(alert.title)")
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: HCSpacing.x1) {
                 if isPaused {
                     Text("提醒已暫停——事件仍會顯示，但不會推播。")
                         .font(.caption)
@@ -1167,7 +1182,7 @@ struct SafetyMapView: View {
     }
 
     private func summaryMetric(_ title: String, count: Int, emphasis: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: HCSpacing.x1) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1176,9 +1191,9 @@ struct SafetyMapView: View {
                 .foregroundStyle(emphasis ? HCColor.danger : .primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, HCSpacing.x2)
+        .padding(.vertical, HCSpacing.x2)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: HCRadius.chip))
         .accessibilityElement(children: .combine)
     }
 
@@ -1194,7 +1209,7 @@ struct SafetyMapView: View {
                 nearestCircleDistance($0, visibleMembers) < nearestCircleDistance($1, visibleMembers)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(spacing: HCSpacing.x2) {
                     ForEach(sorted.prefix(5)) { event in
                         Button {
                             selected = event
@@ -1203,14 +1218,21 @@ struct SafetyMapView: View {
                                 .containerRelativeFrame(.horizontal) { availableWidth, _ in
                                     min(max(availableWidth - 48, 260), 340)
                                 }
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .background(
+                                    .regularMaterial,
+                                    in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+                                        .stroke(.secondary.opacity(0.12), lineWidth: 1)
+                                )
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, HCSpacing.x4)
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, HCSpacing.x2)
         }
     }
 }
