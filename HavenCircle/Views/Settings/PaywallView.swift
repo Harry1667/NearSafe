@@ -39,7 +39,7 @@ struct PaywallView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: HCSpacing.x6) {
+                VStack(spacing: HCSpacing.x4) {
                     header
                     safetyFreeBanner
                     if store.isPlus {
@@ -60,7 +60,7 @@ struct PaywallView: View {
                     legalLinks
                 }
                 .padding(.horizontal, HCSpacing.x4)
-                .padding(.bottom, HCSpacing.x6)
+                .padding(.bottom, HCSpacing.x4)
             }
             .navigationTitle("升級 Guardian+")
             .navigationBarTitleDisplayMode(.inline)
@@ -76,38 +76,49 @@ struct PaywallView: View {
     }
 
     private var header: some View {
-        VStack(spacing: HCSpacing.x3) {
+        VStack(spacing: HCSpacing.x2) {
             ZStack {
                 Circle()
                     .fill(
-                        LinearGradient(
-                            colors: [HCColor.brand.opacity(0.18), HCColor.brand.opacity(0.05)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                        RadialGradient(
+                            colors: [
+                                HCColor.brand.opacity(0.24),
+                                HCColor.brand.opacity(0.10),
+                                HCColor.brand.opacity(0),
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 32
                         )
                     )
-                    .frame(width: 96, height: 96)
+                    .frame(width: 64, height: 64)
                 Circle()
-                    .stroke(HCColor.brand.opacity(0.16), lineWidth: 1)
-                    .frame(width: 80, height: 80)
+                    .fill(HCColor.brand.opacity(0.08))
+                    .frame(width: 48, height: 48)
+                Circle()
+                    .stroke(HCColor.brand.opacity(0.20), lineWidth: 1)
+                    .frame(width: 44, height: 44)
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 40, weight: .medium))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(HCColor.brand)
             }
             Text("守護更多人、更大範圍")
-                .font(.title2.weight(.bold))
+                .font(.title3.weight(.bold))
                 .multilineTextAlignment(.center)
-            Text("免費就能保護一個完整家庭；當你要照顧三代同堂、多個據點、看更久的歷史時，用 Guardian+ 解鎖。")
-                .font(.subheadline)
+            Text("免費守護完整家庭；三代同堂、多據點與長期歷史由 Guardian+ 解鎖。")
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .allowsTightening(true)
         }
-        .padding(.top, HCSpacing.x3)
+        .padding(.top, HCSpacing.x1)
     }
 
     /// 最醒目的一條：安全永遠免費（倫理與信任的核心訊息）
     private var safetyFreeBanner: some View {
-        HStack(alignment: .top, spacing: HCSpacing.x3) {
+        HStack(alignment: .top, spacing: HCSpacing.x2) {
             Image(systemName: "checkmark.shield.fill")
                 .fontWeight(.medium)
                 .foregroundStyle(HCColor.brand)
@@ -117,6 +128,20 @@ struct PaywallView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .hcCard()
+        .background(
+            HCColor.brand.opacity(0.10),
+            in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+                .stroke(HCColor.brand.opacity(0.22), lineWidth: 1)
+        )
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(HCColor.brand)
+                .frame(width: HCSpacing.x1)
+                .padding(.vertical, HCSpacing.x2)
+        }
     }
 
     /// 已是 Guardian+：整頁改為感謝狀態，不再顯示購買 UI。
@@ -151,22 +176,29 @@ struct PaywallView: View {
     }
 
     private var comparisonCard: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("功能").font(.caption.weight(.semibold)).frame(maxWidth: .infinity, alignment: .leading)
-                Text("免費").font(.caption.weight(.semibold)).frame(width: 72)
-                Text("Guardian+").font(.caption.weight(.bold)).foregroundStyle(HCColor.brand).frame(width: 88)
-            }
-            .padding(.vertical, HCSpacing.x2)
-            Divider()
-            ForEach(tiers, id: \.feature) { row in
-                HStack(alignment: .firstTextBaseline) {
-                    Text(row.feature).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(row.free).font(.caption).foregroundStyle(.secondary).frame(width: 72)
-                    Text(row.plus).font(.caption.weight(.semibold)).foregroundStyle(HCColor.brand).frame(width: 88)
+        ZStack(alignment: .trailing) {
+            RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                .fill(HCColor.brand.opacity(0.08))
+                .frame(width: 88)
+                .padding(.vertical, HCSpacing.x1)
+
+            VStack(spacing: 0) {
+                HStack(spacing: HCSpacing.x1) {
+                    Text("功能").font(.caption2.weight(.semibold)).frame(maxWidth: .infinity, alignment: .leading)
+                    Text("免費").font(.caption2.weight(.semibold)).frame(width: 72)
+                    Text("Guardian+").font(.caption2.weight(.bold)).foregroundStyle(HCColor.brand).frame(width: 88)
                 }
-                .padding(.vertical, HCSpacing.x2)
-                if row.feature != tiers.last?.feature { Divider() }
+                .padding(.vertical, HCSpacing.x1)
+                Divider()
+                ForEach(tiers, id: \.feature) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: HCSpacing.x1) {
+                        Text(row.feature).font(.caption2).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(row.free).font(.caption2).foregroundStyle(.secondary).frame(width: 72)
+                        Text(row.plus).font(.caption2.weight(.semibold)).foregroundStyle(HCColor.brand).frame(width: 88)
+                    }
+                    .padding(.vertical, HCSpacing.x1)
+                    if row.feature != tiers.last?.feature { Divider() }
+                }
             }
         }
         .hcCard()
@@ -188,12 +220,13 @@ struct PaywallView: View {
             .frame(maxWidth: .infinity)
             .hcCard()
         } else {
-            VStack(spacing: HCSpacing.x3) {
+            VStack(spacing: HCSpacing.x2) {
                 planCard(
                     title: "年訂",
                     price: store.yearlyProduct?.displayPrice ?? staticPrice("NT$690"),
+                    unit: "每年",
                     note: yearlyNote,
-                    badge: "最划算",
+                    badge: "最划算 · 省 36%",
                     selected: selectedPlan == .yearly
                 ) {
                     selectedPlan = .yearly
@@ -201,6 +234,7 @@ struct PaywallView: View {
                 planCard(
                     title: "月訂",
                     price: store.monthlyProduct?.displayPrice ?? staticPrice("NT$90"),
+                    unit: "每月",
                     note: "每月自動續訂 · 隨時可取消",
                     badge: nil,
                     selected: selectedPlan == .monthly
@@ -210,6 +244,7 @@ struct PaywallView: View {
                 planCard(
                     title: "終身",
                     price: store.lifetimeProduct?.displayPrice ?? staticPrice("NT$1,490"),
+                    unit: "一次付清",
                     note: "一次擁有，永久有效",
                     badge: nil,
                     selected: selectedPlan == .lifetime,
@@ -258,6 +293,7 @@ struct PaywallView: View {
     private func planCard(
         title: String,
         price: String?,
+        unit: String,
         note: String,
         badge: String?,
         selected: Bool,
@@ -265,16 +301,16 @@ struct PaywallView: View {
         tap: @escaping () -> Void
     ) -> some View {
         Button(action: tap) {
-            HStack(spacing: HCSpacing.x3) {
+            HStack(spacing: HCSpacing.x2) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(selected ? HCColor.brand : .secondary)
-                    .font(.title3.weight(.medium))
+                    .font(.body.weight(.medium))
                 VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                    HStack(spacing: HCSpacing.x2) {
+                    HStack(spacing: HCSpacing.x1) {
                         Text(title).font(.body.weight(.semibold))
                         if let badge {
                             Text(badge)
-                                .font(.caption.weight(.bold))
+                                .font(.caption2.weight(.bold))
                                 .padding(.horizontal, HCSpacing.x2)
                                 .padding(.vertical, HCSpacing.x1)
                                 .background(
@@ -284,16 +320,30 @@ struct PaywallView: View {
                                 .foregroundStyle(HCColor.brand)
                         }
                     }
-                    Text(note).font(.caption).foregroundStyle(.secondary)
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
-                Spacer()
+                Spacer(minLength: HCSpacing.x2)
                 if let price {
-                    Text(price).font(.title3.weight(.bold))
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text(price).font(.title2.weight(.bold))
+                        Text(unit)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     // 商品尚未載入完成：先用同尺寸佔位文字避免版面跳動，載入完成即替換
-                    Text("NT$00")
-                        .font(.title3.weight(.bold))
-                        .redacted(reason: .placeholder)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text("NT$00")
+                            .font(.title2.weight(.bold))
+                            .redacted(reason: .placeholder)
+                        Text(unit)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .hcCard()
