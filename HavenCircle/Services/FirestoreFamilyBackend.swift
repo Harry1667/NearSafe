@@ -118,9 +118,18 @@ enum FirestoreFamilyBackend {
         }
         let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
         // 併發安全：arrayUnion 不會重複加入同一個 uid。
-        try await familyRef.updateData([
-            "memberUids": FieldValue.arrayUnion([uid])
-        ])
+        do {
+            try await familyRef.updateData([
+                "memberUids": FieldValue.arrayUnion([uid])
+            ])
+        } catch let error as NSError where error.domain == FirestoreErrorDomain
+            && error.code == FirestoreErrorCode.permissionDenied.rawValue {
+            // 邀請碼合法（inviteCodes 讀取通過）卻在寫入 memberUids 時被拒——rules 對這個更新
+            // 分支只檢查 `resource.data`（文件現有內容），家庭圈一旦被圈主解散
+            // （[deleteFamily]）根文件不存在，`resource.data` 求值出錯，一律回 permission-denied。
+            // 在這個呼叫路徑下，這幾乎唯一可能的成因就是「家庭圈已解散」，轉譯成更精確的錯誤。
+            throw FamilyBackendError.familyNotFound
+        }
         try await familyRef.collection(FirestoreConfig.Path.members).document(uid).setData([
             "displayName": displayName,
             "role": "member",
@@ -136,6 +145,32 @@ enum FirestoreFamilyBackend {
         try await familyRef.updateData(["memberUids": FieldValue.arrayRemove([uid])])
         try? await familyRef.collection(FirestoreConfig.Path.members).document(uid).delete()
         try? await familyRef.collection(FirestoreConfig.Path.locations).document(uid).delete()
+    }
+
+    /// 解散家庭圈：只有圈主能呼叫（對照 firestore.rules `families/{familyId}` 的
+    /// `allow delete: if ... resource.data.ownerUid == request.auth.uid`）。
+    ///
+    /// 刪根文件前先盡力清掉「自己」的成員／位置子文件（rules 允許本人寫入自己的
+    /// members/{uid}、locations/{uid}，寫入含刪除）。
+    ///
+    /// 已知限制（刻意不處理，留註解說明）：
+    /// - 其他成員的 members/{uid}、locations/{uid} 子文件不會被清掉——rules 只允許
+    ///   本人寫入自己的子文件，圈主沒有權限代刪；根文件一旦刪除，這些子文件會變成
+    ///   沒有母文件的孤兒資料，但因為所有讀取路徑都先查根文件是否存在，不會再被
+    ///   任何功能讀到。
+    /// - 所有 pings/{pingId} 一律禁止刪除（rules `allow delete: if false`），解散後
+    ///   同樣變成孤兒資料，無法清除。
+    /// - inviteCodes/{code} 索引禁止 update/delete，解散後這組碼會永久指向一個已刪除
+    ///   的 familyId。[lookupInvite] 本身讀不到家庭根文件（非成員讀取一律 permission-denied，
+    ///   無法藉此判斷是否存在），因此「優雅失敗」改在 [joinFamily] 實際寫入 memberUids 時
+    ///   偵測——那次寫入被拒時會轉譯成 [FamilyBackendError.familyNotFound] 讓 UI 優雅顯示，
+    ///   不會讓使用者誤以為能加入一個早就解散的家庭圈。
+    static func deleteFamily(familyId: String, uid: String) async throws {
+        let db = FirestoreConfig.store()
+        let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
+        try? await familyRef.collection(FirestoreConfig.Path.members).document(uid).delete()
+        try? await familyRef.collection(FirestoreConfig.Path.locations).document(uid).delete()
+        try await familyRef.delete()
     }
 
     /// 讀取家庭圈根文件。
@@ -193,6 +228,13 @@ enum FirestoreFamilyBackend {
 
     /// 加入前確認（C1）：只讀 inviteCodes 索引，不寫入任何資料、不會讓人「不小心就加入了」。
     /// 舊邀請碼沒有 familyName/ownerName 欄位時，對應回傳 nil，交由呼叫端決定降級文案。
+    ///
+    /// ⚠️ 這裡刻意不多讀一次 `families/{familyId}` 來確認根文件是否還在：
+    /// rules 的 `families/{familyId}` 讀取要求 `isMember(familyId)`，而 `isMember` 內部又對
+    /// 同一份文件做一次 `get()`——非成員（正是這裡的呼叫情境：還沒加入就要先看預覽）讀取任何
+    /// families 文件一律 `permission-denied`，不論該文件是否存在，無法用來判斷「已解散」。
+    /// 因此「家庭圈已被圈主解散」這個情況，實際能可靠偵測到的時機是 [joinFamily] 真正嘗試
+    /// 寫入 memberUids 的那一刻（見那裡的錯誤轉換），這裡維持只讀 inviteCodes 索引本身。
     static func lookupInvite(code: String) async throws -> InvitePreview {
         let db = FirestoreConfig.store()
         let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()

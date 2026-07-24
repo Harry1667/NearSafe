@@ -38,6 +38,9 @@ final class FamilySyncService {
     /// FamilyListView 等畫面判斷「單人／多人」一律看這個，不看本機 LocalFamilyMember 筆數——
     /// 本機清單是投影，會落後於雲端（見 [isSolo]）。
     private(set) var memberUids: [String] = []
+    /// 目前登入者是否為這個家庭圈的圈主（雲端真相）；未在家庭圈或尚未載入完成時為 false。
+    /// 用於「退出家庭圈」判斷要走一般退出還是解散（見 [leaveFamily]）。
+    private(set) var isFamilyOwner: Bool = false
 
     // 位置寫入去抖狀態（沿用舊邏輯，避免 GPS 抖動造成寫入風暴）
     private var lastPublishedLocation: CLLocation?
@@ -92,6 +95,7 @@ final class FamilySyncService {
     func refreshAccountStatus() async {
         guard AuthService.shared.isSignedIn, let uid else {
             state = .noAccount
+            isFamilyOwner = false
             return
         }
         do {
@@ -118,6 +122,7 @@ final class FamilySyncService {
         currentInviteCode = family.inviteCode
         familyName = family.name
         memberUids = family.memberUids
+        isFamilyOwner = family.ownerUid == uid
     }
 
     // MARK: - 建立 / 加入家庭圈（邀請碼取代 CKShare）
@@ -538,15 +543,33 @@ final class FamilySyncService {
         }
     }
 
-    // MARK: - 退出家庭圈（帳號刪除流程／主動退出用）
+    // MARK: - 退出／解散家庭圈（帳號刪除流程／主動退出用）
 
-    func leaveFamily() async {
+    /// 退出（一般成員／圈主但還有其他成員）或解散（圈主且只剩自己一人）目前的家庭圈。
+    ///
+    /// 判斷依據：[isFamilyOwner] ＋ [memberUids]（雲端真相，同 [isSolo] 的判法）——
+    /// 圈主且 memberUids 只剩自己一人時走解散（[FirestoreFamilyBackend.deleteFamily]，
+    /// 對照 firestore.rules 允許圈主 delete 根文件那條）；其餘情況走一般退出
+    /// （[FirestoreFamilyBackend.leaveFamily]，只把自己移出 memberUids）。
+    ///
+    /// Firestore 呼叫失敗會原樣往上拋，呼叫端（FamilyListView 的「退出家庭圈」按鈕）要接住
+    /// 顯示人話錯誤，不能 silent fail；帳號整個刪除那條路徑（SettingsView.deleteEverything）
+    /// 呼叫這裡時刻意用 `try?` 吞掉錯誤——那條路徑就算離線，本機清除仍要能完成，
+    /// 不該被雲端呼叫失敗卡住。
+    ///
+    /// context 有給的話（一般由「退出家庭圈」按鈕呼叫），額外清掉同步而來的家人本機投影
+    /// （見 [purgeSyncedFamilyProjection]），保留使用者手動新增的家人與所有其他本機資料——
+    /// 這條路徑跟整個刪帳號不同，是「只離開這個家庭圈，其他本機資料保留」。
+    func leaveFamily(context: ModelContext? = nil) async throws {
         if let uid, let familyID = currentFamilyID {
-            do {
+            if isFamilyOwner, memberUids.count <= 1 {
+                try await FirestoreFamilyBackend.deleteFamily(familyId: familyID, uid: uid)
+            } else {
                 try await FirestoreFamilyBackend.leaveFamily(familyId: familyID, uid: uid)
-            } catch {
-                AppLog.cloud.error("退出家庭圈失敗：\(error.localizedDescription)")
             }
+        }
+        if let context {
+            purgeSyncedFamilyProjection(context: context)
         }
         pings = []
         liveLocations = []
@@ -554,10 +577,26 @@ final class FamilySyncService {
         currentInviteCode = nil
         familyName = nil
         memberUids = []
+        isFamilyOwner = false
         // 清掉 CloudKit 舊架構殘留的鍵
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: SettingsKeys.activeFamilyZoneName)
         defaults.removeObject(forKey: SettingsKeys.activeFamilyOwnerName)
+        defaults.removeObject(forKey: SettingsKeys.knownFamilyMemberUids)
         await refreshAccountStatus()
+    }
+
+    /// 清掉「同步而來」的家人本機投影：sharedIdentityKey 非 nil（代表是雲端家庭圈成員投影
+    /// 出來的，見 [refreshFamilyMembers] / [applyLiveLocationSnapshots]）且不是本人、
+    /// 不是重要地點的紀錄。手動新增的家人（sharedIdentityKey == nil）刻意保留——
+    /// 那是使用者自己建的本機資料，跟「這台裝置屬於哪個雲端家庭圈」無關。
+    private func purgeSyncedFamilyProjection(context: ModelContext) {
+        guard let members = try? context.fetch(FetchDescriptor<LocalFamilyMember>()) else { return }
+        var changed = false
+        for member in members where !member.isCurrentUser && !member.isPlace && member.sharedIdentityKey != nil {
+            context.delete(member)
+            changed = true
+        }
+        if changed { context.saveReporting() }
     }
 }

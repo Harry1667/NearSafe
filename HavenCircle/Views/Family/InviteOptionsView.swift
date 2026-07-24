@@ -35,6 +35,7 @@ struct InviteOptionsView: View {
             .toolbar {
                 Button("完成") { dismiss() }
             }
+            .analyticsScreen("invite_options")
         }
     }
 

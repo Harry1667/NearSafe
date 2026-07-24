@@ -46,6 +46,8 @@ struct JoinByCodeView: View {
             .toolbar {
                 Button("取消") { dismiss() }
             }
+            // 輸碼與確認頁是同一個 view（preview 前後只是切換 section），只記一次
+            .analyticsScreen("join_by_code")
             .fullScreenCover(isPresented: $showJoinWelcome) {
                 JoinWelcomeView {
                     showJoinWelcome = false
@@ -209,11 +211,15 @@ struct JoinByCodeView: View {
 
     /// 錯誤訊息講人話（B3）：分流「查無此碼」與「網路失敗」，不把 error.localizedDescription
     /// 直接丟給使用者看——原始錯誤只進 log。
+    /// familyNotFound：邀請碼本身合法（inviteCodes 索引查得到），但指向的家庭圈已被圈主解散
+    /// （見 FirestoreFamilyBackend.joinFamily 的錯誤轉換）——視同「這組碼已失效」處理。
     private func classify(_ error: Error, notFound: String) -> String {
-        if case FamilyBackendError.invalidInviteCode = error {
+        switch error {
+        case FamilyBackendError.invalidInviteCode, FamilyBackendError.familyNotFound:
             return notFound
+        default:
+            return "網路連線有問題，請檢查網路後再試一次。"
         }
-        return "網路連線有問題，請檢查網路後再試一次。"
     }
 
     private func applyRole(_ role: FamilyRole) {

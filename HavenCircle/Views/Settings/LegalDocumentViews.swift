@@ -38,6 +38,7 @@ struct LegalCenterView: View {
         }
         .navigationTitle("法律與隱私")
         .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("legal")
     }
 }
 

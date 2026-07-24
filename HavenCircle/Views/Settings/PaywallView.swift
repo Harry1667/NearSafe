@@ -42,6 +42,7 @@ struct PaywallView: View {
                     Button("關閉") { dismiss() }
                 }
             }
+            .analyticsScreen("paywall")
             .alert("訂閱功能即將推出", isPresented: $showComingSoon) {
                 Button("好", role: .cancel) {}
             } message: {

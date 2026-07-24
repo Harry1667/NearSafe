@@ -79,6 +79,62 @@ final class AuthService {
         currentNonce = nil
     }
 
+    // MARK: - 刪除帳號（App Store 5.1.1(v)：帳號刪除必須真的刪掉帳號本體）
+
+    /// 永久刪除 Firebase 帳號＋盡力撤銷 Apple 授權。呼叫端須先用 [prepareAppleRequest] 設定
+    /// SignInWithAppleButton 的 request，拿到使用者重新授權後的 credential 再呼叫本函式。
+    ///
+    /// 設計：一律先「重新驗證」再刪除，不做「先試刪、失敗才驗」——原因有二，合併處理讓流程單純：
+    /// 1. Firebase 對「刪除帳號」這類敏感操作要求近期登入（requiresRecentLogin），先驗證一次最直接；
+    /// 2. 只有這次全新的 Apple 授權流程才能拿到 `authorizationCode`，用來呼叫 Apple 的
+    ///    token revocation——沒有這次重新授權，撤銷授權根本無從做起。
+    ///
+    /// 呼叫順序：reauthenticate（滿足 1、2 兩點）→ 撤銷 Apple 授權（盡力而為，失敗只記 log，
+    /// 不中斷刪除——使用者刪帳號的意圖優先於撤銷是否成功）→ 真正刪除 Firebase 帳號。
+    ///
+    /// ⚠️ 呼叫端要注意順序：任何「這個使用者還在家庭圈裡」相關的 Firestore 清理
+    /// （退出／解散家庭圈）都必須在呼叫本函式「之前」做完——一旦 `currentUser.delete()`
+    /// 成功，Firebase Auth session 立即消失，之後所有 Firestore 呼叫的 `request.auth`
+    /// 都會變成 null，Security Rules 會直接拒絕，屆時再也無法替自己清理任何雲端資料。
+    func deleteAccount(with credential: ASAuthorizationAppleIDCredential) async throws {
+        guard let user = Auth.auth().currentUser else {
+            throw AuthError.notSignedIn
+        }
+        guard let nonce = currentNonce else {
+            throw AuthError.missingNonce
+        }
+        guard let tokenData = credential.identityToken,
+              let idToken = String(data: tokenData, encoding: .utf8) else {
+            throw AuthError.missingIdentityToken
+        }
+        let firebaseCredential = OAuthProvider.appleCredential(
+            withIDToken: idToken,
+            rawNonce: nonce,
+            fullName: credential.fullName
+        )
+        currentNonce = nil
+        // 重新驗證：滿足 requiresRecentLogin，同時是唯一能拿到新鮮 authorizationCode 的時機
+        _ = try await user.reauthenticate(with: firebaseCredential)
+
+        // 撤銷 Apple 授權：盡力而為。這步失敗（例如離線）不該擋住使用者刪帳號的權利，
+        // 只記 log，不往上拋。
+        if let codeData = credential.authorizationCode,
+           let authorizationCode = String(data: codeData, encoding: .utf8) {
+            do {
+                try await Auth.auth().revokeToken(withAuthorizationCode: authorizationCode)
+            } catch {
+                AppLog.cloud.error("Apple 授權撤銷失敗（不中斷刪除流程）：\(error.localizedDescription)")
+            }
+        } else {
+            AppLog.cloud.error("Apple 授權缺少 authorizationCode，無法撤銷（不中斷刪除流程）")
+        }
+
+        try await user.delete()
+        uid = nil
+        isSignedIn = false
+        AppLog.cloud.info("Firebase 帳號已刪除")
+    }
+
     // MARK: - nonce 工具（Firebase 官方 Sign in with Apple 建議實作）
 
     /// 產生密碼學等級的隨機 nonce 字串。
@@ -108,6 +164,7 @@ final class AuthService {
 enum AuthError: LocalizedError {
     case missingNonce
     case missingIdentityToken
+    case notSignedIn
 
     var errorDescription: String? {
         switch self {
@@ -115,6 +172,8 @@ enum AuthError: LocalizedError {
             return "登入流程遺失驗證碼，請重試一次。"
         case .missingIdentityToken:
             return "無法取得 Apple 身份權杖，請重試一次。"
+        case .notSignedIn:
+            return "目前沒有登入中的帳號，無法刪除。"
         }
     }
 }

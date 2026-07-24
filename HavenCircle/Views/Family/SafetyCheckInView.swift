@@ -29,6 +29,7 @@ struct SafetyCheckInView: View {
             }
         }
         .signInPreflight(gate)
+        .analyticsScreen("check_in")
         .toolbar {
             if isWorking {
                 ProgressView()

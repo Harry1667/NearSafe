@@ -45,8 +45,8 @@ struct LiveCircleSharingSection: View {
                 .font(.caption)
             } else {
                 Label(
-                    iCloudUnavailable ? "未登入 iCloud，分享功能目前不可用" : "即時位置分享已停止",
-                    systemImage: iCloudUnavailable ? "icloud.slash" : "location.slash"
+                    iCloudUnavailable ? "尚未登入 Apple 帳號，分享功能目前不可用" : "即時位置分享已停止",
+                    systemImage: iCloudUnavailable ? "person.crop.circle.badge.exclamationmark" : "location.slash"
                 )
                     .font(.caption)
                     .foregroundStyle(iCloudUnavailable ? HCColor.attention : Color.secondary)
@@ -60,7 +60,7 @@ struct LiveCircleSharingSection: View {
         } header: {
             Text("我的即時圈")
         } footer: {
-            Text("位置只同步給家庭 iCloud 成員，並可隨時停止。畫面會顯示最後更新時間；超過 15 分鐘即視為過期，不參與提醒判斷。")
+            Text("位置只同步給家庭圈成員（以 Apple 帳號登入辨識），並可隨時停止。畫面會顯示最後更新時間；超過 15 分鐘即視為過期，不參與提醒判斷。")
         }
         .task(id: radiusMeters) {
             guard isSharing, !iCloudUnavailable else { return }

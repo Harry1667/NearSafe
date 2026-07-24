@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.analyticsEnabled) private var analyticsEnabled = true
     @State private var showPaywall = false
     @State private var showDeleteConfirm = false
+    @State private var showDeleteReauth = false
     @State private var isDeleting = false
     @State private var demoNoticeScheduled = false
     @State private var tokenCopied = false
@@ -24,7 +25,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                // 頂部帳號卡：名稱＋email（Sign in with Apple 授權後）＋iCloud 狀態
+                // 頂部帳號卡：名稱＋email（Sign in with Apple 授權後）＋登入狀態
                 Section {
                     NavigationLink {
                         AppleAccountView()
@@ -114,7 +115,7 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("匿名使用統計")
                                     .foregroundStyle(.primary)
-                                Text("僅事件次數與版本，不含識別碼與位置")
+                                Text("僅事件次數、頁面瀏覽與停留時長，不含識別碼與位置")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -169,7 +170,7 @@ struct SettingsView: View {
                     }
                     .disabled(isDeleting)
                 } footer: {
-                    Text("清除這支手機上的所有家人、警戒圈與事件資料，停止即時位置分享，並退出（擁有者則刪除）iCloud 家庭圈。此動作無法復原。")
+                    Text("清除這支手機上的所有家人、警戒圈與事件資料，停止即時位置分享，並撤銷 Apple 登入授權、退出（擁有者則解散）家庭圈。此動作無法復原。")
                 }
 
                 #if DEBUG
@@ -189,17 +190,37 @@ struct SettingsView: View {
                         .labelStyle(.iconOnly)
                 }
             }
+            .analyticsScreen("settings")
             .task { await sync.refreshAccountStatus() }
             .sheet(isPresented: $showPaywall) {
                 PaywallView()
             }
-            .confirmationDialog("確定要刪除所有資料嗎？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            .confirmationDialog("確定要刪除帳號與所有資料嗎？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("刪除所有資料", role: .destructive) {
-                    Task { await deleteEverything() }
+                    // 未登入（沒有 Firebase 帳號可刪）：跳過重新驗證，直接跑本機清除；
+                    // 已登入：帳號本體是真的要刪掉的東西，必須先讓使用者重新驗證一次
+                    // （見 DeleteAccountReauthSheet 與 AuthService.deleteAccount 的設計說明）。
+                    if sync.state == .noAccount {
+                        Task { await deleteEverything() }
+                    } else {
+                        showDeleteReauth = true
+                    }
                 }
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("本機資料與 iCloud 家庭圈都會被清除，無法復原。")
+                Text("你的 Apple 登入授權、家庭圈成員資格，與這台裝置上的所有資料都會被刪除，無法復原。")
+            }
+            .sheet(isPresented: $showDeleteReauth) {
+                DeleteAccountReauthSheet(
+                    onCleanupBeforeDelete: { await cleanupCloudDependenciesBeforeDelete() },
+                    onLocalWipe: { await wipeLocalData() },
+                    onFinished: {
+                        showDeleteReauth = false
+                        dismiss() // 退回主畫面：onboardingCompleted 已在 wipeLocalData 清掉，會自動落地新手著陸
+                    }
+                )
+                // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
+                .presentationSizing(.form)
             }
         }
     }
@@ -387,11 +408,14 @@ struct SettingsView: View {
         }
     }
 
-    /// 刪除帳號與資料：撤銷推播權杖 → 雲端家庭圈 → 本機資料庫 → 偏好設定 → 通知。
-    /// 完成後 ContentView 會因旗標與資料清空自動回到新手設定。
-    private func deleteEverything() async {
-        isDeleting = true
-        defer { isDeleting = false }
+    /// 雲端／裝置外部依賴的清理：撤銷推播權杖 → 停止即時位置分享 → 退出或解散雲端家庭圈。
+    ///
+    /// ⚠️ 順序很重要：這一段全部要在 Firebase 帳號「還存在」時做完。已登入的刪除路徑
+    /// （DeleteAccountReauthSheet）會先呼叫這裡，才呼叫 AuthService.deleteAccount 真正刪除
+    /// Firebase 帳號——一旦帳號被刪除，Firestore 規則的 request.auth 立即變成 null，
+    /// 屆時這裡所有的 Firestore 呼叫都會被拒絕，且再也無法自己清理。
+    /// leaveFamily 用 `try?` 吞掉錯誤：即使離線失敗，本機清除仍要能完成，不該被雲端呼叫卡住。
+    private func cleanupCloudDependenciesBeforeDelete() async {
         UserDefaults.standard.set(false, forKey: SettingsKeys.liveLocationSharingEnabled)
         LocationService.shared.syncLiveLocationSharing(isEnabled: false)
         // 先使用仍保留的權杖要求中繼站刪除，再清掉本機副本；即使離線失敗，
@@ -402,7 +426,13 @@ struct SettingsView: View {
         if UserDefaults.standard.string(forKey: SettingsKeys.liveLocationDeviceID) != nil {
             await sync.stopLiveLocationSharing(context: context)
         }
-        await sync.leaveFamily()
+        // 圈主且只剩自己 → 內部自動改走解散家庭圈；其餘情況照舊退出（見 FamilySyncService.leaveFamily）
+        try? await sync.leaveFamily()
+    }
+
+    /// 本機資料庫 → 偏好設定 → 通知：純本機清除，不依賴登入狀態或網路。
+    /// 完成後 ContentView 會因旗標與資料清空自動回到新手設定。
+    private func wipeLocalData() async {
         // 逐筆刪除，不用 delete(model:)：批次刪除走 CoreData batch delete，
         // 會撞上 LocalLifeCircle.member 強制反向關聯的約束（實機已踩到）；
         // 逐筆刪除才會執行 cascade 與反向關聯清理。資料量小，效能無虞。
@@ -430,12 +460,25 @@ struct SettingsView: View {
                     SettingsKeys.digestEnabled, SettingsKeys.digestHour,
                     SettingsKeys.liveLocationSharingEnabled, SettingsKeys.liveCircleRadiusMeters,
                     SettingsKeys.liveLocationDeviceID, SettingsKeys.apnsDeviceToken,
-                    SettingsKeys.legalAcceptanceVersion] {
+                    SettingsKeys.legalAcceptanceVersion, SettingsKeys.knownFamilyMemberUids,
+                    SettingsKeys.notificationPromptDeclined, SettingsKeys.roleSelectionPending,
+                    SettingsKeys.firstRunCoachingPending, SettingsKeys.seenCircleAdjustHint] {
             UserDefaults.standard.removeObject(forKey: key)
         }
         EventVisibility.reset()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+    }
+
+    /// 未登入狀態按刪除鈕的路徑：沒有 Firebase 帳號可刪，跳過重新驗證，直接做完整本機清除。
+    /// （[cleanupCloudDependenciesBeforeDelete] 內部呼叫的 sync.leaveFamily 在 uid 為 nil 時
+    /// 會自行跳過所有 Firestore 呼叫，這裡不需要另外分支。）
+    private func deleteEverything() async {
+        isDeleting = true
+        defer { isDeleting = false }
+        await cleanupCloudDependenciesBeforeDelete()
+        await wipeLocalData()
+        dismiss()
     }
 
     /// 頭像：取顯示名稱第一個字，沒設名稱用預設盾牌
@@ -491,13 +534,13 @@ struct SettingsView: View {
     private var accountStatusText: String {
         switch sync.state {
         case .ready, .sharing:
-            "iCloud 已可用"
+            "Apple 帳號已登入"
         case .noAccount:
             "尚未登入 Apple 帳號"
         case .error:
-            "iCloud 暫時無法使用"
+            "帳號服務暫時無法使用"
         case .unknown:
-            "正在檢查 iCloud 狀態"
+            "正在檢查登入狀態"
         }
     }
 }
@@ -646,6 +689,114 @@ private struct AppleAccountView: View {
     }
 }
 
+/// 刪除帳號前的最後確認：要求使用者用 Apple 帳號重新驗證一次，驗證成功後依序執行
+/// 「雲端清理 → 真正刪除 Firebase 帳號 → 本機資料清除」，全部完成才收工。
+///
+/// 三段呼叫端各自的職責與順序原因（見 SettingsView 對應函式的註解）：
+/// 1. onCleanupBeforeDelete：退出／解散家庭圈等所有還需要 Firebase 帳號存在才能做的
+///    Firestore 呼叫，必須在帳號被刪除「之前」完成。
+/// 2. AuthService.deleteAccount：reauthenticate → 撤銷 Apple 授權 → 真正刪除 Firebase 帳號。
+/// 3. onLocalWipe：純本機清除，放最後，不受前兩步是否完全成功影響。
+private struct DeleteAccountReauthSheet: View {
+    /// 雲端清理（見上方順序說明第 1 步）
+    var onCleanupBeforeDelete: () async -> Void
+    /// 本機資料與偏好清除（見上方順序說明第 3 步）
+    var onLocalWipe: () async -> Void
+    /// 全部完成後呼叫：由 SettingsView 負責收掉這張 sheet並 dismiss 整個設定頁回主畫面
+    var onFinished: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var isDeleting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: HCSpacing.x4) {
+                Spacer(minLength: 4)
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(HCColor.danger)
+                VStack(spacing: 6) {
+                    Text("最後確認")
+                        .font(.title3.bold())
+                    Text("為了安全，請再用 Apple 帳號驗證一次，驗證完成後立即刪除。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                if isDeleting {
+                    ProgressView("正在刪除…")
+                        .padding(.vertical, 8)
+                } else {
+                    SignInWithAppleButton(.continue) { request in
+                        AuthService.shared.prepareAppleRequest(request)
+                    } onCompletion: { result in
+                        handle(result)
+                    }
+                    .frame(height: 50)
+                    .padding(.horizontal, 32)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(HCColor.danger)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                Button("取消") { dismiss() }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .disabled(isDeleting)
+
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("關閉", systemImage: "xmark") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .disabled(isDeleting)
+                }
+            }
+        }
+        // 刪除中不給滑掉，避免中途離開造成「雲端清乾淨了、本機沒清」的半殘狀態
+        .interactiveDismissDisabled(isDeleting)
+    }
+
+    private func handle(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let auth):
+            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else { return }
+            errorMessage = nil
+            isDeleting = true
+            Task {
+                // 1) 趁 Firebase 帳號還在時，先清乾淨雲端家庭圈——順序不能反過來（見型別註解）
+                await onCleanupBeforeDelete()
+                do {
+                    // 2) 重新驗證 → 撤銷 Apple 授權 → 真正刪除 Firebase 帳號
+                    try await AuthService.shared.deleteAccount(with: credential)
+                    AuthService.shared.signOut() // 防萬一快取殘留 session
+                    // 3) 本機資料與偏好清除（純本機，不依賴登入狀態）
+                    await onLocalWipe()
+                    onFinished()
+                } catch {
+                    isDeleting = false
+                    errorMessage = "驗證或刪除失敗：\(error.localizedDescription)。請重試一次。"
+                }
+            }
+        case .failure(let error):
+            // 使用者按取消不當成錯誤吵他
+            if (error as? ASAuthorizationError)?.code != .canceled {
+                errorMessage = "驗證失敗：\(error.localizedDescription)"
+            }
+        }
+    }
+}
+
 private struct PersonalProfileView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.profileContactNote) private var contactNote = ""
@@ -678,6 +829,7 @@ private struct PersonalProfileView: View {
         }
         .navigationTitle("個人資訊")
         .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("personal_profile")
     }
 }
 
@@ -756,12 +908,13 @@ private struct AlertSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("資料與安全") {
-                Text("固定圈、家人與事件資料保存在此裝置；主動開啟的即時圈位置透過家庭 iCloud 同步。刪除 App 會刪除本機資料。")
+                Text("固定圈、家人與事件資料保存在此裝置；主動開啟的即時圈位置會同步給家庭圈成員。刪除 App 會刪除本機資料。")
                 Text("安心圈不是 110、119 或緊急救難服務。遇立即危險請直接撥打 110 或 119。")
             }
         }
         .navigationTitle("提醒設定")
         .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("alert_settings")
         // 摘要設定變更時立即重排通知
         .onChange(of: digestEnabled) { refreshDigest() }
         .onChange(of: digestHour) { refreshDigest() }

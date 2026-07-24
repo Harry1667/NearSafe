@@ -155,9 +155,14 @@ struct AppTabs: View {
                 DeepLinkStore.pending = nil
                 route(url)
             }
+            // 三個主分頁的畫面瀏覽集中在這一處記錄：涵蓋一開場就看到的初始分頁
+            // （切分頁才記的話，冷啟動落地的那一頁永遠不會被算到）。
+            Analytics.trackScreen(screenName(for: router.selection))
         }
         // 切分頁：第一次切到某頁時浮一張一句話介紹（點畫面任意處就關）
         .onChange(of: router.selection) { _, newTab in
+            // 三個主分頁集中記一筆畫面瀏覽，不進三個分頁 view 各自記一次
+            Analytics.trackScreen(screenName(for: newTab))
             if newTab == TabRouter.homeTab && !seenHomeIntro {
                 seenHomeIntro = true
                 Analytics.track("tab_intro_home") // 漏斗：首次到安心頁
@@ -210,6 +215,16 @@ struct AppTabs: View {
 
     private func eventKey(from url: URL) -> String? {
         queryValue("event", from: url)
+    }
+
+    /// 三個主分頁對照畫面名稱（tab 值對照 TabRouter 常數）。
+    private func screenName(for tab: Int) -> String {
+        switch tab {
+        case TabRouter.homeTab: "home"
+        case TabRouter.mapTab: "map"
+        case TabRouter.familyTab: "family"
+        default: "unknown_tab"
+        }
     }
 
     private func queryValue(_ name: String, from url: URL) -> String? {

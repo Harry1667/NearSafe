@@ -1,5 +1,6 @@
 import Foundation
 import os
+import SwiftUI
 import FirebaseAnalytics
 
 /// 匿名使用統計：只累計「事件名 × 次數」，送出時附 App 版本與 iOS 版本。
@@ -82,7 +83,28 @@ enum Analytics {
         UserDefaults.standard.removeObject(forKey: queueKey)
     }
 
+    /// 記一次「畫面被打開」。只走 Firebase Analytics 標準事件（screen_view），
+    /// **不**進 [track] 的自家伺服器佇列——screen_view 量遠大於漏斗事件，
+    /// 自家 events.php 是給關鍵漏斗事件用的輕量計數器，塞進大量畫面瀏覽只會撐爆
+    /// 每批 20 筆的上限、稀釋真正重要的漏斗訊號。畫面的「次數＋停留時長」交給
+    /// Firebase 用 screen_view 自動歸戶到各畫面，不必自己另外計時。
+    /// 名稱請用小寫英數與底線（如 settings、alert_center），與 [track] 的慣例一致。
+    static func trackScreen(_ name: String) {
+        guard isEnabled else { return }
+        FirebaseAnalytics.Analytics.logEvent(AnalyticsEventScreenView, parameters: [
+            AnalyticsParameterScreenName: name,
+            AnalyticsParameterScreenClass: name,
+        ])
+    }
+
     private static func pendingQueue() -> [String: Int] {
         (UserDefaults.standard.dictionary(forKey: queueKey) ?? [:]).compactMapValues { $0 as? Int }
+    }
+}
+
+extension View {
+    /// 掛在畫面根容器上：畫面出現時記一筆 screen_view（見 [Analytics.trackScreen]）。
+    func analyticsScreen(_ name: String) -> some View {
+        onAppear { Analytics.trackScreen(name) }
     }
 }

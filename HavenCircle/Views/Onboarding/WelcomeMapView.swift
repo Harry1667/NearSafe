@@ -59,6 +59,7 @@ struct WelcomeMapView: View {
                 .padding(.horizontal, 20)
         }
         .ignoresSafeArea(edges: .top)
+        .analyticsScreen("onboarding_welcome")
         // 進頁時若系統早已授權（例如重置流程的老使用者），直接把鏡頭帶到使用者位置
         .onAppear {
             // 漏斗事件：著陸卡出現（onAppear 可能重複觸發，只記第一次）

@@ -75,6 +75,7 @@ struct AIAssistantView: View {
         }
         .navigationTitle("防災問答")
         .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("ai_assistant")
     }
 
     private func ask() async {

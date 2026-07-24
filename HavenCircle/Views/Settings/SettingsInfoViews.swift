@@ -41,6 +41,7 @@ struct DataSourceView: View {
         }
         .navigationTitle("資料來源")
         .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("data_source")
     }
 }
 
@@ -79,5 +80,6 @@ struct AboutView: View {
         }
         .navigationTitle("關於安心圈")
         .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("about")
     }
 }

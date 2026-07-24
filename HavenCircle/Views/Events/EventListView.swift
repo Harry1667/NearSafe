@@ -91,6 +91,7 @@ struct EventListView: View {
         .toolbar {
             Button("演練", systemImage: "bell.and.waves.left.and.right") { showDrill = true }
         }
+        .analyticsScreen("alert_center")
         // 手動下拉刷新：重跑一次資料管線
         .refreshable { await EventPipeline.refresh(context: context) }
         // 通知深連結：帶事件 key 進來就直接打開那一則詳情，使用者不必在清單裡自己找。

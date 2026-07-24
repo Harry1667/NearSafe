@@ -35,6 +35,11 @@ struct FamilyListView: View {
     /// B2：deep link（QR／havencircle://join）帶進來的邀請碼，交給 JoinByCodeView 預填並自動查詢
     @State private var prefilledJoinCode: String?
 
+    // 退出／解散家庭圈
+    @State private var showLeaveConfirm = false
+    @State private var isLeavingFamily = false
+    @State private var leaveError: String?
+
     /// D1：是否已加入或建立家庭圈——優先於本機成員數的分支依據
     private var isInFamilyCircle: Bool { sync.isInFamilyCircle }
     /// D1：已在家庭圈內是否只有自己一人（雲端 memberUids 為準）
@@ -73,6 +78,7 @@ struct FamilyListView: View {
                 LiveCircleSharingSection()
                 addPlaceCard
                 placesSection
+                leaveFamilySection
             } else {
                 familyCircleHeaderSection
                 familyMembersSection
@@ -80,6 +86,7 @@ struct FamilyListView: View {
                 LiveCircleSharingSection()
                 placesSection
                 InviteFamilySection()
+                leaveFamilySection
             }
         }
         .toolbar {
@@ -142,6 +149,14 @@ struct FamilyListView: View {
                 prefilledJoinCode = code
                 showJoinByCode = true
             }
+        }
+        .confirmationDialog(leaveDialogTitle, isPresented: $showLeaveConfirm, titleVisibility: .visible) {
+            Button(isCircleSolo && sync.isFamilyOwner ? "解散家庭圈" : "退出家庭圈", role: .destructive) {
+                Task { await performLeaveFamily() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(leaveDialogMessage)
         }
         // iPad：整份清單限寬置中，避免按鈕與列卡撐滿 13 吋全寬（iPhone 上無感）；
         // 外圍再鋪同款群組底色，否則 List 底色只到 600pt，左右會露出不同色階的接縫
@@ -414,6 +429,69 @@ struct FamilyListView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - C：退出／解散家庭圈
+
+    /// 已入圈兩態（單人／多人）底部都會出現的破壞性動作區。
+    private var leaveFamilySection: some View {
+        Section {
+            Button(role: .destructive) {
+                leaveError = nil
+                showLeaveConfirm = true
+            } label: {
+                HStack {
+                    Text(isCircleSolo && sync.isFamilyOwner ? "解散家庭圈" : "退出家庭圈")
+                    Spacer()
+                    if isLeavingFamily {
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(isLeavingFamily)
+            if let leaveError {
+                Text(leaveError)
+                    .font(.caption)
+                    .foregroundStyle(HCColor.danger)
+            }
+        }
+    }
+
+    /// C2：文案分流——一般成員／圈主但還有其他成員／圈主且只剩自己（會直接解散）。
+    private var leaveDialogTitle: String {
+        isCircleSolo && sync.isFamilyOwner ? "確定要解散家庭圈嗎？" : "確定要退出家庭圈嗎？"
+    }
+
+    private var leaveDialogMessage: String {
+        if isCircleSolo && sync.isFamilyOwner {
+            return "你是唯一成員，退出後這個家庭圈會直接解散。"
+        }
+        let base = "退出後你將看不到家人的位置與回報，家人也看不到你。你的帳號與本機資料都會保留。"
+        if sync.isFamilyOwner {
+            return base + "你建立的家庭圈會留給其他成員繼續使用。"
+        }
+        return base
+    }
+
+    /// C3/C4：離開前先停止即時位置分享（避免 currentFamilyID 變 nil 後，背景定位更新
+    /// 又透過 ensureFamily() 意外建立一個新家庭圈），再呼叫 FamilySyncService 統一入口
+    /// （內部依 isFamilyOwner／memberUids 自動決定退出或解散，並清掉同步而來的家人投影）。
+    /// 失敗要顯示人話錯誤，不得 silent fail。
+    private func performLeaveFamily() async {
+        isLeavingFamily = true
+        leaveError = nil
+        defer { isLeavingFamily = false }
+        if UserDefaults.standard.bool(forKey: SettingsKeys.liveLocationSharingEnabled) {
+            UserDefaults.standard.set(false, forKey: SettingsKeys.liveLocationSharingEnabled)
+            LocationService.shared.syncLiveLocationSharing(isEnabled: false)
+            await sync.stopLiveLocationSharing(context: context)
+        }
+        do {
+            try await sync.leaveFamily(context: context)
+        } catch {
+            leaveError = "網路連線有問題，請稍後再試一次。"
+            AppLog.cloudError("退出家庭圈失敗：\(error.localizedDescription)")
         }
     }
 

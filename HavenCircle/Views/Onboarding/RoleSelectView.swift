@@ -78,6 +78,7 @@ struct RoleSelectView: View {
         // iPad 上限制內容欄寬度並置中，避免固定 3 欄的方塊在 13 吋螢幕上被拉得過大
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
+        .analyticsScreen("role_select")
         .alert("家人怎麼叫你？", isPresented: $showCustomInput) {
             TextField("例如：姊姊、寶寶、阿姨", text: $customName)
             Button("就用這個") {

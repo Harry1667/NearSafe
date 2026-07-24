@@ -50,6 +50,7 @@ struct MemberDetailView: View {
             Button("新增固定圈", systemImage: "plus.circle.fill") { adding = true }
         }
         .navigationTitle(member.name)
+        .analyticsScreen("member_detail")
         .sheet(isPresented: $adding) { CircleEditorView(member: member) }
         .sheet(item: $editing) { circle in
             CircleEditorView(member: member, circle: circle)

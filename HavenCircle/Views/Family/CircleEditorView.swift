@@ -112,6 +112,7 @@ struct CircleEditorView: View {
                     Button("取消") { dismiss() }
                 }
             }
+            .analyticsScreen("circle_editor")
         }
     }
 

@@ -38,6 +38,7 @@ struct JoinWelcomeView: View {
         // 避免整頁儀式感在 13 吋螢幕上被拉伸得又空又怪
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
+        .analyticsScreen("join_welcome")
     }
 }
 
