@@ -11,24 +11,29 @@ import SwiftUI
 ///   這個顏色代表自己），本人的圈（不論即時或固定）一律顯示這個綠色。
 /// - 其餘成員依穩定鍵（優先用 LocalFamilyMember.memberKey，沒有 member 時退回
 ///   LocalLifeCircle.circleKey；兩者都是 SwiftData `@Attribute(.unique)` 的持久字串 id）
-///   算 hash 取色，同一個人／圈每次開 App 顏色都一樣；不同人碰撞機率低（7 色可選、
-///   hash mod 7），碰撞可接受（規格明訂）。
+///   算 hash 取色，同一個人／圈每次開 App 顏色都一樣；不同人碰撞機率低，碰撞可接受（規格明訂）。
 /// - 刻意避開紅／橙／黃：RegionAlert 嚴重度用色是「危急＝紅、注意＝橙、留意＝黃」
-///   （見 Theme.swift severityColor），圈的顏色若落在這三色，使用者會誤以為圈本身
-///   代表警報等級——這是本色盤唯一的硬性排除規則。
+///   （見 Theme.swift severityColor），事件 pin 也是紅／琥珀色系；圈的顏色若落在這些
+///   色相，使用者會把「誰的圈」跟「多嚴重的警報」搞混——這是本色盤唯一的硬性排除規則。
+///   2026-07-24 追加：連系統 `.brown`（棕）也移除——它跟 `HCColor.attention`（琥珀／棕橙）
+///   的色相太近，20 人冷啟動走查裡有人把「某人的圈」誤讀成「有需要注意的事件」。
+/// - 2026-07-24：改用 `Color(hue:saturation:brightness:)` 自訂 5 色（不再用系統具名色），
+///   刻意把色相集中在藍→紫→洋紅這段「冷色系」，並讓相鄰色相距至少 35°——
+///   舊色盤的 `.teal`（約 178°）跟 `.indigo`（約 241°）之間還夾著 `.blue`（約 211°）跟
+///   `.purple`（約 280°），四色全部擠在藍紫色系一小段，加上飽和度/亮度雷同，
+///   使用者回報「藍色系圈全部長得差不多」。新色盤明度／飽和度也刻意錯開，
+///   即使色弱也還能靠明暗分辨。
 /// - 「即時位置已過期」的灰色語意不變，過期判斷在呼叫端（SafetyMapView）用
 ///   `renderedColor = isActiveForAlerts ? color : .gray` 蓋掉這裡算出的顏色，不受本色盤影響。
 enum CircleColorPalette {
-    /// 索引 0 保留給本人；索引 1...6 依 hash 分給其他成員。
-    /// 全部來自系統色（Color.xxx），避免自訂色在深色模式下的對比度風險。
+    /// 索引 0 保留給本人；索引 1...5 依 hash 分給其他成員。
     static let colors: [Color] = [
-        HCColor.safe, // 0：本人專屬，沿用既有綠色
-        .blue,
-        .purple,
-        .teal,
-        .pink,
-        .indigo,
-        .brown,
+        HCColor.safe, // 0：本人專屬，沿用既有綠色（約 165° 色相）
+        Color(hue: 0.58, saturation: 0.68, brightness: 0.88), // 1：天藍（約 209°）
+        Color(hue: 0.70, saturation: 0.55, brightness: 0.72), // 2：藍紫（約 252°）
+        Color(hue: 0.80, saturation: 0.55, brightness: 0.78), // 3：紫（約 288°）
+        Color(hue: 0.875, saturation: 0.55, brightness: 0.82), // 4：洋紅（約 315°）
+        Color(hue: 0.94, saturation: 0.50, brightness: 0.85), // 5：玫瑰粉（約 338°，仍與紅色 0° 保持 22° 以上距離）
     ]
 
     /// 依「穩定鍵」與「是否本人」取色。

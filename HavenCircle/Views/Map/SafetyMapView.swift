@@ -77,6 +77,13 @@ struct SafetyMapView: View {
     @State private var showNotificationPrompt = false
     // 用 @AppStorage 與設定頁共用同一旗標
     @AppStorage(SettingsKeys.alertsPaused) private var isPaused = false
+    /// 點靜音鈕要先跳確認框才真的暫停；恢復不用確認（安全動作，越快越好）
+    @State private var showMuteConfirmation = false
+
+    /// 圖例首次自動展開一次的旗標。刻意用字串常數放在這裡（不進 SettingsKeys）——
+    /// 這是本檔專屬、跟其他設定無關的一次性 UI 提示旗標，沒有共用需求。
+    private static let legendAutoExpandedKey = "safetyMap.hasAutoExpandedLegend"
+    @AppStorage(SafetyMapView.legendAutoExpandedKey) private var hasAutoExpandedLegend = false
 
     /// 目前顯示對象（家人切換器過濾後）
     private var visibleMembers: [LocalFamilyMember] {
@@ -122,6 +129,20 @@ struct SafetyMapView: View {
                 if a.isCurrentUser != b.isCurrentUser { return a.isCurrentUser }
                 return a.name < b.name
             }
+    }
+
+    /// 地圖上圈標記旁的名字 chip 文字：本人只顯示圈名（「我」再重複一次沒意義），
+    /// 其他家人加上姓名前綴——辨識「這是誰的圈」不能只靠色盤，色相再怎麼拉開，
+    /// 家人一多還是會挑到相近色，名字是唯一保證不會誤讀的通道。
+    private func circleLabelText(_ circle: LocalLifeCircle) -> String {
+        guard let member = circle.member, !member.isCurrentUser else { return circle.name }
+        return "\(member.name)．\(circle.name)"
+    }
+
+    /// 圈標記的無障礙用類型描述：避開 LocalLifeCircle.kind.title 裡的「固定地點」字樣
+    /// （使用者可見文字禁用詞），改用「守護地點」措辭，語意相同。
+    private func circleKindAccessibilityText(_ kind: LifeCircleKind) -> String {
+        kind == .live ? "即時警戒圈" : "守護地點警戒圈"
     }
 
     /// 尚未開啟即時圈的家人，仍可顯示最近一次主動安否回報的位置。
@@ -189,6 +210,20 @@ struct SafetyMapView: View {
                     Analytics.track("guidance_started") // 漏斗：帶領開始（debug --guide-step 不記）
                     Analytics.track("map_data_shown") // 漏斗：新手首屏三件套（塗層＋資源點＋帶領）鋪出，只在這裡記一次
                     withAnimation { guidanceStep = 0 }
+                }
+                // 圖例找不到是本次走查最多人卡住的點之一：首次進地圖時自動展開一次圖例，
+                // 幾秒後自動收合；使用者若在期間自己點圖例卡的 ✕ 或點地圖，也會提前收合
+                // （isLegendExpanded 已被使用者改成 false，這裡的收合只是「順手再設一次」，無副作用）。
+                // 旗標消耗式，只演一次，之後就跟其他圖例互動一樣要手動點開。
+                .task {
+                    guard !hasAutoExpandedLegend, legendHasContent else { return }
+                    hasAutoExpandedLegend = true
+                    try? await Task.sleep(for: .milliseconds(1_200))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = true }
+                    try? await Task.sleep(for: .seconds(4))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = false }
                 }
                 #if DEBUG
                 // 截圖用：--adjust-circle 自動打開自己圈的半徑調整面板（headless 無法點圈觸發）
@@ -402,9 +437,10 @@ struct SafetyMapView: View {
                         circle.name,
                         coordinate: .init(latitude: circle.latitude, longitude: circle.longitude)
                     ) {
-                        // 降噪：圈標記只留小圖示（圈名交給 MapKit 標籤、類型交給圖示與顏色），
-                        // 移除每個圈都重複的「固定圈／即時圈」文字徽章與外框，讓事件 pin 讀得清楚。
-                        // 即時圈保留過期提示，那是安全判斷必要資訊
+                        // 降噪：圈標記只留小圖示＋自訂色名字 chip（類型交給圖示與顏色）；
+                        // 即時圈保留過期提示，那是安全判斷必要資訊。
+                        // 2026-07-24：色盤色距拉開後仍可能撞色（同色相鄰兩人），辨識不能只靠純色——
+                        // 名字 chip 直接標「對象是誰」，用跟圈同色的描邊／文字，色弱使用者也能對照。
                         VStack(spacing: 1) {
                             Image(systemName: circle.kind.iconName)
                                 .font(.system(size: 11, weight: .bold))
@@ -412,6 +448,14 @@ struct SafetyMapView: View {
                                 .frame(width: 24, height: 24)
                                 .background(renderedColor, in: Circle())
                                 .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                            Text(circleLabelText(circle))
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(renderedColor)
+                                .lineLimit(1)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(.thinMaterial, in: Capsule())
+                                .overlay(Capsule().stroke(renderedColor.opacity(0.6), lineWidth: 1))
                             if circle.kind == .live {
                                 Text(circle.locationFreshnessText)
                                     .font(.system(size: 8, weight: .medium))
@@ -423,7 +467,7 @@ struct SafetyMapView: View {
                         }
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(
-                            "\(circle.name)，\(circle.kind.title)，警戒半徑 \(circle.radiusMeters) 公尺，\(circle.locationFreshnessText)"
+                            "\(circleLabelText(circle))，\(circleKindAccessibilityText(circle.kind))，警戒半徑 \(circle.radiusMeters) 公尺，\(circle.locationFreshnessText)"
                         )
                         // 點自己的圈＝開啟／收起底部半徑調整面板
                         .onTapGesture {
@@ -436,6 +480,8 @@ struct SafetyMapView: View {
                             }
                         }
                     }
+                    // 名字 chip 已經內建在標記內容裡，MapKit 內建標題文字不需要重複再畫一次
+                    .annotationTitles(.hidden)
                 }
             }
             // 資源點放在事件標記之前宣告，讓事件永遠蓋在資源點上層。
@@ -873,6 +919,12 @@ struct SafetyMapView: View {
         .onChange(of: selectedMemberKey) {
             cameraPosition = circlesRegion
         }
+        // 工具列圖示鈕預設只顯示 icon，文字會被吃掉——明確補一個無障礙標籤
+        .accessibilityLabel(
+            visibleMembers.count == members.count
+                ? "顯示對象：全家，點擊切換"
+                : "顯示對象：\(visibleMembers.first?.name ?? "全家")，點擊切換"
+        )
     }
 
     /// 圖層與過濾：資源圖層開關＋事件類型與可信度過濾
@@ -897,6 +949,7 @@ struct SafetyMapView: View {
         } label: {
             Label("圖層與過濾", systemImage: "square.3.layers.3d")
         }
+        .accessibilityLabel("圖層與過濾，點擊選擇地圖圖層與事件類型")
     }
 
     private func typeBinding(_ type: String) -> Binding<Bool> {
@@ -908,12 +961,37 @@ struct SafetyMapView: View {
         )
     }
 
+    /// 靜音鈕：暫停會關掉「所有」本機警報推播（含地震／海嘯／火災這類保命等級，
+    /// 目前系統沒有分級豁免——見 NotificationScheduler.scheduleAlert 的 `!paused` guard，
+    /// 一旦暫停就整個提前 return，沒有例外路徑）。誤觸的代價是「保命警報完全收不到」，
+    /// 所以暫停這個方向要先跳確認框講清楚後果；恢復提醒是安全動作，不需要確認、越快越好。
     private var pauseButton: some View {
-        Button(isPaused ? "恢復提醒" : "暫停提醒",
-               systemImage: isPaused ? "bell.slash.fill" : "bell.slash") {
-            isPaused.toggle()
+        Button {
+            if isPaused {
+                withAnimation { isPaused = false }
+            } else {
+                showMuteConfirmation = true
+            }
+        } label: {
+            Label(isPaused ? "恢復提醒" : "暫停提醒",
+                  systemImage: isPaused ? "bell.slash.fill" : "bell.slash")
         }
         .tint(isPaused ? HCColor.attention : nil)
+        // 工具列圖示鈕預設只顯示 icon，文字會被吃掉——明確補一個無障礙標籤
+        .accessibilityLabel(isPaused ? "恢復提醒" : "暫停提醒")
+        .confirmationDialog(
+            "暫停警報提醒？",
+            isPresented: $showMuteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("暫停提醒", role: .destructive) {
+                withAnimation { isPaused = true }
+                Analytics.track("map_alerts_paused") // 漏斗：從地圖靜音鈕真的按下暫停（危險動作，值得追蹤頻率）
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("暫停後，包括地震、海嘯、火災在內的所有警報都不會推播，直到你手動恢復。事件仍會顯示在地圖與提醒中心，只是手機不會跳通知或響鈴。")
+        }
     }
 
     // MARK: - 浮層
@@ -939,7 +1017,14 @@ struct SafetyMapView: View {
     }
 
     private var topOverlays: some View {
-        safetySummary
+        VStack(spacing: HCSpacing.x2) {
+            safetySummary
+            // 靜音生效期間常駐提示：誤觸靜音鈕後最容易被忽略的就是「沒有任何持續提示」，
+            // 這顆 chip 跟摘要膠囊一樣永遠在視野裡，點一下立刻恢復，不必特地去工具列找。
+            if isPaused {
+                mutedChip
+            }
+        }
         .padding(.horizontal, HCSpacing.x4)
         .padding(.top, HCSpacing.x2)
         // 開場時摘要卡先退場，鏡頭抵達生活圈後縮放進場（Reduce Motion 只做淡入不縮放）
@@ -954,6 +1039,32 @@ struct SafetyMapView: View {
         // iPad 上限制頂部狀態卡寬度並置中，避免撐滿 13 吋螢幕
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
+    }
+
+    /// 靜音常駐提示：目前的暫停機制是手動 toggle，沒有時限（見 pauseButton 註解），
+    /// 所以這裡不寫「至 XX:XX」——寫了就是對使用者說謊。點擊直接恢復，不必再跳確認框
+    /// （恢復是安全動作）。
+    private var mutedChip: some View {
+        Button {
+            withAnimation { isPaused = false }
+        } label: {
+            HStack(spacing: HCSpacing.x2) {
+                Image(systemName: "bell.slash.fill")
+                    .font(.caption.weight(.semibold))
+                Text("警報已靜音")
+                    .font(.caption.weight(.semibold))
+                Text("點擊恢復")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .foregroundStyle(HCColor.attention)
+            .padding(.horizontal, HCSpacing.x3)
+            .padding(.vertical, HCSpacing.x1 + 2)
+            .background(HCColor.attention.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(HCColor.attention.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("警報已靜音，包括地震海嘯等所有警報都不會推播，點兩下立即恢復")
     }
 
     // MARK: - 守護圈開場（簽名動效）
@@ -995,18 +1106,28 @@ struct SafetyMapView: View {
         }
     }
 
+    /// 圖例是否有內容可顯示（對應圖層開啟且畫面上真的有東西可解讀）；
+    /// 抽成獨立屬性讓「面板要不要出現」與「首次自動展開要不要觸發」共用同一份判斷。
+    private var legendHasContent: Bool {
+        let showsSeverity = showAlertAreas && !alertAreas.isEmpty
+        let resourceHint = (showShelters || showHospitals) && resourceRegion == nil
+        return showsSeverity || showCrimeLayer || resourceHint || showCircles
+    }
+
     /// 圖例面板：只在對應圖層開啟且畫面上真的有塗色時出現，避免常駐佔位
     @ViewBuilder
     private var legendPanel: some View {
         let showsSeverity = showAlertAreas && !alertAreas.isEmpty
         // 資源圖層開著但鏡頭太遠時，要說明「為什麼看不到點」——不說會像壞掉
         let resourceHint = (showShelters || showHospitals) && resourceRegion == nil
-        if showsSeverity || showCrimeLayer || resourceHint || showCircles {
+        if legendHasContent {
             Group {
                 if isLegendExpanded {
                     // 整卡都能點收合（不只 chevron）：用 Button 包住整個卡片內容，
                     // .buttonStyle(.plain) 讓 hit-test 涵蓋整個 label 範圍（含背景），
                     // 而不是只有 chevron 那個小圖示——真機回報「一定要點三角形才收得起來」的修法。
+                    // 2026-07-24：另外在標題列加一顆明確的 ✕——「點地圖任意處收合」與「點卡片本身收合」
+                    // 都保留，✕ 只是再加一條路徑，讓不知道能點卡片的人也找得到關閉鈕。
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = false }
                     } label: {
@@ -1015,8 +1136,10 @@ struct SafetyMapView: View {
                                 Label("地圖圖例", systemImage: "info.circle.fill")
                                     .font(.caption.bold())
                                 Spacer(minLength: 12)
-                                Image(systemName: "chevron.down")
+                                Image(systemName: "xmark.circle.fill")
                                     .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
                             }
                             if showCircles {
                                 // 顏色現在代表「守護對象是誰」而非「圈的類型」，
@@ -1057,21 +1180,25 @@ struct SafetyMapView: View {
                     .accessibilityHint("點兩下收合地圖圖例")
                     .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottomLeading)))
                 } else {
+                    // 收合態改成帶文字的膠囊鈕（不再是純 ⓘ icon）——「找不到圖例」是本次
+                    // 走查最多人卡住的點之一，純圖示在滿版地圖上太容易被忽略。
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { isLegendExpanded = true }
                     } label: {
-                        Image(systemName: "info.circle.fill")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                            .background(.regularMaterial, in: Circle())
-                            .overlay(Circle().stroke(.secondary.opacity(0.2), lineWidth: 1))
+                        Label("圖例", systemImage: "info.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, HCSpacing.x3)
+                            .padding(.vertical, HCSpacing.x2)
+                            .background(.regularMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(.secondary.opacity(0.2), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("展開地圖圖例，查看警戒圈與警報區說明")
                 }
             }
             .padding(.leading, 12)
-            .padding(.bottom, 12)
+            // 往上挪，跟 Apple Maps 底部的圖資標示（Legal）字樣拉開距離，避免視覺打架
+            .padding(.bottom, HCSpacing.x6 + HCSpacing.x2)
         }
     }
 
@@ -1092,20 +1219,29 @@ struct SafetyMapView: View {
         if isSummaryExpanded { summaryCard } else { summaryCapsule }
     }
 
+    /// 目前顯示對象是否有任何警戒圈（地點圈或跟隨圈皆算）。
+    /// 完全沒有時，摘要膠囊絕不能顯示「平安」——沒有圈就沒有比對範圍，
+    /// 打綠勾等於對使用者說謊，這是本次走查最嚴重的一條（18/20 人踩到）。
+    private var hasAnyCircle: Bool { !visibleCircles.isEmpty }
+
     private var summaryCapsule: some View {
         let hasAttention = attentionCount > 0
-        let statusColor = hasAttention ? HCColor.danger : HCColor.safe
+        let hasCircles = hasAnyCircle
+        // 三態：需要注意（紅）＞警戒圈內平安（綠）＞尚未設定警戒圈（灰、中性，不能講平安）
+        let statusColor: Color = hasAttention ? HCColor.danger : (hasCircles ? HCColor.safe : Color.gray)
         return Button {
             withAnimation { isSummaryExpanded = true }
         } label: {
             HStack(spacing: HCSpacing.x2) {
-                Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                Image(systemName: hasAttention
+                      ? "exclamationmark.shield.fill"
+                      : (hasCircles ? "checkmark.shield.fill" : "shield"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.white)
                     .frame(width: HCSpacing.x6 + HCSpacing.x1, height: HCSpacing.x6 + HCSpacing.x1)
                     .background(statusColor, in: Circle())
                     .symbolEffect(.bounce, value: shieldConfirmPulse)
-                Text(hasAttention ? "\(attentionCount) 件需要注意" : "警戒圈平安")
+                Text(hasAttention ? "\(attentionCount) 件需要注意" : (hasCircles ? "警戒圈內平安" : "尚未設定警戒圈"))
                     .font(.subheadline.weight(.semibold))
                 if isPaused {
                     Image(systemName: "bell.slash.fill")
@@ -1119,40 +1255,136 @@ struct SafetyMapView: View {
             .padding(.horizontal, HCSpacing.x3)
             .padding(.vertical, HCSpacing.x2)
             .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().stroke(statusColor.opacity(0.35), lineWidth: 1))
+            .overlay(Capsule().stroke(statusColor.opacity(hasCircles || hasAttention ? 0.35 : 0.25), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
             hasAttention
                 ? "警戒圈有 \(attentionCount) 件需要注意的事件，點擊展開摘要"
-                : "警戒圈平安\(isPaused ? "，提醒已暫停" : "")，點擊展開摘要"
+                : hasCircles
+                    ? "警戒圈內平安\(isPaused ? "，提醒已暫停" : "")，點擊展開摘要"
+                    : "尚未設定警戒圈，點擊了解如何開始守護"
         )
     }
 
-    /// 展開版：完整安全狀態卡（各層級數字、區域警報入口、資料新鮮度）
+    /// 展開版：完整安全狀態卡（各層級數字、區域警報入口、資料新鮮度）。
+    /// 完全沒有警戒圈時走另一支 noCircleGuidanceCard，內容與有圈時完全不同，
+    /// 不共用「需要注意 / 平安」兩態的邏輯——沒有圈就沒有「平安與否」可言。
+    @ViewBuilder
     private var summaryCard: some View {
-        let hasAttention = attentionCount > 0
-        return VStack(alignment: .leading, spacing: HCSpacing.x3) {
+        if !hasAnyCircle {
+            noCircleGuidanceCard
+        } else {
+            let hasAttention = attentionCount > 0
+            VStack(alignment: .leading, spacing: HCSpacing.x3) {
+                HStack(alignment: .center, spacing: HCSpacing.x3) {
+                    // 盾牌放進色底圓形 chip：狀態色作底、白色圖示，讓「目前安全與否」一眼可辨
+                    Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
+                        .background(hasAttention ? HCColor.danger : HCColor.safe, in: Circle())
+                        // 守護圈細環：與 Onboarding hero、提醒中心平安狀態同一個圓環 motif
+                        .overlay(
+                            Circle()
+                                .stroke((hasAttention ? HCColor.danger : HCColor.safe).opacity(0.35), lineWidth: 1.5)
+                                .frame(width: HCSpacing.x6 + HCSpacing.x4, height: HCSpacing.x6 + HCSpacing.x4)
+                        )
+                        .symbolEffect(.bounce, value: shieldConfirmPulse)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                        Text(hasAttention ? "警戒圈有需要注意的事件" : "警戒圈內目前平安")
+                            .font(.body.weight(.semibold))
+                        Text(hasAttention ? "已確認且位於提醒範圍內：\(attentionCount) 件" : "持續留意資料更新即可")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        // 消歧：地圖上滿版事件 pin 很容易讓人誤以為「到處都不安全」，
+                        // 講清楚安全判斷只看警戒圈內，不看全台事件密度
+                        if !hasAttention {
+                            Text("地圖上顯示的是全台事件，不代表你的警戒圈有狀況")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Button {
+                        withAnimation { isSummaryExpanded = false }
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.caption.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("收合摘要")
+                }
+
+                HStack(spacing: HCSpacing.x2) {
+                    summaryMetric("需要注意", count: attentionCount, emphasis: hasAttention)
+                    summaryMetric("未驗證線索（不限警戒圈）", count: confirmingCount, emphasis: false)
+                    summaryMetric("其他區域", count: elsewhereCount, emphasis: false)
+                }
+
+                if let alert = activeRegionAlerts.first {
+                    Button {
+                        selectedAlert = alert
+                    } label: {
+                        HStack(spacing: HCSpacing.x2) {
+                            Image(systemName: alert.iconName)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(HCColor.attention)
+                                .accessibilityHidden(true)
+                            Text("區域警報：\(alert.kind)｜\(alert.title)")
+                                .font(.caption.bold())
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("區域警報：\(alert.kind)，\(alert.title)")
+                }
+
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                    if isPaused {
+                        Text("提醒已暫停——事件仍會顯示，但不會推播。")
+                            .font(.caption)
+                            .foregroundStyle(HCColor.attention)
+                    }
+                    DataFreshnessLabel()
+                }
+            }
+            .padding(HCSpacing.x3)
+            .background(
+                (hasAttention ? HCColor.danger : HCColor.safe).opacity(0.10),
+                in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+            )
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+            // iPad 上限制展開卡寬度並置中；卡片內 summaryMetric 的 frame(maxWidth: .infinity) 撐滿卡片內的列，保留不動
+            .frame(maxWidth: 500)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// 完全沒有警戒圈時的展開內容：中性灰、不講平安與否，純引導。
+    private var noCircleGuidanceCard: some View {
+        VStack(alignment: .leading, spacing: HCSpacing.x3) {
             HStack(alignment: .center, spacing: HCSpacing.x3) {
-                // 盾牌放進色底圓形 chip：狀態色作底、白色圖示，讓「目前安全與否」一眼可辨
-                Image(systemName: hasAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                Image(systemName: "shield")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white)
                     .frame(width: HCSpacing.x6 + HCSpacing.x3, height: HCSpacing.x6 + HCSpacing.x3)
-                    .background(hasAttention ? HCColor.danger : HCColor.safe, in: Circle())
-                    // 守護圈細環：與 Onboarding hero、提醒中心平安狀態同一個圓環 motif
-                    .overlay(
-                        Circle()
-                            .stroke((hasAttention ? HCColor.danger : HCColor.safe).opacity(0.35), lineWidth: 1.5)
-                            .frame(width: HCSpacing.x6 + HCSpacing.x4, height: HCSpacing.x6 + HCSpacing.x4)
-                    )
-                    .symbolEffect(.bounce, value: shieldConfirmPulse)
+                    .background(Color.gray, in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                    Text(hasAttention ? "警戒圈有需要注意的事件" : "警戒圈目前沒有需要注意的事件")
+                    Text("尚未設定警戒圈")
                         .font(.body.weight(.semibold))
-                    Text(hasAttention ? "已確認且位於提醒範圍內：\(attentionCount) 件" : "持續留意資料更新即可")
+                    Text("加一個守護地點，開始守護")
                         .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("地圖上顯示的是全台事件，不代表你有危險——設定警戒圈後才會比對你在意的範圍")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -1166,51 +1398,11 @@ struct SafetyMapView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("收合摘要")
             }
-
-            HStack(spacing: HCSpacing.x2) {
-                summaryMetric("需要注意", count: attentionCount, emphasis: hasAttention)
-                summaryMetric("未驗證線索（不限警戒圈）", count: confirmingCount, emphasis: false)
-                summaryMetric("其他區域", count: elsewhereCount, emphasis: false)
-            }
-
-            if let alert = activeRegionAlerts.first {
-                Button {
-                    selectedAlert = alert
-                } label: {
-                    HStack(spacing: HCSpacing.x2) {
-                        Image(systemName: alert.iconName)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(HCColor.attention)
-                            .accessibilityHidden(true)
-                        Text("區域警報：\(alert.kind)｜\(alert.title)")
-                            .font(.caption.bold())
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("區域警報：\(alert.kind)，\(alert.title)")
-            }
-
-            VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                if isPaused {
-                    Text("提醒已暫停——事件仍會顯示，但不會推播。")
-                        .font(.caption)
-                        .foregroundStyle(HCColor.attention)
-                }
-                DataFreshnessLabel()
-            }
+            DataFreshnessLabel()
         }
         .padding(HCSpacing.x3)
-        .background(
-            (hasAttention ? HCColor.danger : HCColor.safe).opacity(0.10),
-            in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
-        )
+        .background(Color.gray.opacity(0.10), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
-        // iPad 上限制展開卡寬度並置中；卡片內 summaryMetric 的 frame(maxWidth: .infinity) 撐滿卡片內的列，保留不動
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
     }

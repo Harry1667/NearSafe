@@ -12,6 +12,9 @@ struct SafetyCheckInView: View {
     @State private var showInviteOptions = false
     @State private var note = ""
     @State private var isWorking = false
+    /// 送出成功的暫時性提示，2.5 秒後自動消失（token 避免舊的自動消失計時器誤清掉新的提示）
+    @State private var successBanner: String?
+    @State private var successBannerToken: UUID?
     /// 回報時附上目前位置（自願、一次性）。用 AppStorage 記住偏好，預設關（隱私優先）
     @AppStorage("checkInAttachLocation") private var attachLocation = false
     /// 邀請失敗時的可見錯誤——只寫 log 的話，使用者看到的是「按了沒反應＝App 壞了」
@@ -117,10 +120,16 @@ struct SafetyCheckInView: View {
                 // 開啟當下就要權限，別等到按回報才跳系統框打斷流程
                 if isOn { LocationService.shared.requestPermissionIfNeeded() }
             }
+            if let successBanner {
+                Label(successBanner, systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(HCColor.safe)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             HStack(spacing: HCSpacing.x3) {
                 ForEach(SafetyStatus.selfReportable, id: \.self) { status in
                     Button {
-                        Task { await report(status) }
+                        report(status)
                     } label: {
                         VStack(spacing: HCSpacing.x2) {
                             Image(systemName: status.systemImage)
@@ -241,9 +250,16 @@ struct SafetyCheckInView: View {
         }
     }
 
-    private func report(_ status: SafetyStatus) async {
+    /// isWorking 在這裡（Task 外層、按鈕點下當下）就同步設 true，而不是留到 async 函式內部第一行——
+    /// 比照 EventDetailView.report 的防抖寫法：Task{} 排入佇列到實際開始執行之間有一個小窗口，
+    /// 若 isWorking 要等 async 函式跑起來才設 true，連點兩下有機會在窗口內重複觸發。
+    private func report(_ status: SafetyStatus) {
         isWorking = true
-        defer { isWorking = false }
+        successBanner = nil
+        Task { await performReport(status) }
+    }
+
+    private func performReport(_ status: SafetyStatus) async {
         // 自願附位置：取不到（未授權/逾時）就照常回報，定位失敗不能擋「我平安」
         var latitude: Double?
         var longitude: Double?
@@ -253,11 +269,31 @@ struct SafetyCheckInView: View {
             longitude = location.coordinate.longitude
             placeName = await Self.reverseGeocode(location)
         }
-        await sync.postPing(
+        let success = await sync.postPing(
             senderName: myName, status: status, note: note,
             latitude: latitude, longitude: longitude, placeName: placeName
         )
-        note = ""
+        isWorking = false
+        if success {
+            note = ""
+            showSuccessBanner("已送出，家人會收到通知")
+        }
+        // 失敗／逾時的人話文案已經在 sync.state（.error(message)）裡，由 accountSection 顯示，
+        // 這裡不重複顯示——避免同一件事兩個地方講不一致的話。
+    }
+
+    /// 顯示成功提示並在 2.5 秒後自動消失；用 token 確保「消失」只作用在自己這次顯示上，
+    /// 不會誤清掉使用者緊接著又按一次回報而新蓋上去的提示。
+    private func showSuccessBanner(_ text: String) {
+        successBanner = text
+        let token = UUID()
+        successBannerToken = token
+        Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            if successBannerToken == token {
+                successBanner = nil
+            }
+        }
     }
 
     /// 回報端做一次反向地理編碼，家人看到的是「台北市信義區」而不是座標。

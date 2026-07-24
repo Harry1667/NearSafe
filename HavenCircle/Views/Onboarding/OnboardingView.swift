@@ -143,7 +143,7 @@ struct OnboardingView: View {
                 valueCard("checkmark.seal.fill", HCColor.brand,
                           "官方示警來源", "災害警報來自 NCDR 民生示警等政府公開資料")
                 valueCard("mappin.and.ellipse", HCColor.brand,
-                          "兩種警戒圈", "即時圈跟著家人手機；固定圈守護住家、倉庫等地點")
+                          "兩種警戒圈", "即時圈跟著家人手機；地點警戒圈守護住家、倉庫等地點")
                 valueCard("person.2.fill", HCColor.brand,
                           "家人互報平安", "一鍵回報「我平安」，家人立刻知道")
             }
@@ -241,7 +241,7 @@ struct OnboardingView: View {
 
     private var circlePage: some View {
         VStack(spacing: 0) {
-            stepHeader("設定第一個警戒圈", "即時圈跟著這支手機移動；固定圈適合住家、倉庫或家人的家。只有圈內的事件才會提醒。")
+            stepHeader("設定第一個警戒圈", "即時圈跟著這支手機移動；地點警戒圈適合住家、倉庫或家人的家。只有圈內的事件才會提醒。")
                 .padding(.bottom, 8)
             Form {
                 Section {
@@ -281,7 +281,7 @@ struct OnboardingView: View {
                     Stepper("提醒半徑：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
                 } footer: {
                     // 服務範圍誠實告知（行政區已擴至全國 375 鄉鎮市區，文案同步更新）
-                    Text("颱風、豪雨等區域型警報依行政區自動比對，已支援全國鄉鎮市區；地址判斷不到行政區時，可稍後在固定圈編輯裡手動指定。")
+                    Text("颱風、豪雨等區域型警報依行政區自動比對，已支援全國鄉鎮市區；地址判斷不到行政區時，可稍後在警戒圈編輯裡手動指定。")
                 }
                 Section {
                     Toggle("建立我的即時圈", isOn: $isFollowMe)
@@ -570,7 +570,7 @@ struct OnboardingView: View {
     }
 
     private var locationAuthorizationSummary: String {
-        guard isFollowMe else { return "固定圈不需背景定位" }
+        guard isFollowMe else { return "地點警戒圈不需背景定位" }
         return switch LocationService.shared.authorization {
         case .authorizedAlways: "永遠允許，可背景更新"
         case .authorizedWhenInUse: "使用 App 期間；背景更新待開啟"
@@ -641,7 +641,7 @@ struct OnboardingView: View {
         guard LocationService.shared.isAuthorized else {
             switch LocationService.shared.authorization {
             case .denied, .restricted:
-                locationHint = "定位權限未開啟，請前往系統設定，或改用地址搜尋固定圈。"
+                locationHint = "定位權限未開啟，請前往系統設定，或改用地址搜尋守護地點。"
             default:
                 LocationService.shared.requestPermissionIfNeeded()
                 locationHint = "允許定位權限後，請再點一次取得位置。"

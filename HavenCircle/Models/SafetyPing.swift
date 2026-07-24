@@ -24,7 +24,7 @@ enum SafetyStatus: String, CaseIterable {
     }
 }
 
-/// 一則安否回報。透過 CloudKit 共享 zone 在家人之間同步。
+/// 一則安否回報。透過 Firestore（families/{familyId}/pings 子集合）在家人之間同步。
 /// 這是「事件 → 我 → 家人 → 回報」雙向閉環的回報端。
 struct SafetyPing: Identifiable {
     let id: String

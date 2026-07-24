@@ -31,11 +31,26 @@ struct CircleEditorView: View {
     /// 「進階設定」（手動行政區 Picker）展開狀態：新增地點情境下預設展開，
     /// 自動判定成功就收合，判定失敗（含尚未查詢）維持展開讓人手動挑。
     @State private var advancedExpanded = false
+    // MARK: - 第三條路：地圖上直接點選守護地點
+    // 解「鄉下老門牌搜尋失敗＋人不在現場」的雙死路——地址搜不到、目前位置又不是要設的地方時，
+    // 讓使用者直接在小地圖上長按／點擊放大頭針選點。
+    /// 小地圖鏡頭位置：有既有座標就置中該座標近距顯示；否則先用台灣全島視野墊著，
+    /// 再由下方 `.task` 嘗試用目前位置重新置中拉近（只影響鏡頭，不會連帶把目前位置設成座標）。
+    @State private var mapCameraPosition: MapCameraPosition
+    /// 手指正在觸碰小地圖：暫停外層 Form 捲動，避免「想拖地圖結果表單先捲走」的手感衝突
+    @State private var isTouchingMap = false
+    /// 「把目前位置設為守護地點」的防誤觸確認：地點類型可能是遠端（爸媽家等）時才跳出
+    @State private var showCurrentLocationConfirm = false
+    /// 台灣地理中心概略座標（南投埔里一帶），地圖找不到任何座標線索時的墊底視野中心
+    private static let taiwanFallbackCenter = CLLocationCoordinate2D(latitude: 23.6978, longitude: 120.9605)
 
     /// 新增地點接續情境：從 PlaceSelectView 選完地點名稱、550ms 後直接接著開這裡建第一個固定圈。
     /// 此時 member 名稱就是使用者剛選的地點名稱（住家／公司／⋯），標題與欄位預填據此客製化；
     /// 編輯既有圈或替一般家人新增圈都不算，外觀維持原本樣子（見 body 內 districtSection 分支）。
     private let isNewPlaceCircle: Bool
+    /// 是否已成功按過「儲存」：用來跟「未儲存就離開（取消／下滑關閉）」區分——
+    /// 見 `deleteOrphanPlaceIfNeeded()`，兩條離開路徑都靠 `.onDisappear` 收斂到同一個判斷點
+    @State private var didSave = false
 
     init(member: LocalFamilyMember, circle: LocalLifeCircle? = nil) {
         self.member = member
@@ -53,6 +68,18 @@ struct CircleEditorView: View {
         _locationNeedsConfirmation = State(initialValue: circle == nil)
         // 尚未做過任何自動判定嘗試前，進階設定預設展開，讓使用者一開始就能手動挑
         _advancedExpanded = State(initialValue: true)
+        // 小地圖初始鏡頭：既有圈就近距置中該座標；新圈先用台灣全島視野墊著（避免還沒拿到
+        // 目前位置前地圖畫面是空的），拿到目前位置後由 `.task` 再拉近置中一次
+        if let circle {
+            let center = CLLocationCoordinate2D(latitude: circle.latitude, longitude: circle.longitude)
+            _mapCameraPosition = State(initialValue: .region(
+                MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02))
+            ))
+        } else {
+            _mapCameraPosition = State(initialValue: .region(
+                MKCoordinateRegion(center: Self.taiwanFallbackCenter, span: MKCoordinateSpan(latitudeDelta: 4, longitudeDelta: 4))
+            ))
+        }
     }
 
     var body: some View {
@@ -86,12 +113,27 @@ struct CircleEditorView: View {
                 }
                 .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button {
-                    Task { await useCurrentLocation() }
+                    if member.name == "住家" {
+                        // 住家不會是遠端地點，不必多問一次
+                        Task { await useCurrentLocation() }
+                    } else {
+                        showCurrentLocationConfirm = true
+                    }
                 } label: {
                     HStack {
-                        Label("把目前位置設為固定地點", systemImage: "location.fill")
+                        Label("把目前位置設為這個守護地點", systemImage: "location.fill")
                         if locating { Spacer(); ProgressView() }
                     }
+                }
+                .confirmationDialog(
+                    "你現在人在「\(member.name)」嗎？",
+                    isPresented: $showCurrentLocationConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("對，就是這裡") { Task { await useCurrentLocation() } }
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    Text("這會把警戒圈設在你目前的位置。人不在現場的話，改用下面的地址搜尋或地圖選點。")
                 }
                 if !pickedLabel.isEmpty {
                     Text("已確認位置：\(pickedLabel)").foregroundStyle(HCColor.safe)
@@ -105,13 +147,22 @@ struct CircleEditorView: View {
                         .font(.caption)
                         .foregroundStyle(HCColor.attention)
                 }
+                mapPickerSection
+                Text("在地圖上長按或點一下任一點，可直接放大頭針選點；地址搜尋找不到、人又不在現場時最好用。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Stepper("通知範圍：\(radius) 公尺", value: $radius, in: 300...3000, step: 100)
+                Text("約走路 15 分鐘的範圍。地震、颱風等大範圍警報依行政區推播，不受這個範圍限制。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 districtSection
                 Text("提醒類型：\(EventCategory.defaultSelection.joined(separator: "、"))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 scheduleSection
             }
+            // 手指觸碰小地圖期間暫停 Form 捲動，放開立刻恢復——見 mapPickerSection 手勢方案說明
+            .scrollDisabled(isTouchingMap)
             .navigationTitle(navigationTitleText)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -124,6 +175,26 @@ struct CircleEditorView: View {
             }
             .analyticsScreen("circle_editor")
         }
+        // 未儲存就離開（取消按鈕／下滑手勢關閉 sheet）兩條路徑都會讓這個 View 從畫面消失，
+        // 用同一個 .onDisappear 收斂判斷，不必分別在取消按鈕與下滑手勢各接一次
+        .onDisappear { deleteOrphanPlaceIfNeeded() }
+    }
+
+    /// 新增地點兩段式流程的收尾：步驟 A（PlaceSelectView／FamilyListView／HomeStatusView
+    /// 建立 `LocalFamilyMember(kind: "place")` 並存檔）已經讓這個 member 落地，
+    /// 若使用者在這裡（步驟 B）沒儲存就離開，這個 member 會變成「0 個圈」的孤兒——
+    /// 不只家人頁多一筆空地點，還會佔掉 `FreeTier.maxPlaces` 的免費額度，讓下次新增誤觸付費牆
+    /// （`gateAddPlace` 數的是 `members.filter(\.isPlace).count`，孤兒 member 也算一個）。
+    /// 條件同時成立才刪，任一不成立就直接放過：
+    /// - `isNewPlaceCircle`：只有「選完地點名稱、接著開這裡建第一個圈」這個接續情境才可能孤兒；
+    ///   編輯既有圈（circle != nil）或替一般家人（非地點）新增圈都不會是這個情境，天然被排除
+    /// - `!didSave`：使用者真的有按儲存就不是孤兒，`save()` 裡會先設 `didSave = true` 才 dismiss
+    /// - `member.lifeCircles.isEmpty`：這個 member 目前確實沒有任何圈——如果使用者是回來幫
+    ///   已有圈的地點「加第二個圈」，中途取消也不該連累第一個圈，用這個條件排除
+    private func deleteOrphanPlaceIfNeeded() {
+        guard isNewPlaceCircle, !didSave, member.lifeCircles.isEmpty else { return }
+        context.delete(member)
+        context.saveReporting()
     }
 
     /// 導覽標題：新增地點接續情境講人話（帶出剛選的地點名稱），其餘情境沿用「守護地點」語彙
@@ -212,6 +283,104 @@ struct CircleEditorView: View {
         }
     }
 
+    /// 第三條路的座標來源：跟 `save()` 同一套優先序（手動點選 > 搜尋結果 > 既有圈），
+    /// 三種輸入管道（地址搜尋、目前位置、地圖點選）任一路更新，小地圖頭針與警戒圈預覽都跟著換。
+    private var displayCoordinate: CLLocationCoordinate2D? {
+        picked
+            ?? found?.location.coordinate
+            ?? circle.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    /// 嵌在表單裡的小地圖：長按或點擊放大頭針選點，同時即時預覽通知範圍圈。
+    /// 手勢方案：
+    /// - Map 本身放進固定高度容器（非整頁地圖），搭配一個「輕量偵測觸碰中/放開」的
+    ///   `simultaneousGesture(DragGesture(minimumDistance: 0))` 只切換 `isTouchingMap` 旗標，
+    ///   不消費、不攔截事件；外層 Form 用 `.scrollDisabled(isTouchingMap)` 在手指觸碰地圖期間
+    ///   暫停捲動，放開後立刻恢復——這樣「拖地圖」不會被「表單捲動」搶走，Map 原生的平移／
+    ///   縮放手勢也完全不受影響（不是攔截式的 `.gesture`，是併行觀察式的 `.simultaneousGesture`）。
+    /// - 點擊放大頭針用 `SpatialTapGesture`（一般 `onTapGesture` 拿不到座標）；長按放大頭針用
+    ///   `LongPressGesture` 串接 `minimumDistance: 0` 的 `DragGesture` 取放開當下座標
+    ///   （`LongPressGesture` 本身也沒有位置）。兩者都掛 `simultaneousGesture`，不是 `.gesture`，
+    ///   理由同上——這個專案在 SafetyMapView 已驗證過 tap 類手勢可以跟 Map 原生的 pan/pinch
+    ///   並存，長按的第一階段又要求手指基本不動超過 0.4 秒，跟「一碰就滑動」的平移手勢時序
+    ///   自然錯開，不會互搶。
+    private var mapPickerSection: some View {
+        MapReader { proxy in
+            Map(position: $mapCameraPosition) {
+                if let coordinate = displayCoordinate {
+                    MapCircle(center: coordinate, radius: CLLocationDistance(radius))
+                        .foregroundStyle(HCColor.brand.opacity(0.12))
+                        .stroke(HCColor.brand.opacity(0.6), lineWidth: 1.5)
+                    Annotation("守護地點", coordinate: coordinate) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(HCColor.brand)
+                    }
+                }
+            }
+            .frame(height: 240)
+            .clipShape(RoundedRectangle(cornerRadius: HCRadius.control))
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in isTouchingMap = true }
+                    .onEnded { _ in isTouchingMap = false }
+            )
+            .simultaneousGesture(
+                SpatialTapGesture().onEnded { value in
+                    guard let coordinate = proxy.convert(value.location, from: .local) else { return }
+                    pickOnMap(coordinate)
+                }
+            )
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.4)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
+                    .onEnded { value in
+                        guard case .second(true, let drag) = value, let location = drag?.location,
+                              let coordinate = proxy.convert(location, from: .local) else { return }
+                        pickOnMap(coordinate)
+                    }
+            )
+        }
+        .listRowInsets(EdgeInsets())
+        // 還沒有任何座標線索（新守護地點、尚未搜尋也沒用過目前位置）時，
+        // 嘗試拿目前位置只為了把小地圖鏡頭拉近，不會連帶把座標設為目前位置——
+        // 使用者仍要親自長按/點擊或按「把目前位置設為這個守護地點」才會真的選定座標
+        .task {
+            guard displayCoordinate == nil, LocationService.shared.isAuthorized,
+                  let location = await LocationService.shared.currentLocation() else { return }
+            withAnimation(.easeInOut(duration: 0.4)) {
+                mapCameraPosition = .region(
+                    MKCoordinateRegion(center: location.coordinate, span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02))
+                )
+            }
+        }
+    }
+
+    /// 使用者在小地圖上長按／點擊選點：與「把目前位置設為這個守護地點」走同一條路，
+    /// 差別只在座標來源改成手指指的位置；反查失敗就只設座標，地址欄不動。
+    private func pickOnMap(_ coordinate: CLLocationCoordinate2D) {
+        picked = coordinate
+        locationNeedsConfirmation = false
+        locationHint = ""
+        searchFailed = false
+        withAnimation(.easeInOut(duration: 0.3)) {
+            mapCameraPosition = .region(
+                MKCoordinateRegion(center: coordinate, span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02))
+            )
+        }
+        Task {
+            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            if let place = await MapReverseGeocoder.lookup(location) {
+                let matchedDistrict = OnboardingView.guessDistrict(from: place.searchableText)
+                pickedLabel = place.approximateLabel(district: matchedDistrict) ?? "座標已取得"
+                applyAutoDetectedDistrict(matchedDistrict)
+                if address.isEmpty { address = pickedLabel }
+            } else {
+                pickedLabel = "座標已取得"
+            }
+        }
+    }
+
     /// 時段感知設定：公司圈只在上班時間推播、住家圈只在夜間等。
     /// 時段外的官方事件仍會顯示在 App 內，只是不推播。
     private var scheduleSection: some View {
@@ -295,6 +464,9 @@ struct CircleEditorView: View {
         target.kind = .fixed
         if circle == nil { context.insert(target) }
         context.saveReporting()
+        // 一定要在 dismiss() 之前設 true：.onDisappear 觸發的孤兒清除判斷靠這個旗標
+        // 分辨「有存過」跟「取消/下滑關閉」，順序反了會被自己剛存好的圈也一併判定成孤兒刪掉
+        didSave = true
         dismiss()
     }
 }

@@ -51,7 +51,7 @@ struct FollowCircleToggleSection: View {
             Toggle(isOn: Binding(get: { isOn }, set: toggle)) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                    Text("你移動時，警戒圈跟著你")
+                    Text("你移動時，警戒圈跟著你；位置只在這支手機上比對警報，不會傳給任何人")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

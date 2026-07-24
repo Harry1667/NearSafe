@@ -30,7 +30,7 @@ struct PaywallView: View {
         [
             ("核心災害警報", "全開", "全開"),
             ("家庭成員", "\(FreeTier.maxFamilyMembers) 人", "無上限"),
-            ("重要地點", "\(FreeTier.maxPlaces) 個", "無上限"),
+            ("守護地點", "\(FreeTier.maxPlaces) 個", "無上限"),
             ("歷史回顧", "\(FreeTier.historyDays) 天", "\(FreeTier.plusHistoryDays) 天"),
             ("未來進階功能（城市安全情報、週報進階）", "—", "優先享有"),
         ]

@@ -49,7 +49,7 @@ struct DrillView: View {
                     }
                 }
             }
-            ChecklistRow(ok: alertsEnabled, okText: "本機提醒已啟用", problemText: "本機提醒已關閉（設定頁可開啟）")
+            ChecklistRow(ok: alertsEnabled, okText: "災害警報通知已啟用", problemText: "災害警報通知已關閉（設定頁可開啟）")
             ChecklistRow(ok: !paused, okText: "提醒未暫停", problemText: "提醒暫停中——演練通知不會發出")
             ChecklistRow(
                 ok: !members.flatMap(\.lifeCircles).isEmpty,

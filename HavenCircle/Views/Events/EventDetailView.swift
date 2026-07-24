@@ -11,6 +11,9 @@ struct EventDetailView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var profileName = ""
     @State private var showResolveConfirmation = false
     @State private var checkInFeedback: String?
+    /// 回報失敗／逾時的人話錯誤（見 FamilySyncService.humanPingErrorMessage）；
+    /// 與 checkInFeedback 互斥，兩者任一顯示前都會清掉另一個
+    @State private var checkInError: String?
     /// 「這類警報以後不吵醒我」按過後的回饋文字（nil＝尚未按過）
     @State private var wakeMuteFeedback: String?
     @State private var isReporting = false
@@ -310,6 +313,17 @@ struct EventDetailView: View {
                     .buttonStyle(.bordered)
                     .tint(HCColor.danger)
                     .controlSize(.large)
+                    Button {
+                        report(.needHelp)
+                    } label: {
+                        Label("需要協助", systemImage: "exclamationmark.circle.fill")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(HCColor.danger)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(HCColor.danger)
+                    .controlSize(.large)
                 } else {
                     Button {
                         report(.pleaseReport)
@@ -330,6 +344,17 @@ struct EventDetailView: View {
                         .padding(HCSpacing.x2)
                         .background(
                             HCColor.safe.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                        )
+                }
+                if let checkInError {
+                    Label(checkInError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(HCColor.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(HCSpacing.x2)
+                        .background(
+                            HCColor.danger.opacity(0.08),
                             in: RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
                         )
                 }
@@ -380,22 +405,39 @@ struct EventDetailView: View {
         .hcCard()
     }
 
+    /// 未登入時不能讓請求直接進 postPing 黑洞——套用既有的 SignInGate 模式（沿用同一個
+    /// signInGate 實例，已由 `.signInPreflight(signInGate)` 掛在 body 根層）：已登入直接送出；
+    /// 未登入先彈登入預告卡，登入成功後自動接續原本要回報的狀態。
     private func report(_ status: SafetyStatus) {
+        signInGate.perform { await performReport(status) }
+    }
+
+    private func performReport(_ status: SafetyStatus) async {
         isReporting = true
+        checkInFeedback = nil
+        checkInError = nil
         let senderName = profileName.trimmingCharacters(in: .whitespaces).isEmpty ? "我" : profileName
-        Task {
-            await sync.postPing(
-                senderName: senderName,
-                status: status,
-                note: status == .pleaseReport ? "從事件詳情發起平安確認" : "從事件詳情回報"
-            )
-            checkInFeedback = status == .pleaseReport ? "已送出確認請求" : "已送出回報"
-            isReporting = false
-            // C1：只有「我平安」且圈內目前沒有其他人時才觸發——這是模擬死點 5 的核心時機
-            if status == .safe && sync.isSolo(localMembers: members) {
-                showSoloInviteCard = true
-                Analytics.track("solo_checkin_invite_shown")
+        let success = await sync.postPing(
+            senderName: senderName,
+            status: status,
+            note: status == .pleaseReport ? "從事件詳情發起平安確認" : "從事件詳情回報"
+        )
+        isReporting = false
+        guard success else {
+            // 失敗／逾時的人話文案已由 FamilySyncService 就地轉換好、存在 sync.state 裡；
+            // 沒有更精確資訊時才退回通用文案（理論上 postPing 失敗一定會設 state，這裡是保底）。
+            if case .error(let message) = sync.state {
+                checkInError = message
+            } else {
+                checkInError = "回報失敗，請再試一次"
             }
+            return
+        }
+        checkInFeedback = status == .pleaseReport ? "已送出確認請求" : "已送出回報"
+        // C1：只有「我平安」且圈內目前沒有其他人時才觸發——這是模擬死點 5 的核心時機
+        if status == .safe && sync.isSolo(localMembers: members) {
+            showSoloInviteCard = true
+            Analytics.track("solo_checkin_invite_shown")
         }
     }
 

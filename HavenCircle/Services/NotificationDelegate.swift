@@ -36,14 +36,30 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
                     ? "family_check_from_notification"
                     : "checkin_from_notification")
             }
-            guard let sync = await AppRuntime.familySync else { return }
+            // 保命級 P0：舊版直接 postPing 就 return，零回饋——使用者長按通知回報後
+            // 完全不知道有沒有送出。三種結局都要補一則本機通知讓使用者知道結果。
+            guard let sync = await AppRuntime.familySync else {
+                // App 執行環境尚未就緒（極端的背景冷啟動情境），無法得知登入/送出狀態，
+                // 誠實告知並導去 App 確認，而不是靜默吞掉這次快速操作。
+                await postFeedback(title: "⚠️ 回報可能未送出", body: "請打開 App 確認家庭圈狀態後再回報一次")
+                return
+            }
+            guard await MainActor.run(body: { AuthService.shared.uid }) != nil else {
+                await postFeedback(title: "尚未登入", body: "請先打開 App 登入後再回報")
+                return
+            }
             let rawName = UserDefaults.standard.string(forKey: SettingsKeys.profileDisplayName) ?? ""
             let senderName = rawName.isEmpty ? "我" : rawName
-            await sync.postPing(
+            let success = await sync.postPing(
                 senderName: senderName,
                 status: quickStatus,
                 note: quickStatus == .pleaseReport ? "收到警報後發起平安確認" : "由警報通知快速回報"
             )
+            if success {
+                await postFeedback(title: "✓ 已送出", body: "家人會看到你回報平安")
+            } else {
+                await postFeedback(title: "⚠️ 回報可能未送出", body: "請打開 App 確認")
+            }
             return // 快速操作不需要開提醒中心
         }
 
@@ -60,6 +76,28 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
             guard let url = components.url else { return }
             DeepLinkStore.pending = url
             NotificationCenter.default.post(name: .didReceiveDeepLink, object: url)
+        }
+    }
+
+    /// 快速操作的即時結果回饋：刻意不走 NotificationScheduler.scheduleAlert——那條路徑是為
+    /// 「災害警報」設計的節流（暫停提醒／吵醒門檻／權限檢查），而這裡是「使用者剛按下的動作」
+    /// 的即時回饋，不該被同一套節流邏輯攔下，否則使用者按了快速回報卻連失敗通知都收不到。
+    private func postFeedback(title: String, body: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "ping-feedback-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+        } catch {
+            // 這個檔案沒有 import os：直接呼叫 AppLog.notifications.error(...) 的插值方法
+            // 需要呼叫端自己 import os（見 AppLog.swift 註解），改用不碰 os 型別的包裝函式。
+            AppLog.notificationsError("快速回報回饋通知排程失敗：\(error.localizedDescription)")
         }
     }
 }

@@ -56,6 +56,18 @@ enum FamilyBackendError: LocalizedError {
     }
 }
 
+/// 安否回報保命級 P0：Firestore 離線時 `setData` 會無限期等待伺服器 ack，
+/// 讓呼叫端的 spinner／按鈕鎖死。[postPing] 用這個錯誤代表「等太久沒收到確認」。
+///
+/// ⚠️ 逾時不等於「寫入失敗」——那筆寫入很可能還在 Firestore 本機離線佇列裡，
+/// 連上網路後會自動補送成功。呼叫端顯示文案務必誠實反映「可能未送出」這個不確定性，
+/// 不能寫成「已失敗」，也不能假裝成功；教使用者用「家人回報清單有沒有出現」自行確認。
+struct SafetyPingTimeoutError: LocalizedError {
+    var errorDescription: String? {
+        "已等候 8 秒未收到送出確認，回報可能未送出。若已連上網路，離線佇列稍後可能自動補送——請看家人回報清單有沒有出現你的回報來確認。"
+    }
+}
+
 // MARK: - Firestore 家庭圈後端
 
 /// 家庭圈的 Firestore 資料層（無狀態的操作集合）。
@@ -421,8 +433,25 @@ enum FirestoreFamilyBackend {
             data["longitude"] = longitude
             data["placeName"] = placeName ?? ""
         }
-        try await ref.setData(data)
-        return ref.documentID
+
+        // 逾時保護（8 秒）：離線時 setData 會無限期等伺服器 ack，讓呼叫端的 isReporting/isWorking
+        // 永遠鎖住。用 withThrowingTaskGroup 讓「真正的寫入」與「8 秒計時」賽跑，誰先完成用誰的結果，
+        // 另一個立刻取消——這是 Swift 結構化並行實作 timeout 的標準模式。
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                try await ref.setData(data)
+                return ref.documentID
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 8_000_000_000)
+                throw SafetyPingTimeoutError()
+            }
+            guard let result = try await group.next() else {
+                throw SafetyPingTimeoutError()
+            }
+            group.cancelAll()
+            return result
+        }
     }
 
     /// 讀取家庭圈所有安否回報（依時間新到舊；單欄排序不需複合索引）。

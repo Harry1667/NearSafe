@@ -691,7 +691,9 @@ struct HomeStatusView: View {
                     .background(Color.secondary.opacity(0.08), in: Circle())
                 VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text("邀請家人").font(.subheadline.weight(.medium))
-                    Text("加入後可以互報平安")
+                    // 問題4：隱私承諾寫進 UI——加入只共用安否回報，位置分享是另一個各自
+                    // 預設關閉的開關（見 SettingsKeys.liveLocationSharingEnabled 預設值 false）
+                    Text("加入後只互報平安；位置分享另外由每個人自己決定，預設關閉")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

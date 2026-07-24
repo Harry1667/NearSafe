@@ -92,12 +92,21 @@ struct FamilyListView: View {
             }
         }
         .toolbar {
-            Menu {
-                Button("新增家人", systemImage: "person.badge.plus") { gateAddFamilyMember() }
-                Button("新增重要地點", systemImage: "mappin.and.ellipse") { gateAddPlace() }
-            } label: {
-                Label("新增", systemImage: "plus")
-                    .fontWeight(.medium)
+            // 問題3：三個主分頁右上角統一放同一顆齒輪；家人頁沒有自己的 NavigationStack，
+            // 這裡的 toolbar 會被 FamilyHubView 的 NavigationStack 收下顯示。
+            ToolbarItem(placement: .topBarLeading) {
+                Button("設定", systemImage: "gearshape") { router.showSettings = true }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("新增家人", systemImage: "person.badge.plus") { gateAddFamilyMember() }
+                    Button("新增守護地點", systemImage: "mappin.and.ellipse") { gateAddPlace() }
+                } label: {
+                    // 視覺上維持原本的「+」圖示，但 accessibilityLabel 講清楚這是選單而非單一動作
+                    Image(systemName: "plus")
+                        .fontWeight(.medium)
+                }
+                .accessibilityLabel("新增家人或守護地點")
             }
         }
         .signInPreflight(signInGate)
@@ -183,7 +192,7 @@ struct FamilyListView: View {
                     .frame(width: 48, height: 48)
                     .background(.secondary.opacity(0.08), in: Circle())
                 VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                    Text(myDisplayName).font(.body.weight(.semibold))
+                    Text(accountDisplayText).font(.body.weight(.semibold))
                     Text(accountSubtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -211,8 +220,14 @@ struct FamilyListView: View {
         .listRowBackground(Color.clear)
     }
 
+    /// 問題2：未登入時不該顯示「我」這種假名——主文字改講狀態本身，
+    /// 副文字講清楚「什麼時候會用到 Apple 帳號」，已登入兩者行為不變。
+    private var accountDisplayText: String {
+        isSignedIn ? myDisplayName : "尚未登入"
+    }
+
     private var accountSubtitle: String {
-        guard isSignedIn else { return "尚未登入" }
+        guard isSignedIn else { return "加入或建立家人圈時會用 Apple 帳號登入" }
         return appleAccountEmail.isEmpty ? "已使用 Apple 帳號登入" : appleAccountEmail
     }
 
@@ -237,13 +252,26 @@ struct FamilyListView: View {
                 Button {
                     signInGate.perform { await startInviteFlow() }
                 } label: {
-                    Label("邀請家人", systemImage: "person.crop.circle.badge.plus")
+                    // 問題2：未登入時先講成本再讓人按——「登入並邀請家人」比裸「邀請家人」
+                    // 更誠實，不會讓人點下去才發現還要先過一關登入。
+                    Label(isSignedIn ? "邀請家人" : "登入並邀請家人", systemImage: "person.crop.circle.badge.plus")
                         .font(.body.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(isInviting)
+                if !isSignedIn {
+                    Text("用 Apple 帳號，約 10 秒完成")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                // 問題4：隱私承諾寫進 UI——加入家庭圈只共用安否回報，位置分享是另一個
+                // 各自預設關閉的開關（見 LiveCircleSharingSection／SettingsKeys.liveLocationSharingEnabled）
+                Text("加入後只互報平安；位置分享另外由每個人自己決定，預設關閉")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 if isInviting {
                     ProgressView()
                 }
@@ -253,14 +281,18 @@ struct FamilyListView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
+                // 問題2：阿嬤是被邀請方——小灰字容易被當成無用的免責宣告直接忽略，
+                // 升級成次要按鈕樣式，跟主鈕同寬同尺寸但視覺次要
                 Button("我收到了邀請碼") {
                     signInGate.perform {
                         prefilledJoinCode = nil
                         showJoinByCode = true
                     }
                 }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .font(.body.weight(.medium))
+                .frame(maxWidth: .infinity)
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, HCSpacing.x2)
@@ -435,10 +467,10 @@ struct FamilyListView: View {
         }
     }
 
-    /// 重要地點小節：不論家庭狀態一律顯示（未入圈／單人／多人家庭都固定在成員區之後），
+    /// 守護地點小節：不論家庭狀態一律顯示（未入圈／單人／多人家庭都固定在成員區之後），
     /// 新增入口收在小節內這一列，不再另外放一張會在多人家庭時消失的獨立卡片。
     private var placesSection: some View {
-        Section("重要地點") {
+        Section("守護地點") {
             if places.isEmpty {
                 Text("還沒有守護地點，加一個爸媽家吧")
                     .font(.caption)
@@ -454,10 +486,12 @@ struct FamilyListView: View {
                                 .foregroundStyle(.secondary)
                             VStack(alignment: .leading, spacing: HCSpacing.x1) {
                                 Text(place.name)
-                                let fixedCount = place.lifeCircles.filter { $0.kind == .fixed }.count
-                                Text("\(fixedCount) 個固定地點")
+                                // 設計鐵律：一個守護地點＝剛好一個警戒圈，副標直接講那個圈的實際資訊
+                                // （地址或警戒半徑）比報數字有用；0 圈孤兒才需要提示「還沒設」。
+                                let fixedCircle = place.lifeCircles.first { $0.kind == .fixed }
+                                Text(placeSubtitleText(fixedCircle))
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(fixedCircle == nil ? HCColor.attention : .secondary)
                             }
                         }
                     }
@@ -557,6 +591,18 @@ struct FamilyListView: View {
         return ping.createdAt.formatted(.relative(presentation: .named))
     }
 
+    /// 地點列表副標：一個地點剛好一個警戒圈，直接講那個圈的實際資訊（地址優先，
+    /// 沒有地址文字才退回警戒半徑），比報「N 個警戒圈」這種需要心算的數字有用；
+    /// 0 圈孤兒（歷史殘留）維持提示「還沒設」並暗示點進去完成。
+    private func placeSubtitleText(_ circle: LocalLifeCircle?) -> String {
+        guard let circle else { return "還沒設警戒圈——點我完成" }
+        let address = circle.addressText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !address.isEmpty {
+            return address
+        }
+        return "警戒半徑 \(circle.radiusMeters) 公尺"
+    }
+
     /// 位置狀態：分享中／過期／未開啟——三態直接對應即時圈是否存在、是否仍在有效時效內。
     private func locationStatusText(_ member: LocalFamilyMember) -> String {
         guard let live = member.lifeCircles.first(where: { $0.kind == .live }) else {
@@ -565,9 +611,15 @@ struct FamilyListView: View {
         return live.isActiveForAlerts ? "分享中" : "過期"
     }
 
-    /// 等前一張 sheet 的收合動畫結束再開固定圈編輯器；
-    /// 立刻 present 會撞上仍在收合中的 sheet 而被系統丟棄
+    /// 等前一張 sheet 的收合動畫結束再開警戒圈編輯器；
+    /// 立刻 present 會撞上仍在收合中的 sheet 而被系統丟棄。
+    ///
+    /// 鐵律：只有「地點」才會有警戒圈（一個守護地點＝剛好一個警戒圈，額度＝地點數）。
+    /// MemberEditorView 的「新增家人」onSaved 也會呼叫這個函式（見上方 `adding` sheet），
+    /// 若不擋在這裡，新增家人時會順手替這位「人」建立一個不受 gateAddPlace 額度控管的
+    /// 固定圈，等於繞過守護地點額度閘門——這裡擋掉，只放行地點成員（見 createPlace）。
     private func scheduleCircleEditor(_ member: LocalFamilyMember) {
+        guard member.isPlace else { return }
         Task {
             try? await Task.sleep(for: .milliseconds(550))
             newMemberForCircle = member

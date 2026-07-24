@@ -494,6 +494,14 @@ final class FamilySyncService {
     // MARK: - 安否回報
 
     /// 送出一則安否回報。位置為回報者「自願附上」的一次性座標（nil＝沒附）。
+    ///
+    /// 回傳成敗（保命級 P0 修復）：舊版未登入時只默默設 state 就 return、
+    /// 呼叫端（EventDetailView／NotificationDelegate／SafetyCheckInView）完全拿不到結果，
+    /// 導致未登入或失敗時 UI 仍無條件顯示「已送出」的假成功。選 `Bool` 而非 `throws`：
+    /// 三個呼叫端都只需要「成功了嗎」的是非題去決定要不要顯示回饋，不需要區分錯誤型別
+    /// （人話文案已在下面就地轉換好、經由 [state] 帶出），throws 只會讓呼叫端多包一層
+    /// do/catch 卻沒有額外資訊可用。
+    @discardableResult
     func postPing(
         senderName: String,
         status: SafetyStatus,
@@ -501,10 +509,10 @@ final class FamilySyncService {
         latitude: Double? = nil,
         longitude: Double? = nil,
         placeName: String? = nil
-    ) async {
+    ) async -> Bool {
         guard let uid else {
             state = .error("請先用 Apple 帳號登入，才能回報平安給家人")
-            return
+            return false
         }
         do {
             let familyID = try await ensureFamily()
@@ -519,10 +527,22 @@ final class FamilySyncService {
                 placeName: placeName
             )
             await fetchPings()
+            return true
         } catch {
             AppLog.cloud.error("送出安否回報失敗：\(error.localizedDescription)")
-            state = .error(error.localizedDescription)
+            state = .error(Self.humanPingErrorMessage(error))
+            return false
         }
+    }
+
+    /// 安否回報失敗的人話文案（統一錯誤文案原則）：逾時的真相是「不確定送沒送出」——
+    /// Firestore 離線佇列可能事後補送成功，一律用「可能未送出」＋教使用者怎麼自行確認，
+    /// 不寫「已失敗」也不假裝成功。原始錯誤已在上一行進 AppLog，這裡只轉譯給使用者看的字串。
+    private static func humanPingErrorMessage(_ error: Error) -> String {
+        if error is SafetyPingTimeoutError {
+            return "網路不穩，回報可能未送出——連上網路後會自動重試，家人清單出現你的回報才算成功"
+        }
+        return "回報失敗，請再試一次"
     }
 
     /// 讀取家庭圈所有安否回報（依時間新到舊），並對新回報發本機通知。

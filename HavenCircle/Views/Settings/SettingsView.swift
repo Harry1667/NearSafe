@@ -630,7 +630,7 @@ private struct AppleAccountView: View {
             }
 
             Section("資料範圍") {
-                Text("Apple 帳號登入用於同步家人安否回報與即時位置給家庭圈。固定圈與事件資料仍保存在此裝置。")
+                Text("Apple 帳號登入用於同步家人安否回報與即時位置給家庭圈。警戒圈與事件資料仍保存在此裝置。")
                     .font(.footnote)
             }
 
@@ -639,7 +639,7 @@ private struct AppleAccountView: View {
                     showLogoutConfirm = true
                 }
             } footer: {
-                Text("登出會登出 Apple 帳號並清除此裝置顯示的名稱與 email；固定圈與事件資料不受影響。請先在家人頁停止即時位置分享。")
+                Text("登出會登出 Apple 帳號並清除此裝置顯示的名稱與 email；警戒圈與事件資料不受影響。請先在家人頁停止即時位置分享。")
             }
         }
         .navigationTitle("Apple 帳號")
@@ -897,6 +897,9 @@ private struct AlertSettingsView: View {
     @Query private var members: [LocalFamilyMember]
     /// 「允許通知」按下後的結果（nil＝尚未按過）——按了沒反應等於壞掉，必須有可見回饋
     @State private var notificationGranted: Bool?
+    /// 2026-07-24：關閉「災害警報通知」等於關掉所有保命警報，一滑就掉風險太高，
+    /// 改用中間值攔截——使用者關閉時先跳確認框，取消就不落地，Toggle 視覺上維持原樣
+    @State private var showDisableAlertsConfirm = false
 
     private var wakeThreshold: WakeThreshold {
         WakeThreshold(rawValue: wakeThresholdRaw) ?? .standard
@@ -905,7 +908,25 @@ private struct AlertSettingsView: View {
     var body: some View {
         Form {
             Section("提醒偏好") {
-                Toggle("啟用本機提醒", isOn: $alertsEnabled)
+                // 2026-07-24：原「啟用本機提醒」是工程師詞彙，實機測試員看不懂「本機」是什麼、
+                // 也不知道關掉後保命警報還在不在——查證結果：所有會顯示給使用者看的警報
+                // （事件推播、家人安否詢問／回報）全部經過 NotificationScheduler.scheduleAlert，
+                // 這顆開關關掉＝一律不發，沒有任何警報會顯示；伺服器的無聲推播只會在背景
+                // 喚醒 App 刷新資料，本身不會跳出任何通知。故改名為「災害警報通知」並
+                // 明講「關閉後不會收到任何警報」，且關閉動作需二次確認。
+                Toggle("災害警報通知", isOn: Binding(
+                    get: { alertsEnabled },
+                    set: { newValue in
+                        if newValue {
+                            alertsEnabled = true
+                        } else {
+                            showDisableAlertsConfirm = true
+                        }
+                    }
+                ))
+                Text("關閉後將不會收到任何警報通知。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("提醒多寡")
                     .font(.subheadline.weight(.semibold))
                 Text("調整你收到通知的多寡，不影響文字大小（文字大小在「外觀」設定另外調整）")
@@ -941,7 +962,7 @@ private struct AlertSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                Text("吵醒＝突破靜音與勿擾的時效性通知；降級後通知仍會送達，只是不亮屏、不出聲。")
+                Text("吵醒＝突破靜音與勿擾的時效性通知；降級後通知仍會送達，只是不亮屏、不出聲。要控制推播事件的種類多寡，請調整上方『提醒偏好』的通知頻率。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 // 「絕不吵醒」與「僅重大才吵」下，安靜時段對實際行為都沒有額外效果
@@ -982,7 +1003,7 @@ private struct AlertSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("資料與安全") {
-                Text("固定圈、家人與事件資料保存在此裝置；主動開啟的即時圈位置會同步給家庭圈成員。刪除 App 會刪除本機資料。")
+                Text("警戒圈、家人與事件資料保存在此裝置；主動開啟的即時圈位置會同步給家庭圈成員。刪除 App 會刪除本機資料。")
                 Text("安心圈不是 110、119 或緊急救難服務。遇立即危險請直接撥打 110 或 119。")
             }
         }
@@ -992,6 +1013,17 @@ private struct AlertSettingsView: View {
         // 摘要設定變更時立即重排通知
         .onChange(of: digestEnabled) { refreshDigest() }
         .onChange(of: digestHour) { refreshDigest() }
+        // 保命 App 的總開關不能一滑就掉：關閉「災害警報通知」需二次確認，取消則維持開啟
+        .confirmationDialog(
+            "確定要關閉災害警報通知？",
+            isPresented: $showDisableAlertsConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("確定關閉", role: .destructive) { alertsEnabled = false }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("關閉後，任何警報（包含火災、地震等保命警報）都不會再通知你。")
+        }
     }
 
     private func refreshDigest() {

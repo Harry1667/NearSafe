@@ -50,7 +50,7 @@ enum SettingsKeys {
     /// 外觀模式（AppearanceMode 的 rawValue）：跟隨系統／淺色／深色
     static let appearanceMode = "appearanceMode"
     /// 全域字體大小（AppTextSize 的 rawValue）：跟隨系統（預設）／大／特大／最大
-    /// 與 alertFrequencyLevel（提醒多寡：安靜／平衡／靈敏）是兩件事，實機測試曾誤認為同一個設定，故分鍵獨立管理
+    /// 與 alertFrequencyLevel（提醒多寡：僅重大／標準／靈敏）是兩件事，實機測試曾誤認為同一個設定，故分鍵獨立管理
     static let appTextSize = "appTextSize"
     /// 功能導覽待播旗標：Onboarding 完成時種下，首次進主畫面消耗；設定頁可重新種下
     static let homeTourPending = "homeTourPending"
@@ -58,7 +58,7 @@ enum SettingsKeys {
     static let legalAcceptanceVersion = "legalAcceptanceVersion"
     /// 匿名使用統計開關（預設開）：關閉時 Analytics 不記錄也不送出
     static let analyticsEnabled = "analyticsEnabled"
-    /// 通知頻率等級（AlertFrequency 的 rawValue）：小＝只推危險級／中＝標準（預設）／大＝連早期未確認線索也推
+    /// 通知頻率等級（AlertFrequency 的 rawValue）：小＝僅重大只推危險級／中＝標準（預設）／大＝靈敏，連早期未確認線索也推
     static let alertFrequencyLevel = "alertFrequencyLevel"
 
     // MARK: - 吵醒門檻與勿擾時段（D4：通知自主權）
@@ -134,26 +134,31 @@ enum AlertFrequency: Int, CaseIterable, Identifiable {
         return raw.flatMap(AlertFrequency.init(rawValue:)) ?? .standard
     }
 
-    /// 分段控制顯示的短標籤（安靜／平衡／靈敏）
+    /// 分段控制顯示的短標籤（僅重大／標準／靈敏）
     /// 2026-07-24：實機測試員誤讀成字體大小調整，改名消除與「字體大小」的歧義；
+    /// 2026-07-24（第二輪）：「安靜」被誤讀成「靜音」——選了以為警報不會出聲，
+    /// 結果火災警報照樣響（此設定只管「推不推」，出不出聲吵醒人是下面「勿擾與吵醒」的事）。
+    /// 改名「僅重大」直接講清楚篩的是「事件多寡」；
     /// case 名、rawValue、UserDefaults 儲存格式都不變，只改顯示文字
     var shortLabel: String {
         switch self {
-        case .low: return "安靜"
-        case .standard: return "平衡"
+        case .low: return "僅重大"
+        case .standard: return "標準"
         case .high: return "靈敏"
         }
     }
 
-    /// 一句話說明目前選擇會收到哪些通知，直接顯示給使用者
+    /// 一句話說明目前選擇會收到哪些通知，直接顯示給使用者。
+    /// 每段都刻意點出「這裡講的是推不推播，不是吵不吵醒你」，
+    /// 避免與下面「勿擾與吵醒」（WakeThreshold）的災型白名單被誤讀成同一件事。
     var explanation: String {
         switch self {
         case .low:
-            return "只有火災、地震、海嘯、颱風、公共安全等危險事件才會通知；高溫、降雨、停水等一般提醒只在 App 內顯示。"
+            return "只有火災、地震、海嘯、颱風、公共安全等危險事件才會推播；高溫、降雨、停水等一般提醒只在 App 內顯示。要控制警報會不會出聲吵醒你，請調整下方『勿擾與吵醒』。"
         case .standard:
-            return "危險事件即時通知，高溫、降雨、停水等一般提醒也會通知。多數人適用。"
+            return "危險事件會立即推播，高溫、降雨、停水等一般提醒也會推播。多數人適用。這裡只決定推不推播；會不會出聲吵醒你，由下方『勿擾與吵醒』另外決定。"
         case .high:
-            return "除了上述，連尚未經官方或多來源確認的早期線索也會通知——更早知道，但可能偶有誤報。"
+            return "除了上述，連尚未經官方或多來源確認的早期線索也會推播——更早知道，但可能偶有誤報。同樣地，會不會出聲吵醒你仍由下方『勿擾與吵醒』決定。"
         }
     }
 }
