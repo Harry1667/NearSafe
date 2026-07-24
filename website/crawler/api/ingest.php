@@ -39,8 +39,10 @@ if (!is_dir($dataDir)) {
 }
 
 $items = $data['events'] ?? $data['stations'] ?? $data['districts'] ?? $data['alerts'] ?? null;
+$nowIso = gmdate('Y-m-d\TH:i:s\Z');
 $payload = [
-    'received_at' => gmdate('Y-m-d\TH:i:s\Z'),
+    'received_at' => $nowIso,
+    'ingested_at' => $nowIso, // 延遲量測用：與 received_at 同一時刻，語意上標記「管線落地時間」
     'count'       => is_array($items) ? count($items) : null,
     'data'        => $data,
 ];
@@ -55,6 +57,38 @@ if (file_put_contents($tmpFile, json_encode($payload, JSON_UNESCAPED_UNICODE | J
     exit;
 }
 rename($tmpFile, $finalFile); // 同檔案系統內 rename 是原子操作，讀取端不會讀到寫一半的檔案
+
+// 延遲量測：只增不改邏輯。放在 exec() 觸發之前，確保即使下面那段因環境限制
+// （disable_functions 停用 exec）而拋 Fatal Error，這行也已經寫完，不會漏記。
+// 只對已埋點的 ncdr / cwa 兩個 dataset 寫，其餘 dataset 沒有 source_published_at/fetched_at
+// 欄位可取，寫了也是空值，不寫比較乾淨。
+if ($dataset === 'ncdr' || $dataset === 'cwa') {
+    $sourcePublishedAt = '';
+    $fetchedAt = '';
+    if ($dataset === 'ncdr') {
+        $events = $data['events'] ?? [];
+        foreach ($events as $e) {
+            $sp = $e['source_published_at'] ?? '';
+            if ($sp !== '' && $sp > $sourcePublishedAt) {
+                $sourcePublishedAt = $sp; // CAP sent 皆含 +08:00 時區，字串序即可比出本批最新一筆
+            }
+        }
+        $fetchedAt = $data['fetched_at'] ?? ($events[0]['fetched_at'] ?? '');
+    } else { // cwa
+        $latency = $data['latency'] ?? [];
+        foreach ($latency as $entry) {
+            $sp = $entry['source_published_at'] ?? '';
+            if ($sp !== '' && $sp > $sourcePublishedAt) {
+                $sourcePublishedAt = $sp;
+            }
+        }
+        $fetchedAt = $data['fetched_at'] ?? '';
+    }
+    if ($sourcePublishedAt !== '' || $fetchedAt !== '') {
+        $latencyLine = implode("\t", [$nowIso, $dataset, $sourcePublishedAt, $fetchedAt, $nowIso]) . "\n";
+        @file_put_contents(__DIR__ . '/../latency.log', $latencyLine, FILE_APPEND | LOCK_EX);
+    }
+}
 
 // 新 NCDR 示警一落地就立刻觸發 APNs 檢查（背景、不阻塞回應），
 // 讓推播不必等 cron 每分鐘輪詢——把警報偵測延遲砍到接近爬蟲間隔。

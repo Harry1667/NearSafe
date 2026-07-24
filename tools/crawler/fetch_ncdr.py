@@ -15,8 +15,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def utc_now_iso() -> str:
+    """延遲量測用：UTC ISO8601（帶 Z），與 fetched_at / latency.log 對齊。"""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 API_BASE = "https://alerts.ncdr.nat.gov.tw/api"
 API_KEY_PATH = Path(__file__).parent / "api_key.txt"
@@ -127,6 +132,8 @@ def fetch_via_api():
         events.append({
             "identifier": dump.get("identifier") or capid,
             "sender": dump.get("sender"),
+            # 延遲量測：CAP 官方發布時間（dump 根層 sent，含 +08:00 時區）
+            "source_published_at": dump.get("sent"),
             "event": info.get("event"),
             "urgency": info.get("urgency"),
             "severity": info.get("severity"),
@@ -172,6 +179,8 @@ def parse_cap(xml_bytes):
     return {
         "identifier": root.findtext("cap:identifier", namespaces=CAP_NS),
         "sender": root.findtext("cap:sender", namespaces=CAP_NS),
+        # 延遲量測：備援路徑（CAP XML）也帶官方發布時間
+        "source_published_at": root.findtext("cap:sent", namespaces=CAP_NS),
         "event": info.findtext("cap:event", namespaces=CAP_NS),
         "urgency": info.findtext("cap:urgency", namespaces=CAP_NS),
         "severity": info.findtext("cap:severity", namespaces=CAP_NS),
@@ -270,8 +279,14 @@ def run():
             print(f"[錯誤] 備援 feed 也失敗：{ex2}", file=sys.stderr)
             sys.exit(1)  # 保留上一次成功的 latest.json，不用空結果覆蓋
 
+    # 延遲量測：本批次的抓取完成時間（UTC），蓋在每筆事件與頂層，供 latency.log 對齊
+    fetched_at = utc_now_iso()
+    for e in events:
+        e["fetched_at"] = fetched_at
+
     output = {
         "fetchedAt": datetime.now().isoformat(),
+        "fetched_at": fetched_at,
         "source": source,
         "totalInFeed": total,
         "relevantCount": len(events),

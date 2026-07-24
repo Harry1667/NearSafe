@@ -7,7 +7,7 @@ struct DataSourceView: View {
             Section("即時災害示警") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("NCDR 民生示警平台").font(.subheadline.bold())
-                    Text("國家災害防救科技中心彙整 28 個政府機關、43 類災害示警（颱風、地震、淹水、火災、停水等），本 App 每 5 分鐘同步一次。")
+                    Text("國家災害防救科技中心彙整 28 個政府機關、43 類災害示警（颱風、地震、淹水、火災、停水等），本 App 最快每 1 分鐘同步一次。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -8,8 +8,8 @@ NCDR 仍是警報主幹，這支只提供加值細節，App 端可在事件詳�
   1. 免費註冊氣象會員：https://pweb.cwa.gov.tw/emember/register （只需 email）
   2. 登入 https://opendata.cwa.gov.tw/user/authkey 點「取得授權碼」（即時核發，CWA- 開頭）
   3. 授權碼存成 cwa_key.txt
-額度：一般會員 24 小時 2 萬次；本爬蟲每次跑 4 個呼叫，cron 每 10 分鐘一次
-一天約 576 次，遠低於上限。
+額度：一般會員 24 小時 2 萬次；本爬蟲每次跑 4 個呼叫，cron 每 5 分鐘一次
+一天約 1152 次，遠低於上限。（2026-07-24 由 10 分鐘調整為 5 分鐘，縮短延遲）
 
 輸出 latest_cwa.json，並推送 Oracle（ingest.php?dataset=cwa）。
 cwa_key.txt 不存在時印提示後直接結束（exit 0）——cron 可先掛著等註冊完成。
@@ -20,8 +20,35 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def utc_now_iso() -> str:
+    """延遲量測用：UTC ISO8601（帶 Z），與 fetched_at / latency.log 對齊。"""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def extract_source_published_at(name: str, records):
+    """延遲量測（best-effort）：各 dataset 內部結構不同，找不到就回 None，絕不拋例外中斷主流程。"""
+    try:
+        if name in ("significantQuakes", "localQuakes"):
+            eq = (records or {}).get("Earthquake") or []
+            if eq:
+                return eq[0].get("IssueTime")
+        elif name == "typhoonWarning":
+            info = (records or {}).get("info") or []
+            if info:
+                return info[0].get("effective")
+        elif name == "typhoonTracks":
+            tc = ((records or {}).get("TropicalCyclones") or {}).get("TropicalCyclone") or []
+            if tc:
+                fixes = (tc[0].get("AnalysisData") or {}).get("Fix") or []
+                if fixes:
+                    return fixes[-1].get("DateTime")
+    except Exception:
+        pass
+    return None
 
 API_BASE = "https://opendata.cwa.gov.tw/api/v1/rest/datastore"
 KEY_PATH = Path(__file__).parent / "cwa_key.txt"
@@ -100,10 +127,19 @@ def run():
         print("[錯誤] 所有 CWA dataset 都抓取失敗", file=sys.stderr)
         sys.exit(1)
 
+    # 延遲量測：頂層 UTC fetched_at + 各 dataset 的官方發布時間（best-effort，找不到留 None）
+    fetched_at = utc_now_iso()
+    latency = {
+        name: {"source_published_at": extract_source_published_at(name, records), "fetched_at": fetched_at}
+        for name, records in datasets.items()
+    }
+
     output = {
         "fetchedAt": datetime.now().isoformat(),
+        "fetched_at": fetched_at,
         "source": "cwa-open-data",
         "datasets": datasets,
+        "latency": latency,
         "errors": errors or None,
     }
     OUTPUT_PATH.write_text(
