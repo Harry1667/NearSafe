@@ -14,6 +14,13 @@ struct EventDetailView: View {
     /// 「這類警報以後不吵醒我」按過後的回饋文字（nil＝尚未按過）
     @State private var wakeMuteFeedback: String?
     @State private var isReporting = false
+    // C1：情境觸發邀請——「我平安」回報完成、圈內沒有其他人時，原地展開邀請卡
+    @State private var showSoloInviteCard = false
+    @State private var signInGate = SignInGate()
+    @State private var showRoleSelect = false
+    @State private var showInviteOptions = false
+    @State private var isInviting = false
+    @State private var inviteError: String?
     // AI 影響分析：只在使用者主動點按時才呼叫，結果存行程內快取避免重複計費
     @State private var aiImpact: String?
     @State private var aiImpactLoading = false
@@ -57,6 +64,26 @@ struct EventDetailView: View {
             .onAppear {
                 // 重開同一事件時，若行程內已有分析結果就直接顯示，不再打 AI
                 if aiImpact == nil { aiImpact = AIImpactCache.store[impactCacheKey] }
+            }
+            // C1：情境觸發邀請的登入前置＋邀請動線（沿用 FamilyListView.startInviteFlow 的作法）
+            .signInPreflight(signInGate)
+            .fullScreenCover(isPresented: $showRoleSelect) {
+                RoleSelectView(
+                    onSelect: { role in
+                        applyRole(role)
+                        showRoleSelect = false
+                        showInviteOptions = true
+                    },
+                    onSkip: {
+                        showRoleSelect = false
+                        showInviteOptions = true
+                    }
+                )
+            }
+            .sheet(isPresented: $showInviteOptions) {
+                InviteOptionsView()
+                    // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
+                    .presentationSizing(.form)
             }
         }
     }
@@ -254,9 +281,40 @@ struct EventDetailView: View {
                         .font(.caption)
                         .foregroundStyle(HCColor.safe)
                 }
+                if showSoloInviteCard {
+                    soloInviteCard
+                }
             }
             .disabled(isReporting)
         }
+    }
+
+    /// C1：情境觸發邀請——災害當下、剛按完「我平安」是邀請意願最高的瞬間，
+    /// 圈內卻沒有其他人能看到這則回報，原地補一張卡把人導去邀請動線。
+    private var soloInviteCard: some View {
+        VStack(alignment: .leading, spacing: HCSpacing.x2) {
+            Text("你的回報已記錄，但還沒有家人會看到。邀請家人，讓他們安心。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                Analytics.track("solo_checkin_invite_tapped")
+                signInGate.perform { await startInviteFlow() }
+            } label: {
+                Label("邀請家人", systemImage: "person.crop.circle.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isInviting)
+            if isInviting {
+                ProgressView()
+            }
+            if let inviteError {
+                Text(inviteError)
+                    .font(.caption)
+                    .foregroundStyle(HCColor.danger)
+            }
+        }
+        .padding(.vertical, HCSpacing.x1)
     }
 
     private func report(_ status: SafetyStatus) {
@@ -270,7 +328,40 @@ struct EventDetailView: View {
             )
             checkInFeedback = status == .pleaseReport ? "已送出確認請求" : "已送出回報"
             isReporting = false
+            // C1：只有「我平安」且圈內目前沒有其他人時才觸發——這是模擬死點 5 的核心時機
+            if status == .safe && sync.isSolo(localMembers: members) {
+                showSoloInviteCard = true
+                Analytics.track("solo_checkin_invite_shown")
+            }
         }
+    }
+
+    /// 建立家庭圈（沿用 FamilySyncService.ensureInviteReady，與 FamilyListView.startInviteFlow
+    /// 共用同一份「建或沿用」決策，不重複實作）並依是否第一次建立決定先接身分選擇還是直接開邀請碼。
+    private func startInviteFlow() async {
+        isInviting = true
+        inviteError = nil
+        defer { isInviting = false }
+        do {
+            let isFirstFamily = try await sync.ensureInviteReady(context: context)
+            if isFirstFamily {
+                showRoleSelect = true
+            } else {
+                showInviteOptions = true
+            }
+        } catch {
+            inviteError = "建立家庭圈失敗：\(error.localizedDescription)"
+            AppLog.cloudError("建立家庭圈失敗：\(error.localizedDescription)")
+        }
+    }
+
+    private func applyRole(_ role: FamilyRole) {
+        profileName = role.label
+        if let me = members.first(where: \.isCurrentUser) {
+            me.name = role.label
+            context.saveReporting()
+        }
+        Analytics.track("role_selected")
     }
 
     private var infoSection: some View {

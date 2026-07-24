@@ -278,9 +278,9 @@ struct FamilyListView: View {
         inviteError = nil
         defer { isInviting = false }
         do {
-            let isFirstFamily = sync.currentInviteCode == nil
+            // 建/沿用家庭圈的決策抽到 FamilySyncService.ensureInviteReady（C1 情境卡共用同一份）
+            let isFirstFamily = try await sync.ensureInviteReady(context: context)
             if isFirstFamily {
-                _ = try await sync.createFamily(context: context)
                 showRoleSelect = true
             } else {
                 showInviteOptions = true

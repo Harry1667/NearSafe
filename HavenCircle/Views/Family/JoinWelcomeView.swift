@@ -4,6 +4,9 @@ import SwiftUI
 /// 這是修「加入後沒有任何提示」的核心一步——舊版加入成功只有一行畫面內小字，
 /// 使用者根本沒感覺到「有效」，這裡刻意用整頁儀式感取代。
 struct JoinWelcomeView: View {
+    /// B3-1：受邀者第一眼就要知道自己加入了「誰」的圈——優先序見 JoinByCodeView.welcomeFamilyName
+    /// （自訂家庭名 >「○○ 的安心圈」>「安心圈」），不再是通用的「歡迎加入！」。
+    var familyDisplayName: String
     /// 按「繼續」後呼叫（由 JoinByCodeView 接著開身分選擇）
     var onContinue: () -> Void
 
@@ -14,8 +17,9 @@ struct JoinWelcomeView: View {
                 .font(.system(size: 72))
                 .accessibilityHidden(true)
             VStack(spacing: 8) {
-                Text("歡迎加入！")
+                Text("已加入「\(familyDisplayName)」！")
                     .font(.largeTitle.weight(.bold))
+                    .multilineTextAlignment(.center)
                 Text("災害靠近時，你和家人會互相知道平安。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -47,6 +51,6 @@ struct JoinWelcomeView: View {
 
 #if DEBUG
 #Preview {
-    JoinWelcomeView(onContinue: {})
+    JoinWelcomeView(familyDisplayName: "陳家的安心圈", onContinue: {})
 }
 #endif

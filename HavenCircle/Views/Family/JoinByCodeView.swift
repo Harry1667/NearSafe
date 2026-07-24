@@ -25,6 +25,8 @@ struct JoinByCodeView: View {
     /// 加入成功後：先播慶祝畫面（C3），「繼續」才接身分選擇
     @State private var showJoinWelcome = false
     @State private var showRoleSelect = false
+    /// B3-2：身分選完／略過之後、真正 dismiss 整個加入流程之前，插入兩題激活（位置分享／通知）
+    @State private var showActivation = false
 
     /// 格式檢查抽到 FirestoreFamilyBackend 共用（B3）：不只驗長度，也驗字元集，
     /// 讓「格式不對」與「查無此碼」是兩種不同、更精準的錯誤文案。
@@ -49,7 +51,7 @@ struct JoinByCodeView: View {
             // 輸碼與確認頁是同一個 view（preview 前後只是切換 section），只記一次
             .analyticsScreen("join_by_code")
             .fullScreenCover(isPresented: $showJoinWelcome) {
-                JoinWelcomeView {
+                JoinWelcomeView(familyDisplayName: welcomeFamilyName(preview)) {
                     showJoinWelcome = false
                     showRoleSelect = true
                 }
@@ -59,13 +61,19 @@ struct JoinByCodeView: View {
                     onSelect: { role in
                         applyRole(role)
                         showRoleSelect = false
-                        dismiss() // 落回家人頁：此時成員清單已在 joinFamily 內刷新過
+                        showActivation = true // B3-2：接著問位置分享／通知，而不是直接 dismiss
                     },
                     onSkip: {
                         showRoleSelect = false
-                        dismiss()
+                        showActivation = true
                     }
                 )
+            }
+            .fullScreenCover(isPresented: $showActivation) {
+                PostJoinActivationView {
+                    showActivation = false
+                    dismiss() // 落回家人頁：此時成員清單已在 joinFamily 內刷新過
+                }
             }
             .task(id: prefilledCode) {
                 guard let prefilledCode, !prefilledCode.isEmpty else { return }
@@ -178,6 +186,21 @@ struct JoinByCodeView: View {
             return "\(owner) 的家庭圈"
         }
         return "這組邀請碼的家庭圈"
+    }
+
+    /// B3-1：歡迎頁（JoinWelcomeView）專用抬頭。同一份 InvitePreview，但用「安心圈」品牌詞
+    /// 而非確認頁的「家庭圈」——確認頁接的是「你即將加入 ___」，這裡接的是慶祝語氣的
+    /// 「已加入「___」！」，優先序仍是：自訂家庭名 >「○○ 的安心圈」>「安心圈」。
+    private func welcomeFamilyName(_ preview: InvitePreview?) -> String {
+        guard let preview else { return "安心圈" }
+        if let name = preview.familyName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty, name != "我的家庭" {
+            return name
+        }
+        if let owner = preview.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines), !owner.isEmpty {
+            return "\(owner) 的安心圈"
+        }
+        return "安心圈"
     }
 
     private func lookupCode() async {

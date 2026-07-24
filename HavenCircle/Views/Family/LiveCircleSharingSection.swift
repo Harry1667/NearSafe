@@ -81,9 +81,8 @@ struct LiveCircleSharingSection: View {
         isWorking = true
         defer { isWorking = false }
         if enabled {
-            LocationService.shared.requestAlwaysPermission()
-            LocationService.shared.syncLiveLocationSharing(isEnabled: true)
-            await publishCurrentLocation()
+            // 開啟邏輯抽到 FamilySyncService（B3-2 與入圈後激活頁 PostJoinActivationView 共用一份）
+            await sync.enableLiveLocationSharing(radiusMeters: radiusMeters, context: context)
         } else {
             LocationService.shared.syncLiveLocationSharing(isEnabled: false)
             await sync.stopLiveLocationSharing(context: context)

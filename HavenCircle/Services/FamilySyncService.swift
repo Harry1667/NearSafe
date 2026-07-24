@@ -190,6 +190,19 @@ final class FamilySyncService {
         return try await createFamily().id
     }
 
+    /// 邀請動線共用起點：FamilyListView「邀請家人」與事件詳情頁 C1 情境卡都從這裡開始——
+    /// 還沒有家庭圈就建立一個（成為圈主）；已有的話原樣沿用現有邀請碼，不重建。
+    /// 回傳「這是不是第一次建立家庭圈」，讓呼叫端決定要不要先接身分選擇（RoleSelectView）
+    /// 再開邀請碼畫面——這個 UI 順序留在各畫面自己決定，這裡只管「確保家庭圈存在」這件事。
+    @discardableResult
+    func ensureInviteReady(context: ModelContext? = nil) async throws -> Bool {
+        let isFirstFamily = currentInviteCode == nil
+        if isFirstFamily {
+            _ = try await createFamily(context: context)
+        }
+        return isFirstFamily
+    }
+
     // MARK: - 家庭成員清單（A1）
 
     /// 從 Firestore 抓最新家庭圈根文件與成員清單，把「非本人」的成員 upsert 成本機
@@ -326,6 +339,24 @@ final class FamilySyncService {
             liveLocationError = "即時位置同步失敗：\(error.localizedDescription)"
             AppLog.cloud.error("即時位置同步失敗：\(error.localizedDescription)")
         }
+    }
+
+    /// 開啟本機位置分享的全套動作（B3-2）：LiveCircleSharingSection 的手動開關與
+    /// PostJoinActivationView 的入圈後激活頁共用同一份實作，不要各寫一份——
+    /// 要權限、寫入啟用旗標（給 App 啟動時的監聽判斷讀）、開始監聽、發布一次目前座標。
+    /// 呼叫端若在意「iCloud／登入尚未就緒」（見 LiveCircleSharingSection.iCloudUnavailable）
+    /// 要自己先擋，這裡不重複判斷——入圈後的激活頁在呼叫這裡之前必然已登入（joinFamily 前提）。
+    func enableLiveLocationSharing(radiusMeters: Int, context: ModelContext) async {
+        UserDefaults.standard.set(true, forKey: SettingsKeys.liveLocationSharingEnabled)
+        LocationService.shared.requestAlwaysPermission()
+        LocationService.shared.syncLiveLocationSharing(isEnabled: true)
+        guard let location = await LocationService.shared.currentLocation() else { return }
+        await publishLiveLocation(
+            location,
+            displayName: displayName,
+            radiusMeters: radiusMeters,
+            context: context
+        )
     }
 
     /// 停止分享：標記雲端記錄停用，並清掉本機自己的即時圈。
