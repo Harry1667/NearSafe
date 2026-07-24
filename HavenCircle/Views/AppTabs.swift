@@ -18,6 +18,10 @@ struct AppTabs: View {
 
     // DEBUG：--start-tab <n> 讓 App 直接開在指定分頁，方便自動化截圖驗證
     @State private var router = TabRouter(selection: Self.initialTab())
+    #if DEBUG
+    // DEBUG：--show-paywall 啟動即開付費牆（IAP 審查截圖用），發佈版不編入
+    @State private var debugShowPaywall = ProcessInfo.processInfo.arguments.contains("--show-paywall")
+    #endif
     // 功能導覽：黑幕聚光燈跨分頁介紹主要功能（nil＝未進行）
     @AppStorage(SettingsKeys.homeTourPending) private var homeTourPending = false
     @State private var tourStep: Int?
@@ -69,6 +73,10 @@ struct AppTabs: View {
             .environment(router)
             // 設定改為全域 sheet：任何頁面（含家人頁的「查看 Apple 帳號狀態」）都能打開
             .sheet(isPresented: Bindable(router).showSettings) { SettingsView() }
+            #if DEBUG
+            // DEBUG：--show-paywall 直接開付費牆，供自動化截圖（同 --start-tab 定式）
+            .sheet(isPresented: $debugShowPaywall) { PaywallView() }
+            #endif
             // Coach marks 顯示時，VoiceOver 只應讀到導覽卡，不可穿透到背景按鈕。
             .accessibilityHidden(tourStep != nil)
             .allowsHitTesting(tourStep == nil)

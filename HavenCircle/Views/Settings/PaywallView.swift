@@ -8,6 +8,15 @@ struct PaywallView: View {
     @Environment(EntitlementStore.self) private var store
     /// 三張方案卡的選中狀態：預設年訂為主推（低頻安全 App 用「一年的安心」對抗月訂 churn），
     /// 終身買斷是第三選項，只給想一次付清的使用者，不搶主推位置。
+    #if DEBUG
+    /// --show-paywall 截圖模式：simctl 啟動吃不到 scheme 的 .storekit 設定、商品載不到，
+    /// 改用與 HavenCircle.storekit 一致的靜態價格渲染方案卡（僅顯示用，發佈版不編入）。
+    private static let screenshotMode = ProcessInfo.processInfo.arguments.contains("--show-paywall")
+    private func staticPrice(_ value: String) -> String? { Self.screenshotMode ? value : nil }
+    #else
+    private func staticPrice(_ value: String) -> String? { nil }
+    #endif
+
     private enum PlanOption {
         case yearly, monthly, lifetime
     }
@@ -165,7 +174,7 @@ struct PaywallView: View {
 
     @ViewBuilder
     private var pricingCards: some View {
-        if let loadError = store.productLoadError {
+        if let loadError = store.productLoadError, staticPrice("") == nil {
             VStack(spacing: HCSpacing.x2) {
                 Text(loadError)
                     .font(.caption)
@@ -182,7 +191,7 @@ struct PaywallView: View {
             VStack(spacing: HCSpacing.x3) {
                 planCard(
                     title: "年訂",
-                    price: store.yearlyProduct?.displayPrice,
+                    price: store.yearlyProduct?.displayPrice ?? staticPrice("NT$690"),
                     note: yearlyNote,
                     badge: "最划算",
                     selected: selectedPlan == .yearly
@@ -191,7 +200,7 @@ struct PaywallView: View {
                 }
                 planCard(
                     title: "月訂",
-                    price: store.monthlyProduct?.displayPrice,
+                    price: store.monthlyProduct?.displayPrice ?? staticPrice("NT$90"),
                     note: "每月自動續訂 · 隨時可取消",
                     badge: nil,
                     selected: selectedPlan == .monthly
@@ -200,7 +209,7 @@ struct PaywallView: View {
                 }
                 planCard(
                     title: "終身",
-                    price: store.lifetimeProduct?.displayPrice,
+                    price: store.lifetimeProduct?.displayPrice ?? staticPrice("NT$1,490"),
                     note: "一次擁有，永久有效",
                     badge: nil,
                     selected: selectedPlan == .lifetime,
@@ -215,6 +224,9 @@ struct PaywallView: View {
     /// 年訂副標：優先顯示真實試用天數（讀自 .storekit／App Store Connect 設定的
     /// introductory offer），沒有試用資訊時退回單純的折算文案。
     private var yearlyNote: String {
+        if store.yearlyProduct == nil, staticPrice("") != nil {
+            return "約 NT$58/月 · 附 14 天免費試用"
+        }
         var parts: [String] = []
         if let yearly = store.yearlyProduct {
             let monthly = yearly.price / 12
