@@ -12,7 +12,7 @@ enum LegalDocumentKind: String, CaseIterable, Identifiable {
     case userAgreement
     case terms
 
-    static let revision = "2026-07-17"
+    static let revision = "2026-07-24"
 
     var id: String { rawValue }
 
@@ -76,8 +76,9 @@ enum LegalDocumentKind: String, CaseIterable, Identifiable {
             ]),
             .init(title: "二、我們處理的資料", paragraphs: [
                 "裝置本機資料：你輸入的顯示名稱、Apple 登入首次提供的電子郵件、聯絡備註、固定圈名稱、地址或座標、半徑、事件紀錄、提醒偏好與小工具快照。這些資料主要保存在你的裝置或 App Group。",
-                "家庭雲端資料（Google Firebase）：只有本人主動開啟即時圈後，才會把該裝置最新一筆精確位置、顯示名稱、警戒半徑、行政區、更新時間與分享狀態寫入雲端家庭圈（Firebase Firestore，伺服器位於雲端服務供應商）。安否回報可能包含狀態、備註及你另行選擇附上的一次性位置。這些資料僅同一家庭圈的成員可讀（由後端安全規則限制），家庭成員也可能看見已讀狀態。",
-                "身分與邀請資料：登入使用 Apple 的 Sign in with Apple 換取 Firebase 帳號識別碼（uid），作為家庭圈成員的身分。家庭邀請碼是一組隨機 8 碼，存在雲端邀請索引供家人輸入加入。安心圈推播中繼站只登記 APNs 裝置權杖與 sandbox／production 環境，不接收你的固定圈、姓名或即時位置。",
+                "家庭雲端資料（Google Firebase）：只有本人主動開啟即時圈後，才會把該裝置最新一筆精確位置、顯示名稱、警戒半徑、行政區、更新時間與分享狀態寫入雲端家庭圈（Firebase Firestore，伺服器位於 asia-east1 區域，即台灣以外的亞洲資料中心）。安否回報可能包含狀態、備註及你另行選擇附上的一次性位置，保存約 30 天後自動過期清除。這些資料僅同一家庭圈的成員可讀，也只能寫入自己的位置（由後端安全規則保證），家庭成員也可能看見已讀狀態。",
+                "身分與邀請資料：登入使用 Apple 的 Sign in with Apple 換取 Firebase 帳號識別碼（uid），作為家庭圈成員的身分；我們只取得 Apple 提供的識別憑證與你選擇性提供的 email，不經手也拿不到你的 Apple 密碼。家庭邀請碼是一組隨機 8 碼，存在雲端邀請索引供家人輸入加入，7 天後自動失效。安心圈推播中繼站（架設於美國鳳凰城的自營雲端主機）只登記 APNs 裝置權杖與 sandbox／production 環境，用於發送災害警報廣播；警報比對在你的裝置上完成，你的固定圈、姓名或即時位置都不會經過這台中繼站。",
+                "使用統計資料：App 預設會蒐集不含個人識別碼、不含精確位置的匿名使用統計（事件次數、頁面瀏覽與停留時長），透過關閉廣告識別功能的 Firebase Analytics 與我們自有的累計計數器彙整，用於了解功能使用狀況與除錯。你可在「設定 → 匿名使用統計」隨時整個關閉，關閉後不再蒐集也不再送出。",
                 "網站與網路資訊：造訪網站或呼叫 API 時，主機、網路服務商與網站目前使用的 Google Fonts 可能依一般技術運作處理 IP 位址、請求時間、瀏覽器或裝置資訊與錯誤紀錄。本站目前不放置廣告追蹤器或行銷分析工具。"
             ]),
             .init(title: "三、處理目的與必要性", paragraphs: [
@@ -89,12 +90,13 @@ enum LegalDocumentKind: String, CaseIterable, Identifiable {
                 "請勿替他人開啟位置分享，或在未取得本人或其法定代理人適當同意時，將他人的裝置加入即時圈。固定圈應優先使用約略地點，避免輸入不必要的門牌或個人資訊。"
             ]),
             .init(title: "五、第三方服務與資料來源", paragraphs: [
-                "App 使用 Apple 的 Sign in with Apple、APNs、MapKit 與 Core Location，以及 Google 的 Firebase（Authentication 身分驗證、Firestore 家庭雲端資料庫、Cloud Messaging 推播）；網站目前使用 Google Fonts。這些服務由各供應者依其條款與隱私政策處理資料——家庭圈與即時位置資料儲存在 Google Firebase 的伺服器。",
+                "App 使用 Apple 的 Sign in with Apple、APNs、MapKit 與 Core Location，以及 Google 的 Firebase（Authentication 身分驗證、Firestore 家庭雲端資料庫、Cloud Messaging 推播、Analytics 匿名使用統計）；網站目前使用 Google Fonts。這些服務由各供應者依其條款與隱私政策處理資料——家庭圈與即時位置資料儲存在 Google Firebase 的伺服器，屬於傳送至第三方後端的個人資料。",
                 "政府示警、新聞、空氣品質、避難所與醫療資源來自 NCDR 及政府公開資料或其整理中繼。請求公開資訊時不會附上你的警戒圈或精確位置，但網路供應者仍可能看到一般連線資訊。"
             ]),
             .init(title: "六、保存、刪除與撤回", paragraphs: [
-                "本機資料保存至你在 App 內刪除、刪除 App 或裝置系統清除為止。雲端家庭圈資料（Firebase Firestore）保存至你退出家庭圈或圈主解散為止；停止即時圈後位置會標示停止共享，不再持續更新。",
-                "家庭邀請碼在圈主重新產生前持續有效，請只分享給你信任的家人。APNs 權杖保存至你使用「刪除帳號與所有資料」撤銷、權杖失效或服務清理為止。必要的主機安全與錯誤紀錄僅於達成資安、除錯或法定目的所需期間保存，之後刪除或去識別。",
+                "本機資料保存至你在 App 內刪除、刪除 App 或裝置系統清除為止。雲端家庭圈資料（Firebase Firestore）保存至你退出家庭圈或圈主解散為止；停止即時圈後位置會標示停止共享，不再持續更新。安否回報約 30 天後自動過期清除。",
+                "家庭圈擁有者解散家庭圈後，其他成員先前留下的安否回報等歷史紀錄可能仍殘留於資料庫中一段時間，且該成員本人屆時可能已無法再透過 App 存取或刪除這些殘留紀錄；如需協助清除，請寄信至 hello@havencircle.app。",
+                "家庭邀請碼 7 天後自動失效；圈主也可隨時重新產生使舊碼提前失效，請只分享給你信任的家人。APNs 權杖保存至你使用「刪除帳號與所有資料」撤銷、權杖失效或服務清理為止。必要的主機安全與錯誤紀錄僅於達成資安、除錯或法定目的所需期間保存，之後刪除或去識別。",
                 "你可在「設定 → 刪除帳號與所有資料」清除本機資料、停止即時位置分享、退出或刪除雲端家庭圈，並要求中繼站移除目前裝置的推播權杖。你也可在 iOS 系統設定撤回定位、通知與 Apple 登入授權。"
             ]),
             .init(title: "七、你的資料權利", paragraphs: [
@@ -119,7 +121,7 @@ enum LegalDocumentKind: String, CaseIterable, Identifiable {
                 "未成年人應由法定代理人閱讀並同意。代表家庭或他人設定固定圈，不代表你有權替他們開啟即時位置分享。"
             ]),
             .init(title: "二、家庭圈與身分", paragraphs: [
-                "你應提供足以讓家人辨識、但不超過必要範圍的顯示名稱。Apple 登入與 iCloud 帳號由 Apple 管理；安心圈不持有你的 Apple 密碼。",
+                "你應提供足以讓家人辨識、但不超過必要範圍的顯示名稱。Apple 登入（Apple ID）由 Apple 管理，安心圈以 Sign in with Apple 提供的識別憑證建立 Firebase 帳號；我們不經手、也拿不到你的 Apple 密碼。",
                 "家庭圈擁有者可產生邀請碼。收到邀請的人應自行確認邀請者與家庭關係；邀請碼不得公開張貼、轉售或交給未獲同意者。"
             ]),
             .init(title: "三、即時圈的明確同意", paragraphs: [
@@ -163,7 +165,7 @@ enum LegalDocumentKind: String, CaseIterable, Identifiable {
                 "安心圈名稱、介面、程式與原創內容的權利歸其權利人所有；政府開放資料、Apple 標誌及第三方內容仍歸各自權利人所有，並依其授權使用。"
             ]),
             .init(title: "六、可用性與責任界線", paragraphs: [
-                "我們會合理維護服務，但網路、iOS 背景排程、定位、CloudKit、APNs 或第三方資料可能造成延遲、中斷或不精確。你應以官方來源、現場狀況與專業人員指示作最終判斷。",
+                "我們會合理維護服務，但網路、iOS 背景排程、定位、雲端資料庫（Firebase）、APNs 或第三方資料可能造成延遲、中斷或不精確。你應以官方來源、現場狀況與專業人員指示作最終判斷。",
                 "在法律允許範圍內，服務按現況提供；但本條款不排除或限制消費者保護法及其他強制法律不得排除的權利。若因故意或重大過失依法應負責，本條款不作不當免除。"
             ]),
             .init(title: "七、變更、終止與準據法", paragraphs: [

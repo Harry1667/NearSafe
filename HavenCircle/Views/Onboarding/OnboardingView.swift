@@ -184,7 +184,7 @@ struct OnboardingView: View {
                 Image(systemName: "person.crop.circle.badge.checkmark")
                     .font(.system(size: 56))
                     .foregroundStyle(HCColor.brand)
-                stepHeader("用 Apple 帳號登入", "正式設定時可帶入名稱與 email，並使用 iCloud 家庭圈；這次重看不會開啟登入視窗。")
+                stepHeader("用 Apple 帳號登入", "正式設定時可帶入名稱與 email，並建立 Firebase 家庭圈；這次重看不會開啟登入視窗。")
                 Spacer()
                 primaryButton("下一步") { withAnimation { step = .name } }
             }
@@ -293,7 +293,7 @@ struct OnboardingView: View {
                             }
                         }
                 } footer: {
-                    Text("開啟後，警戒圈會跟著這支手機移動，並在加入家庭 iCloud 後分享給家人。設定完成後會再詢問是否升級為「永遠允許」定位，讓離開 App 後也能更新；可隨時在家人頁停止，畫面會標示最後更新時間。")
+                    Text("開啟後，警戒圈會跟著這支手機移動，並在登入 Apple 帳號、加入家庭圈後分享給家人。設定完成後會再詢問是否升級為「永遠允許」定位，讓離開 App 後也能更新；可隨時在家人頁停止，畫面會標示最後更新時間。")
                 }
             }
             .scrollContentBackground(.hidden)
@@ -430,7 +430,7 @@ struct OnboardingView: View {
                     HStack(spacing: 0) {
                         valueCard("person.crop.circle.badge.plus", HCColor.brand,
                                   "邀請家人（可略過）",
-                                  "點這裡完成設定並前往「家人」頁，用 QR code 或 8 位邀請碼邀請；需要登入 iCloud。")
+                                  "點這裡完成設定並前往「家人」頁，用 QR code 或 8 位邀請碼邀請；需要登入 Apple 帳號。")
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
@@ -523,7 +523,7 @@ struct OnboardingView: View {
             Divider()
             setupSummaryRow("通知", value: notificationSummary, icon: "bell.fill")
             Divider()
-            setupSummaryRow("iCloud", value: iCloudSummary, icon: "icloud.fill")
+            setupSummaryRow("Apple 帳號", value: iCloudSummary, icon: "person.crop.circle.fill")
             Divider()
             setupSummaryRow("定位權限", value: locationAuthorizationSummary, icon: "hand.raised.fill")
         }

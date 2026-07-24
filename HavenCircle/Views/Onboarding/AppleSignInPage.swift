@@ -45,7 +45,7 @@ struct AppleSignInPage: View {
             }
 
             Spacer()
-            Text("不登入也能使用完整的地圖與警報功能；家人安否回報需要 iCloud，之後隨時可以再登入。")
+            Text("不登入也能使用完整的地圖與警報功能；家人安否回報需要登入 Apple 帳號，之後隨時可以再登入。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
