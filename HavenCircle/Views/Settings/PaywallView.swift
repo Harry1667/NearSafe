@@ -26,7 +26,7 @@ struct PaywallView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: HCSpacing.x6) {
                     header
                     safetyFreeBanner
                     if store.isPlus {
@@ -38,7 +38,7 @@ struct PaywallView: View {
                         if let purchaseError = store.purchaseError {
                             Text(purchaseError)
                                 .font(.caption)
-                                .foregroundStyle(HCColor.danger)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                         }
                         restoreAndManageButtons
@@ -46,8 +46,8 @@ struct PaywallView: View {
                     finePrint
                     legalLinks
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 32)
+                .padding(.horizontal, HCSpacing.x4)
+                .padding(.bottom, HCSpacing.x6)
             }
             .navigationTitle("升級 Guardian+")
             .navigationBarTitleDisplayMode(.inline)
@@ -63,10 +63,24 @@ struct PaywallView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "crown.fill")
-                .font(.system(size: 46))
-                .foregroundStyle(HCColor.notice)
+        VStack(spacing: HCSpacing.x3) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [HCColor.brand.opacity(0.18), HCColor.brand.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 96, height: 96)
+                Circle()
+                    .stroke(HCColor.brand.opacity(0.16), lineWidth: 1)
+                    .frame(width: 80, height: 80)
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundStyle(HCColor.brand)
+            }
             Text("守護更多人、更大範圍")
                 .font(.title2.weight(.bold))
                 .multilineTextAlignment(.center)
@@ -75,28 +89,28 @@ struct PaywallView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .padding(.top, 12)
+        .padding(.top, HCSpacing.x3)
     }
 
     /// 最醒目的一條：安全永遠免費（倫理與信任的核心訊息）
     private var safetyFreeBanner: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: HCSpacing.x3) {
             Image(systemName: "checkmark.shield.fill")
-                .foregroundStyle(HCColor.safe)
+                .fontWeight(.medium)
+                .foregroundStyle(HCColor.brand)
             Text("火災、地震、颱風等**保命警報永遠免費**，付費只解鎖規模與便利。")
-                .font(.footnote)
+                .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(HCColor.safe.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .hcCard()
     }
 
     /// 已是 Guardian+：整頁改為感謝狀態，不再顯示購買 UI。
     private var guardianPlusStatusCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: HCSpacing.x3) {
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 40))
+                .font(.system(size: 40, weight: .medium))
                 .foregroundStyle(HCColor.brand)
             Text("你已是 Guardian+")
                 .font(.title3.weight(.bold))
@@ -110,42 +124,40 @@ struct PaywallView: View {
                 Text("管理訂閱")
                     .font(.subheadline.weight(.semibold))
             }
-            .padding(.top, 4)
+            .padding(.top, HCSpacing.x1)
         }
-        .padding(20)
         .frame(maxWidth: .infinity)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .hcCard()
     }
 
     private var comparisonCard: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("功能").font(.footnote.weight(.semibold)).frame(maxWidth: .infinity, alignment: .leading)
-                Text("免費").font(.footnote.weight(.semibold)).frame(width: 76)
-                Text("Guardian+").font(.footnote.weight(.bold)).foregroundStyle(HCColor.brand).frame(width: 84)
+                Text("功能").font(.caption.weight(.semibold)).frame(maxWidth: .infinity, alignment: .leading)
+                Text("免費").font(.caption.weight(.semibold)).frame(width: 72)
+                Text("Guardian+").font(.caption.weight(.bold)).foregroundStyle(HCColor.brand).frame(width: 88)
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, HCSpacing.x2)
             Divider()
             ForEach(tiers, id: \.feature) { row in
-                HStack {
-                    Text(row.feature).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(row.free).font(.footnote).foregroundStyle(.secondary).frame(width: 76)
-                    Text(row.plus).font(.footnote.weight(.semibold)).foregroundStyle(HCColor.brand).frame(width: 84)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(row.feature).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(row.free).font(.caption).foregroundStyle(.secondary).frame(width: 72)
+                    Text(row.plus).font(.caption.weight(.semibold)).foregroundStyle(HCColor.brand).frame(width: 88)
                 }
-                .padding(.vertical, 9)
+                .padding(.vertical, HCSpacing.x2)
                 if row.feature != tiers.last?.feature { Divider() }
             }
         }
-        .padding(.horizontal, 14)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .hcCard()
     }
 
     @ViewBuilder
     private var pricingCards: some View {
         if let loadError = store.productLoadError {
-            VStack(spacing: 10) {
+            VStack(spacing: HCSpacing.x2) {
                 Text(loadError)
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("重試") {
@@ -154,15 +166,14 @@ struct PaywallView: View {
                 .font(.subheadline.weight(.semibold))
             }
             .frame(maxWidth: .infinity)
-            .padding(16)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            .hcCard()
         } else {
-            VStack(spacing: 12) {
+            VStack(spacing: HCSpacing.x3) {
                 planCard(
                     title: "年訂",
                     price: store.yearlyProduct?.displayPrice,
                     note: yearlyNote,
-                    badge: "最超值",
+                    badge: "最划算",
                     selected: yearlySelected
                 ) {
                     yearlySelected = true
@@ -218,18 +229,23 @@ struct PaywallView: View {
         tap: @escaping () -> Void
     ) -> some View {
         Button(action: tap) {
-            HStack(spacing: 14) {
-                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+            HStack(spacing: HCSpacing.x3) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(selected ? HCColor.brand : .secondary)
-                    .font(.title3)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
-                        Text(title).font(.headline)
+                    .font(.title3.weight(.medium))
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                    HStack(spacing: HCSpacing.x2) {
+                        Text(title).font(.body.weight(.semibold))
                         if let badge {
-                            Text(badge).font(.caption2.weight(.bold))
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(HCColor.notice.opacity(0.2), in: Capsule())
-                                .foregroundStyle(HCColor.notice)
+                            Text(badge)
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, HCSpacing.x2)
+                                .padding(.vertical, HCSpacing.x1)
+                                .background(
+                                    HCColor.brand.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: HCRadius.chip, style: .continuous)
+                                )
+                                .foregroundStyle(HCColor.brand)
                         }
                     }
                     Text(note).font(.caption).foregroundStyle(.secondary)
@@ -244,11 +260,12 @@ struct PaywallView: View {
                         .redacted(reason: .placeholder)
                 }
             }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
+            .hcCard()
+            .overlay(
+                RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
                     .stroke(selected ? HCColor.brand : Color(.separator), lineWidth: selected ? 2 : 1)
             )
+            .shadow(color: selected ? HCColor.brand.opacity(0.12) : .clear, radius: 8, y: 4)
         }
         .buttonStyle(.plain)
         .disabled(price == nil)
@@ -261,16 +278,23 @@ struct PaywallView: View {
             HStack {
                 if store.purchaseInProgress {
                     ProgressView()
-                        .tint(.white)
+                        .tint(yearlySelected ? .white : HCColor.brand)
                 } else {
                     Text(ctaTitle)
-                        .font(.headline)
+                        .font(.body.weight(.semibold))
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
-            .background(HCColor.brand, in: RoundedRectangle(cornerRadius: 14))
-            .foregroundStyle(.white)
+            .padding(.vertical, HCSpacing.x3)
+            .background(
+                yearlySelected ? HCColor.brand : Color.clear,
+                in: RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous)
+                    .stroke(yearlySelected ? Color.clear : Color(.separator), lineWidth: 1)
+            )
+            .foregroundStyle(yearlySelected ? .white : .primary)
         }
         .disabled(store.purchaseInProgress || selectedProduct == nil)
     }
@@ -292,7 +316,7 @@ struct PaywallView: View {
     }
 
     private var restoreAndManageButtons: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: HCSpacing.x6) {
             Button("恢復購買") {
                 Task { await store.restorePurchases() }
             }
@@ -300,25 +324,26 @@ struct PaywallView: View {
                 showManageSubscriptions = true
             }
         }
-        .font(.footnote.weight(.semibold))
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
         .disabled(store.purchaseInProgress)
     }
 
     private var finePrint: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: HCSpacing.x2) {
             // 倫理承諾：不分免費或付費，保命警報一律免費——這是信任的底線，寫在付費頁最顯眼的收尾處
             Text("災害警報推播永遠免費，不分免費或付費。")
                 .foregroundStyle(.secondary)
             Text("訂閱為自動續訂：除非在到期前至少 24 小時取消，否則會自動以相同方案續約並向 Apple 帳號扣款；可隨時在「設定 > Apple 帳號 > 訂閱」中取消或管理。試用期內取消不收費。")
             Text("安心圈不是 110／119 或緊急救難服務。")
         }
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
+        .font(.caption)
+        .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
     }
 
     private var legalLinks: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: HCSpacing.x4) {
             NavigationLink("隱私權政策") {
                 LegalDocumentView(document: .privacy)
             }
@@ -326,7 +351,7 @@ struct PaywallView: View {
                 LegalDocumentView(document: .terms)
             }
         }
-        .font(.caption2)
+        .font(.caption)
         .foregroundStyle(.secondary)
     }
 }

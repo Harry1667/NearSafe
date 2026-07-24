@@ -98,6 +98,7 @@ struct FamilyListView: View {
                 Button("新增重要地點", systemImage: "mappin.and.ellipse") { gateAddPlace() }
             } label: {
                 Label("新增", systemImage: "plus")
+                    .fontWeight(.medium)
             }
         }
         .signInPreflight(signInGate)
@@ -179,8 +180,10 @@ struct FamilyListView: View {
         Section {
             HStack(spacing: HCSpacing.x3) {
                 Text(roleEmoji(for: myDisplayName))
-                    .font(.system(size: 32))
-                VStack(alignment: .leading, spacing: 2) {
+                    .font(.system(size: 30))
+                    .frame(width: 48, height: 48)
+                    .background(.secondary.opacity(0.08), in: Circle())
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text(myDisplayName).font(.body.weight(.semibold))
                     Text(accountSubtitle)
                         .font(.caption)
@@ -191,13 +194,22 @@ struct FamilyListView: View {
                     Button("登入") {
                         signInGate.isPresentingPreflight = true
                     }
-                    .font(.footnote.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                 }
             }
-            .padding(.vertical, HCSpacing.x1)
+            .hcCard()
         } header: {
             Text("我的帳號")
         }
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
+        .listRowBackground(Color.clear)
     }
 
     private var accountSubtitle: String {
@@ -211,10 +223,15 @@ struct FamilyListView: View {
     /// 不能再放一排並列 Section 讓人自己猜入口在哪。
     private var emptyStateSection: some View {
         Section {
-            VStack(spacing: HCSpacing.x3) {
-                Image(systemName: "person.2.slash")
-                    .font(.system(size: 36))
-                    .foregroundStyle(HCColor.brand)
+            VStack(spacing: HCSpacing.x4) {
+                ZStack {
+                    Circle()
+                        .fill(HCColor.brand.opacity(0.10))
+                        .frame(width: 72, height: 72)
+                    Image(systemName: "person.2.slash")
+                        .font(.system(size: 32, weight: .medium))
+                        .foregroundStyle(HCColor.brand)
+                }
                 Text("災害來的時候，一個人知道不夠。")
                     .font(.title3.weight(.bold))
                     .multilineTextAlignment(.center)
@@ -222,10 +239,11 @@ struct FamilyListView: View {
                     signInGate.perform { await startInviteFlow() }
                 } label: {
                     Label("邀請家人", systemImage: "person.crop.circle.badge.plus")
-                        .font(.headline)
+                        .font(.body.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(isInviting)
                 if isInviting {
                     ProgressView()
@@ -233,7 +251,7 @@ struct FamilyListView: View {
                 if let inviteError {
                     Text(inviteError)
                         .font(.caption)
-                        .foregroundStyle(HCColor.danger)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 Button("我收到了邀請碼") {
@@ -242,13 +260,21 @@ struct FamilyListView: View {
                         showJoinByCode = true
                     }
                 }
-                .font(.footnote)
+                .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, HCSpacing.x4)
+            .padding(.vertical, HCSpacing.x2)
+            .hcCard()
         }
-        .listRowInsets(EdgeInsets())
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
         .listRowBackground(Color.clear)
     }
 
@@ -260,9 +286,11 @@ struct FamilyListView: View {
             } label: {
                 HStack(spacing: HCSpacing.x3) {
                     Image(systemName: "mappin.and.ellipse")
-                        .font(.title2)
-                        .foregroundStyle(HCColor.medical)
-                    VStack(alignment: .leading, spacing: 2) {
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, height: 40)
+                        .background(.secondary.opacity(0.08), in: Circle())
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
                         Text("新增重要地點").font(.body.weight(.medium))
                         Text("爸媽家、公司，都能設警戒圈")
                             .font(.caption)
@@ -270,13 +298,23 @@ struct FamilyListView: View {
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
+                .hcCard()
             }
             .buttonStyle(.plain)
         }
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
+        .listRowBackground(Color.clear)
     }
 
     /// 建立家庭圈（若尚未建立）並開啟邀請碼畫面。首次建立家庭圈成功後先接身分選擇（C3），
@@ -312,16 +350,27 @@ struct FamilyListView: View {
 
     private var waitingForFamilyCard: some View {
         Section {
-            VStack(spacing: HCSpacing.x3) {
-                Image(systemName: "hourglass")
-                    .font(.system(size: 32))
-                    .foregroundStyle(HCColor.brand)
+            VStack(spacing: HCSpacing.x4) {
+                ZStack {
+                    Circle()
+                        .fill(HCColor.brand.opacity(0.10))
+                        .frame(width: 72, height: 72)
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(HCColor.brand)
+                }
                 Text("等待家人加入")
                     .font(.title3.weight(.bold))
                 if let code = sync.currentInviteCode {
                     Text(code)
-                        .font(.system(.title, design: .monospaced).bold())
-                        .kerning(3)
+                        .font(.system(.title2, design: .monospaced).weight(.bold))
+                        .tracking(HCSpacing.x1)
+                        .padding(.horizontal, HCSpacing.x4)
+                        .padding(.vertical, HCSpacing.x2)
+                        .background(
+                            .primary.opacity(0.06),
+                            in: RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous)
+                        )
                 }
                 Text("把邀請碼給家人，或讓他們掃你畫面上的 QR code 就能加入。")
                     .font(.caption)
@@ -331,15 +380,24 @@ struct FamilyListView: View {
                     showInviteOptions = true
                 } label: {
                     Label("再次分享", systemImage: "square.and.arrow.up")
-                        .font(.headline)
+                        .font(.body.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, HCSpacing.x4)
+            .padding(.vertical, HCSpacing.x2)
+            .hcCard()
         }
-        .listRowInsets(EdgeInsets())
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
         .listRowBackground(Color.clear)
     }
 
@@ -349,9 +407,9 @@ struct FamilyListView: View {
         Section {
             HStack(spacing: HCSpacing.x3) {
                 Image(systemName: "house.fill")
-                    .font(.title2)
+                    .font(.title3.weight(.medium))
                     .foregroundStyle(HCColor.brand)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
                     Text(familyCircleDisplayName)
                         .font(.title3.weight(.bold))
                     Text("\(max(sync.memberUids.count, 1)) 位成員")
@@ -374,6 +432,16 @@ struct FamilyListView: View {
                     } label: {
                         memberRow(member)
                     }
+                    .hcCard()
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: HCSpacing.x1,
+                            leading: HCSpacing.x4,
+                            bottom: HCSpacing.x1,
+                            trailing: HCSpacing.x4
+                        )
+                    )
+                    .listRowBackground(Color.clear)
                     .swipeActions {
                         Button(role: .destructive) {
                             context.delete(member)
@@ -391,9 +459,10 @@ struct FamilyListView: View {
         let circleCount = member.lifeCircles.count
         return HStack(spacing: HCSpacing.x3) {
             Text(roleEmoji(for: member.name))
-                .font(.system(size: 26))
-                .frame(width: 32)
-            VStack(alignment: .leading, spacing: 2) {
+                .font(.system(size: 24))
+                .frame(width: 40, height: 40)
+                .background(.secondary.opacity(0.08), in: Circle())
+            VStack(alignment: .leading, spacing: HCSpacing.x1) {
                 Text(member.name).font(.body.weight(.medium))
                 Text("\(lastPingText(member)) · \(locationStatusText(member))")
                     .font(.caption)
@@ -401,10 +470,9 @@ struct FamilyListView: View {
             }
             Spacer()
             Text("\(circleCount) 圈")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .padding(.vertical, HCSpacing.x1)
     }
 
     @ViewBuilder
@@ -417,8 +485,9 @@ struct FamilyListView: View {
                     } label: {
                         HStack(spacing: HCSpacing.x3) {
                             Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(HCColor.medical)
-                            VStack(alignment: .leading, spacing: 2) {
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: HCSpacing.x1) {
                                 Text(place.name)
                                 let fixedCount = place.lifeCircles.filter { $0.kind == .fixed }.count
                                 Text("\(fixedCount) 個固定圈")
@@ -461,7 +530,7 @@ struct FamilyListView: View {
             if let leaveError {
                 Text(leaveError)
                     .font(.caption)
-                    .foregroundStyle(HCColor.danger)
+                    .foregroundStyle(.secondary)
             }
         }
     }

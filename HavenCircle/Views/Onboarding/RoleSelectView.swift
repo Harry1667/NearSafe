@@ -38,9 +38,11 @@ struct RoleSelectView: View {
     @State private var showCustomInput = false
     @State private var customName = ""
 
-    private let columns = [GridItem(.flexible(), spacing: 12),
-                           GridItem(.flexible(), spacing: 12),
-                           GridItem(.flexible(), spacing: 12)]
+    private let columns = [
+        GridItem(.flexible(), spacing: HCSpacing.x3),
+        GridItem(.flexible(), spacing: HCSpacing.x3),
+        GridItem(.flexible(), spacing: HCSpacing.x3),
+    ]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,28 +53,28 @@ struct RoleSelectView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
+                .padding(.horizontal, HCSpacing.x4)
+                .padding(.top, HCSpacing.x4)
             }
-            VStack(spacing: 8) {
+            VStack(spacing: HCSpacing.x2) {
                 Text("你在家裡是誰？")
-                    .font(.title.weight(.bold))
+                    .font(.title2.weight(.bold))
                 Text("選家人平常對你的稱呼，\n他們就能一眼認出你。之後可在設定更改。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            .padding(.top, onSkip == nil ? 40 : 12)
-            .padding(.horizontal, 24)
+            .padding(.top, onSkip == nil ? HCSpacing.x6 : HCSpacing.x3)
+            .padding(.horizontal, HCSpacing.x6)
 
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: columns, spacing: HCSpacing.x3) {
                     ForEach(FamilyRole.all) { role in
                         roleTile(role)
                     }
                     customTile
                 }
-                .padding(20)
+                .padding(HCSpacing.x4)
             }
         }
         // iPad 上限制內容欄寬度並置中，避免固定 3 欄的方塊在 13 吋螢幕上被拉得過大
@@ -101,7 +103,7 @@ struct RoleSelectView: View {
         } label: {
             tileLabel(emoji: role.emoji, title: role.label)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RoleTileButtonStyle())
         .accessibilityLabel(role.label)
     }
 
@@ -112,27 +114,43 @@ struct RoleSelectView: View {
         } label: {
             tileLabel(emoji: FamilyRole.customEmoji, title: "其他稱呼")
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RoleTileButtonStyle())
         .accessibilityLabel("其他稱呼，自行輸入")
     }
 
     private func tileLabel(emoji: String, title: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: HCSpacing.x2) {
             Text(emoji)
-                .font(.system(size: 40))
+                .font(.system(size: 44))
             Text(title)
-                .font(.headline)
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.primary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .background(HCColor.brand.opacity(0.06),
-                    in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
-                .stroke(HCColor.brand.opacity(0.18), lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .hcCard()
+        .aspectRatio(1, contentMode: .fit)
         .contentShape(RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
+    }
+}
+
+/// 方塊維持安靜的灰階卡面，手指按下時才用品牌色描邊與縮放確認選取。
+private struct RoleTileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .overlay(
+                RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+                    .stroke(
+                        configuration.isPressed ? HCColor.brand : Color(.separator),
+                        lineWidth: configuration.isPressed ? 2 : 1
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .shadow(
+                color: configuration.isPressed ? HCColor.brand.opacity(0.14) : .clear,
+                radius: 8,
+                y: 4
+            )
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }
 

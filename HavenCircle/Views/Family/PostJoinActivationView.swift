@@ -72,12 +72,20 @@ struct PostJoinActivationView: View {
         primaryAction: @escaping () -> Void,
         secondaryAction: @escaping () -> Void
     ) -> some View {
-        VStack(spacing: HCSpacing.x4) {
+        VStack(spacing: HCSpacing.x6) {
             Spacer()
-            Image(systemName: icon)
-                .font(.system(size: 44, weight: .semibold))
-                .foregroundStyle(HCColor.brand)
-            VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(HCColor.brand.opacity(0.10))
+                    .frame(width: 104, height: 104)
+                Circle()
+                    .stroke(HCColor.brand.opacity(0.14), lineWidth: 1)
+                    .frame(width: 80, height: 80)
+                Image(systemName: icon)
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundStyle(HCColor.brand)
+            }
+            VStack(spacing: HCSpacing.x2) {
                 Text(title)
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
@@ -86,21 +94,34 @@ struct PostJoinActivationView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
+            Spacer()
             if isWorking {
                 ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, HCSpacing.x6)
             } else {
-                Button(action: primaryAction) {
-                    Text(primaryLabel)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
+                VStack(spacing: HCSpacing.x3) {
+                    Button(action: primaryAction) {
+                        Text(primaryLabel)
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(HCColor.brand)
 
-                Button("先不用", action: secondaryAction)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Button(action: secondaryAction) {
+                        Text("先不用")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .tint(Color.secondary)
+                }
+                .padding(.bottom, HCSpacing.x6)
             }
-            Spacer()
         }
         .padding(.horizontal, HCSpacing.x6)
         .transition(.opacity)

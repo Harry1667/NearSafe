@@ -13,12 +13,25 @@ struct JoinWelcomeView: View {
     var body: some View {
         VStack(spacing: HCSpacing.x6) {
             Spacer()
-            Text("🎉")
-                .font(.system(size: 72))
+            ZStack {
+                Circle()
+                    .fill(HCColor.brand.opacity(0.10))
+                    .frame(width: 112, height: 112)
+                Circle()
+                    .stroke(HCColor.brand.opacity(0.14), lineWidth: 1)
+                    .frame(width: 88, height: 88)
+                Image(systemName: "person.3.fill")
+                    .font(.system(size: 42, weight: .medium))
+                    .foregroundStyle(HCColor.brand)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(HCColor.brand)
+                    .offset(x: 36, y: 36)
+            }
                 .accessibilityHidden(true)
-            VStack(spacing: 8) {
+            VStack(spacing: HCSpacing.x2) {
                 Text("已加入「\(familyDisplayName)」！")
-                    .font(.largeTitle.weight(.bold))
+                    .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
                 Text("災害靠近時，你和家人會互相知道平安。")
                     .font(.subheadline)
@@ -30,10 +43,12 @@ struct JoinWelcomeView: View {
                 onContinue()
             } label: {
                 Text("繼續")
-                    .font(.headline)
+                    .font(.body.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(HCColor.brand)
             .padding(.bottom, HCSpacing.x4)
         }
         .padding(.horizontal, HCSpacing.x6)

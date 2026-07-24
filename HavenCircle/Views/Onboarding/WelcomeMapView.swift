@@ -56,7 +56,7 @@ struct WelcomeMapView: View {
             // 卡片置中（與帶領卡一致）；iPad 上限制卡片寬度，ZStack 預設 .center 對齊會自動置中
             bottomCard
                 .frame(maxWidth: 440)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, HCSpacing.x4)
         }
         .ignoresSafeArea(edges: .top)
         .analyticsScreen("onboarding_welcome")
@@ -121,19 +121,18 @@ struct WelcomeMapView: View {
     /// 邀請階段：一句話＋一行副標（2026-07-23 模擬走查：刪光開場白判定「剛好」，
     /// 唯一代價是少數人不知 App 幹嘛——一行副標封頂，不回退成兩段文字）
     private var introCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: HCSpacing.x3) {
             tapHint
             Text("點一下地圖，找到你家")
                 .font(.title3.weight(.bold))
             Text("災害靠近時，全家都知道")
-                .font(.footnote)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .padding(.horizontal, 20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
+        .padding(.vertical, HCSpacing.x2)
+        .hcCard()
+        .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
         // 讓整張卡也能點（等同點地圖）
         .contentShape(Rectangle())
         .onTapGesture { askLocationOnce() }
@@ -143,20 +142,24 @@ struct WelcomeMapView: View {
     /// 鏡頭飛到你家本身就是回饋，多一次點擊是純拖延（模擬走查修正：省一步）。
     /// 鏡頭動畫走完後自動進下一步（見 focusOnUser 的排程）。
     private var grantedCard: some View {
-        Label("找到你了", systemImage: "checkmark.circle.fill")
-            .font(.headline)
+        HStack(spacing: HCSpacing.x2) {
+            Image(systemName: "checkmark.circle.fill")
+                .fontWeight(.medium)
+            Text("找到你了")
+                .font(.body.weight(.semibold))
+        }
             .foregroundStyle(HCColor.brand)
-            .padding(.vertical, 16)
-            .padding(.horizontal, 24)
-            .background(.regularMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
+            .symbolRenderingMode(.monochrome)
+            .padding(.vertical, HCSpacing.x1)
+            .hcCard()
+            .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
             .transition(.opacity)
     }
 
     /// 拒絕定位：溫和說明＋引導去設定；同時保留「先略過」的出路
     private var deniedCard: some View {
-        VStack(spacing: 14) {
-            VStack(spacing: 6) {
+        VStack(spacing: HCSpacing.x3) {
+            VStack(spacing: HCSpacing.x2) {
                 Text("沒有定位也沒關係")
                     .font(.title3.weight(.bold))
                 Text("安心圈需要你的位置，才能在災害發生時\n讓家人找到你。你可以隨時到「設定」開啟。")
@@ -167,12 +170,16 @@ struct WelcomeMapView: View {
             Button {
                 openSystemSettings()
             } label: {
-                Text("前往設定開啟定位")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                HStack(spacing: HCSpacing.x2) {
+                    Image(systemName: "location.fill")
+                        .fontWeight(.medium)
+                    Text("前往設定開啟定位")
+                        .font(.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .tint(HCColor.brand)
 
             Button("先看看，稍後再開", action: onContinue)
@@ -180,15 +187,14 @@ struct WelcomeMapView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
+        .hcCard()
+        .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
     }
 
     /// 邀請階段的點擊提示：一個輕輕呼吸的手勢圖示（尊重減少動態設定）。
     private var tapHint: some View {
         Image(systemName: "hand.tap.fill")
-            .font(.system(size: 30, weight: .regular))
+            .font(.system(size: 32, weight: .medium))
             .foregroundStyle(HCColor.brand)
             .symbolEffect(.pulse, options: reduceMotion ? .nonRepeating : .repeating)
             .accessibilityHidden(true)
