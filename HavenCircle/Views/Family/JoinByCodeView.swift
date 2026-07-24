@@ -1,7 +1,10 @@
 import SwiftUI
 import SwiftData
 
-/// 用 8 位邀請碼加入家庭圈：查 Firestore 邀請碼索引 → 加入該家庭的成員。
+/// 用 8 位邀請碼加入家庭圈：兩段式流程（C2）——
+/// 先查 Firestore 邀請碼索引拿到「要加入誰的家庭圈」的預覽（只讀，不寫入任何資料），
+/// 使用者看到「你即將加入○○的家庭圈」確認後才真正呼叫 joinFamily，
+/// 不會因為手滑打對一組陌生碼就悄悄加入不認識的家庭圈。
 struct JoinByCodeView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(\.dismiss) private var dismiss
@@ -9,86 +12,208 @@ struct JoinByCodeView: View {
     @Query private var members: [LocalFamilyMember]
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
 
+    /// B2：deep link／QR 帶入的預填碼；出現時自動觸發一次查詢，省去使用者再打一次字。
+    var prefilledCode: String? = nil
+
     @State private var code = ""
+    @State private var isLookingUp = false
+    @State private var lookupError: String?
+    /// 查到的邀請預覽：非 nil＝進入「加入前確認」畫面（C2）
+    @State private var preview: InvitePreview?
     @State private var isJoining = false
     @State private var joinError: String?
-    @State private var joined = false
-    /// 加入成功後接身分選擇（C3）：新加入的人多半還沒被問過「你在家裡是誰」
+    /// 加入成功後：先播慶祝畫面（C3），「繼續」才接身分選擇
+    @State private var showJoinWelcome = false
     @State private var showRoleSelect = false
 
+    /// 格式檢查抽到 FirestoreFamilyBackend 共用（B3）：不只驗長度，也驗字元集，
+    /// 讓「格式不對」與「查無此碼」是兩種不同、更精準的錯誤文案。
     private var isCodeValid: Bool {
-        code.trimmingCharacters(in: .whitespaces).count == 8
+        FirestoreFamilyBackend.isValidInviteCodeFormat(code)
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                if joined {
-                    Section {
-                        Label("已加入家庭圈！", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(HCColor.safe)
-                        Text("現在可以在「安否回報」跟家人互報平安。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                if let preview {
+                    confirmSection(preview)
                 } else {
-                    Section("輸入家人給你的 8 位邀請碼") {
-                        TextField("例如 AB12CD34", text: $code)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                            .font(.system(.title2, design: .monospaced))
-                            .onChange(of: code) { _, newValue in
-                                // 只留合法字元、最多 8 碼，貼上帶空格也能正常
-                                code = String(newValue.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8))
-                            }
-                        Button {
-                            Task { await join() }
-                        } label: {
-                            HStack {
-                                Label("加入家庭圈", systemImage: "person.2.badge.plus")
-                                if isJoining {
-                                    Spacer()
-                                    ProgressView()
-                                }
-                            }
-                        }
-                        .disabled(!isCodeValid || isJoining)
-                        if let joinError {
-                            Text(joinError)
-                                .font(.caption)
-                                .foregroundStyle(HCColor.danger)
-                        }
-                    }
+                    inputSection
                 }
             }
-            .navigationTitle("用邀請碼加入")
+            .navigationTitle(preview == nil ? "用邀請碼加入" : "確認加入")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button(joined ? "完成" : "取消") { dismiss() }
+                Button("取消") { dismiss() }
+            }
+            .fullScreenCover(isPresented: $showJoinWelcome) {
+                JoinWelcomeView {
+                    showJoinWelcome = false
+                    showRoleSelect = true
+                }
             }
             .fullScreenCover(isPresented: $showRoleSelect) {
                 RoleSelectView(
                     onSelect: { role in
                         applyRole(role)
                         showRoleSelect = false
+                        dismiss() // 落回家人頁：此時成員清單已在 joinFamily 內刷新過
                     },
-                    onSkip: { showRoleSelect = false }
+                    onSkip: {
+                        showRoleSelect = false
+                        dismiss()
+                    }
                 )
+            }
+            .task(id: prefilledCode) {
+                guard let prefilledCode, !prefilledCode.isEmpty else { return }
+                code = String(prefilledCode.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8))
+                await lookupCode()
             }
         }
     }
 
-    private func join() async {
+    // MARK: - 第一段：輸碼／掃碼
+
+    private var inputSection: some View {
+        Section {
+            TextField("例如 AB12CD34", text: $code)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .font(.system(.title2, design: .monospaced))
+                .onChange(of: code) { _, newValue in
+                    // 只留合法字元、最多 8 碼，貼上帶空格也能正常
+                    code = String(newValue.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8))
+                }
+            HStack {
+                // PasteButton 不會觸發剪貼簿存取的系統提示（比 UIPasteboard 直讀更禮貌）
+                PasteButton(payloadType: String.self) { strings in
+                    guard let first = strings.first else { return }
+                    code = String(first.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8))
+                }
+                .buttonBorderShape(.capsule)
+                Spacer()
+            }
+            Button {
+                Task { await lookupCode() }
+            } label: {
+                HStack {
+                    Label("下一步", systemImage: "arrow.right.circle.fill")
+                    if isLookingUp {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(!isCodeValid || isLookingUp)
+            if let lookupError {
+                Text(lookupError)
+                    .font(.caption)
+                    .foregroundStyle(HCColor.danger)
+            }
+        } header: {
+            Text("輸入家人給你的 8 位邀請碼")
+        } footer: {
+            Text("也可以直接用相機掃家人的 QR code。")
+        }
+    }
+
+    // MARK: - 第二段：加入前確認（C2）
+
+    private func confirmSection(_ preview: InvitePreview) -> some View {
+        Section {
+            VStack(spacing: HCSpacing.x3) {
+                Text("你即將加入")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(inviteTitle(preview))
+                    .font(.title2.weight(.bold))
+                    .multilineTextAlignment(.center)
+
+                if isJoining {
+                    ProgressView()
+                        .padding(.vertical, HCSpacing.x2)
+                } else {
+                    Button {
+                        Task { await join(familyId: preview.familyId) }
+                    } label: {
+                        Text("加入")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("取消") {
+                        self.preview = nil
+                        joinError = nil
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+
+                if let joinError {
+                    Text(joinError)
+                        .font(.caption)
+                        .foregroundStyle(HCColor.danger)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, HCSpacing.x4)
+        }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+    }
+
+    /// C2 標題優先序：自訂家庭名（非預設值「我的家庭」）優先；否則用「○○的家庭圈」；
+    /// 兩者皆缺（舊邀請碼，補欄位之前建立的）就用通用降級文案。
+    private func inviteTitle(_ preview: InvitePreview) -> String {
+        if let name = preview.familyName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty, name != "我的家庭" {
+            return name
+        }
+        if let owner = preview.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines), !owner.isEmpty {
+            return "\(owner) 的家庭圈"
+        }
+        return "這組邀請碼的家庭圈"
+    }
+
+    private func lookupCode() async {
+        guard isCodeValid else {
+            lookupError = "邀請碼格式不對，應該是 8 位英數字（不含 0、1、O、I 等易混淆字元）。"
+            return
+        }
+        isLookingUp = true
+        lookupError = nil
+        defer { isLookingUp = false }
+        do {
+            preview = try await FirestoreFamilyBackend.lookupInvite(code: code)
+        } catch {
+            lookupError = classify(error, notFound: "找不到這組邀請碼，可能已失效，請向家人確認後再輸入一次。")
+            AppLog.cloudError("查詢邀請碼失敗：\(error.localizedDescription)")
+        }
+    }
+
+    private func join(familyId: String) async {
         isJoining = true
         joinError = nil
         defer { isJoining = false }
         do {
-            try await sync.joinFamily(code: code)
-            joined = true
-            showRoleSelect = true
+            try await sync.joinFamily(code: code, context: context)
+            showJoinWelcome = true
         } catch {
-            joinError = error.localizedDescription
+            joinError = classify(error, notFound: "這組邀請碼已失效，請向家人確認後再試一次。")
+            AppLog.cloudError("加入家庭圈失敗：\(error.localizedDescription)")
         }
+    }
+
+    /// 錯誤訊息講人話（B3）：分流「查無此碼」與「網路失敗」，不把 error.localizedDescription
+    /// 直接丟給使用者看——原始錯誤只進 log。
+    private func classify(_ error: Error, notFound: String) -> String {
+        if case FamilyBackendError.invalidInviteCode = error {
+            return notFound
+        }
+        return "網路連線有問題，請檢查網路後再試一次。"
     }
 
     private func applyRole(_ role: FamilyRole) {
@@ -100,3 +225,11 @@ struct JoinByCodeView: View {
         Analytics.track("role_selected")
     }
 }
+
+#if DEBUG
+#Preview {
+    JoinByCodeView()
+        .modelContainer(PreviewSupport.container())
+        .environment(FamilySyncService())
+}
+#endif

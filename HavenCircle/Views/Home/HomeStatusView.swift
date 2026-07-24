@@ -30,11 +30,12 @@ struct HomeStatusView: View {
         SafetyOverview.compute(events: events, regionAlerts: regionAlerts, members: members)
     }
 
-    /// 單人／多人判斷：只算「人」不算「重要地點」——LocalFamilyMember.isPlace（kind == "place"）
-    /// 建立的重要地點不是會互報平安的對象，不該撐大分母。familySection、checkInButton、
+    /// 單人／多人判斷：共用 [FamilySyncService.isSolo]（D1 統一規則，取代各頁各自一份）——
+    /// 已在家庭圈時看雲端 memberUids，不看本機 LocalFamilyMember 筆數（會落後於雲端）；
+    /// 未在家庭圈時退回本機成員數（沿用舊行為）。familySection、checkInButton、
     /// 單人專屬卡片全部共用這一個判斷，避免各處各自寫一份計數邏輯而養出兩套真相。
     private var isSoloUser: Bool {
-        members.filter { !$0.isPlace }.count < 2
+        sync.isSolo(localMembers: members)
     }
 
     private var staleLiveCircleCount: Int {

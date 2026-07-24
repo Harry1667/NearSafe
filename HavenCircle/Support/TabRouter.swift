@@ -25,6 +25,9 @@ final class TabRouter {
     /// 通知深連結指定的事件：提醒中心出現後直接打開這一則的詳情，
     /// 使用者不必在清單裡自己找剛剛通知講的是哪一件
     var pendingEventKey: String?
+    /// B2：QR／havencircle://join 深連結帶進來的邀請碼，交給家人頁消耗（開加入流程並預填）；
+    /// 用過就清空，避免重新進到家人頁時被舊值誤觸發。
+    var pendingJoinCode: String?
 
     init(selection: Int = TabRouter.homeTab) {
         self.selection = selection

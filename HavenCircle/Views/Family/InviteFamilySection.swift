@@ -48,6 +48,8 @@ struct InviteFamilySection: View {
         .signInPreflight(signInGate)
         .sheet(isPresented: $showInviteOptions) {
             InviteOptionsView()
+                // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
+                .presentationSizing(.form)
         }
         .fullScreenCover(isPresented: $showRoleSelect) {
             RoleSelectView(
@@ -74,7 +76,7 @@ struct InviteFamilySection: View {
         do {
             let isFirstFamily = sync.currentInviteCode == nil
             if isFirstFamily {
-                _ = try await sync.createFamily()
+                _ = try await sync.createFamily(context: context)
                 showRoleSelect = true
             } else {
                 // 已在家庭圈就沿用現有邀請碼，直接開邀請畫面

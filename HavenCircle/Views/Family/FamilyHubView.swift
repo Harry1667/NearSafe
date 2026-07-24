@@ -7,13 +7,14 @@ import SwiftData
 /// segment 本身就是沒有引導的來源之一，改為單一頁＋固定底部回報鈕。
 struct FamilyHubView: View {
     let myName: String
+    @Environment(FamilySyncService.self) private var sync
     @Query private var members: [LocalFamilyMember]
     @State private var showCheckIn = false
 
-    /// 判法與 HomeStatusView.isSoloUser 完全一致（只算「人」不算「重要地點」）：
-    /// 各處各自定義同一件事就會養出兩套真相，這裡直接沿用同一條規則。
+    /// 共用 [FamilySyncService.isSolo]（D1 統一規則）：各頁各自定義同一件事就會養出兩套真相，
+    /// 這裡直接沿用同一條規則，不再自己算本機成員數。
     private var isSoloUser: Bool {
-        members.filter { !$0.isPlace }.count < 2
+        sync.isSolo(localMembers: members)
     }
 
     var body: some View {

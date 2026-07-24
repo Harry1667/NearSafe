@@ -32,6 +32,12 @@ final class FamilySyncService {
     private(set) var liveLocationError: String?
     /// 目前家庭圈的邀請碼（給 UI 顯示、分享給家人）；未在家庭圈時為 nil
     private(set) var currentInviteCode: String?
+    /// 目前家庭圈的名稱（A4 header 用）；未在家庭圈或尚未讀到時為 nil
+    private(set) var familyName: String?
+    /// 目前家庭圈的成員 uid 清單（雲端真相）；未在家庭圈時為空陣列。
+    /// FamilyListView 等畫面判斷「單人／多人」一律看這個，不看本機 LocalFamilyMember 筆數——
+    /// 本機清單是投影，會落後於雲端（見 [isSolo]）。
+    private(set) var memberUids: [String] = []
 
     // 位置寫入去抖狀態（沿用舊邏輯，避免 GPS 抖動造成寫入風暴）
     private var lastPublishedLocation: CLLocation?
@@ -61,6 +67,21 @@ final class FamilySyncService {
         return liveLocations.first { $0.participantID == uid && $0.isSharing }
     }
 
+    /// D1：「是否已加入或建立家庭圈」的單一真相來源。FamilyListView 等畫面的空狀態／
+    /// 家人清單分支一律看這個，不看本機 LocalFamilyMember 筆數——後者是本機投影，
+    /// 剛加入、refreshFamilyMembers 還沒跑完時會落後，導致「明明已加入卻還顯示邀請空狀態」的錯覺。
+    var isInFamilyCircle: Bool { currentFamilyID != nil }
+
+    /// 單人／多人判斷的共用規則（取代 FamilyListView／FamilyHubView／HomeStatusView 各自一份）：
+    /// 已在家庭圈時看雲端 memberUids（至少含自己一人，尚未載入完成時保守視為單人，
+    /// 避免「載入前一瞬間」誤判成多人而閃現錯的畫面）；未在家庭圈時退回本機成員數（沿用舊行為）。
+    func isSolo(localMembers: [LocalFamilyMember]) -> Bool {
+        if isInFamilyCircle {
+            return max(memberUids.count, 1) < 2
+        }
+        return localMembers.filter { !$0.isPlace }.count < 2
+    }
+
     private var displayName: String {
         UserDefaults.standard.string(forKey: SettingsKeys.profileDisplayName)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -73,27 +94,39 @@ final class FamilySyncService {
             state = .noAccount
             return
         }
-        // 本機沒存 familyId 就用 uid 反查（換裝置、重裝後還原所屬家庭）
-        if currentFamilyID == nil {
-            do {
+        do {
+            if currentFamilyID == nil {
+                // 本機沒存 familyId 就用 uid 反查（換裝置、重裝後還原所屬家庭）
                 if let family = try await FirestoreFamilyBackend.findFamily(forUid: uid) {
                     currentFamilyID = family.id
-                    currentInviteCode = family.inviteCode
+                    applyFamily(family)
                 }
-            } catch {
-                AppLog.cloud.error("查詢所屬家庭失敗：\(error.localizedDescription)")
+            } else if let familyID = currentFamilyID {
+                // 每次都重讀根文件，讓 familyName/memberUids（A4 header、D1 單人判斷）保持新鮮，
+                // 而不是只在「邀請碼尚未快取」時才補讀一次。
+                let family = try await FirestoreFamilyBackend.fetchFamily(familyId: familyID)
+                applyFamily(family)
             }
-        } else if currentInviteCode == nil, let familyID = currentFamilyID {
-            currentInviteCode = try? await FirestoreFamilyBackend.fetchFamily(familyId: familyID).inviteCode
+        } catch {
+            AppLog.cloud.error("查詢所屬家庭失敗：\(error.localizedDescription)")
         }
         state = currentFamilyID == nil ? .ready : .sharing
+    }
+
+    /// 把家庭圈根文件套用到本服務暴露的欄位（邀請碼／名稱／成員 uid 清單）。
+    private func applyFamily(_ family: FamilyCircleDoc) {
+        currentInviteCode = family.inviteCode
+        familyName = family.name
+        memberUids = family.memberUids
     }
 
     // MARK: - 建立 / 加入家庭圈（邀請碼取代 CKShare）
 
     /// 建立家庭圈（成為圈主）並產生邀請碼。回傳建立好的家庭圈。
+    /// context 有給的話，建立完立即刷新一次成員清單（A2 呼叫點）；
+    /// 內部自動建立（見 [ensureFamily]）不一定有 context 可用，留 nil 不強求。
     @discardableResult
-    func createFamily(name: String = "我的家庭") async throws -> FamilyCircleDoc {
+    func createFamily(name: String = "我的家庭", context: ModelContext? = nil) async throws -> FamilyCircleDoc {
         guard let uid else { throw FamilyBackendError.notSignedIn }
         let family = try await FirestoreFamilyBackend.createFamily(
             ownerUid: uid,
@@ -101,13 +134,16 @@ final class FamilySyncService {
             familyName: name
         )
         currentFamilyID = family.id
-        currentInviteCode = family.inviteCode
+        applyFamily(family)
         state = .sharing
+        if let context {
+            await refreshFamilyMembers(context: context)
+        }
         return family
     }
 
-    /// 用 8 碼邀請碼加入家庭圈。
-    func joinFamily(code: String) async throws {
+    /// 用 8 碼邀請碼加入家庭圈。context 有給的話，加入成功立即刷新成員清單（A2 呼叫點）。
+    func joinFamily(code: String, context: ModelContext? = nil) async throws {
         guard let uid else { throw FamilyBackendError.notSignedIn }
         let familyID = try await FirestoreFamilyBackend.joinFamily(
             code: code,
@@ -115,15 +151,93 @@ final class FamilySyncService {
             displayName: displayName.isEmpty ? "家人" : displayName
         )
         currentFamilyID = familyID
-        currentInviteCode = try? await FirestoreFamilyBackend.fetchFamily(familyId: familyID).inviteCode
+        if let family = try? await FirestoreFamilyBackend.fetchFamily(familyId: familyID) {
+            applyFamily(family)
+        }
         state = .sharing
         await fetchPings()
+        if let context {
+            await refreshFamilyMembers(context: context)
+        }
     }
 
     /// 確保有家庭圈可寫入；沒有就自動建一個（給「還沒建家庭圈就發位置／回報」的情境）。回傳 familyId。
     private func ensureFamily() async throws -> String {
         if let familyID = currentFamilyID { return familyID }
         return try await createFamily().id
+    }
+
+    // MARK: - 家庭成員清單（A1）
+
+    /// 從 Firestore 抓最新家庭圈根文件與成員清單，把「非本人」的成員 upsert 成本機
+    /// LocalFamilyMember，並偵測「新成員加入」發本機通知（A3）。
+    ///
+    /// 鍵用 sharedIdentityKey（已查證：applyLiveLocationSnapshots 存的就是 Firebase uid，
+    /// 兩邊共用同一把鍵，不需要新增欄位）。
+    ///
+    /// 保守處理「成員退出」：家庭裡已不存在的遠端成員，本機紀錄不自動刪除——刪除是破壞性操作，
+    /// 且目前後端沒有明確的「已退出」語意（只是 memberUids 陣列裡少了這個 uid，也可能只是
+    /// 暫時性的讀取或該筆成員文件還沒建立完成），貿然清掉本機資料(包含其固定圈設定)風險更大。
+    func refreshFamilyMembers(context: ModelContext) async {
+        guard let familyID = currentFamilyID, let selfUID = uid else { return }
+        do {
+            let family = try await FirestoreFamilyBackend.fetchFamily(familyId: familyID)
+            applyFamily(family)
+
+            let remoteMembers = try await FirestoreFamilyBackend.fetchMembers(familyId: familyID)
+            var localMembers = (try? context.fetch(FetchDescriptor<LocalFamilyMember>())) ?? []
+            var changed = false
+
+            for remote in remoteMembers where remote.id != selfUID {
+                let resolvedName = remote.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = resolvedName.isEmpty ? "家人" : resolvedName
+                if let existing = localMembers.first(where: { $0.sharedIdentityKey == remote.id }) {
+                    if existing.name != name {
+                        existing.name = name
+                        changed = true
+                    }
+                } else {
+                    let member = LocalFamilyMember(name: name, relationship: "家庭成員")
+                    member.sharedIdentityKey = remote.id
+                    context.insert(member)
+                    localMembers.append(member)
+                    changed = true
+                }
+            }
+            if changed { context.saveReporting() }
+
+            await notifyNewMembers(remoteMembers, selfUID: selfUID)
+        } catch {
+            AppLog.cloud.error("刷新家庭成員清單失敗：\(error.localizedDescription)")
+        }
+    }
+
+    /// A3：跟上次同步已知的成員 uid 比對，非首次同步時出現的新 uid → 發本機通知慶祝。
+    /// 首次同步（鍵不存在）只登記、不通知，避免剛加入一個既有大家庭就被歷史成員洗版。
+    private func notifyNewMembers(_ remoteMembers: [FamilyMemberDoc], selfUID: String) async {
+        let defaults = UserDefaults.standard
+        let key = SettingsKeys.knownFamilyMemberUids
+        let previouslyKnown = defaults.stringArray(forKey: key)
+        let isFirstSync = previouslyKnown == nil
+        var knownSet = Set(previouslyKnown ?? [])
+
+        if !isFirstSync {
+            let newcomers = remoteMembers.filter { $0.id != selfUID && !knownSet.contains($0.id) }
+            for member in newcomers {
+                let name = member.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayName = name.isEmpty ? "家人" : name
+                // interruptionLevel 用 active（timeSensitive 預設 false）：這不是災害警報，
+                // 不該突破勿擾模式。
+                await NotificationScheduler.scheduleAlert(
+                    title: "\(displayName) 已加入你的家庭圈 🎉",
+                    body: "你們現在可以互相回報平安了。",
+                    id: "member-joined-\(member.id)",
+                    kind: "家庭成員加入"
+                )
+            }
+        }
+        knownSet.formUnion(remoteMembers.map(\.id))
+        defaults.set(Array(knownSet), forKey: key)
     }
 
     // MARK: - 家庭即時圈
@@ -438,6 +552,8 @@ final class FamilySyncService {
         liveLocations = []
         currentFamilyID = nil
         currentInviteCode = nil
+        familyName = nil
+        memberUids = []
         // 清掉 CloudKit 舊架構殘留的鍵
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: SettingsKeys.activeFamilyZoneName)

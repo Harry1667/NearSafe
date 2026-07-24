@@ -60,7 +60,7 @@ struct InviteOptionsView: View {
         Section("或掃 QR code") {
             HStack {
                 Spacer()
-                if let image = Self.qrImage(for: code) {
+                if let image = Self.qrImage(for: joinURL(code: code)) {
                     Image(uiImage: image)
                         .interpolation(.none) // QR 要銳利邊緣，禁用平滑縮放
                         .resizable()
@@ -74,14 +74,22 @@ struct InviteOptionsView: View {
                 Spacer()
             }
             .padding(.vertical, 8)
-            Text("讓家人用相機掃描，讀到的就是這組邀請碼。")
+            Text("已裝 App 的家人直接用相機掃描即可跳轉加入；沒裝的人掃到會看到下載連結。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
+    /// B1：QR 內容改編碼成 deep link（取代純文字碼），讓「掃碼」跟「輸碼」不再是兩套體驗——
+    /// 已裝 App 時系統相機辨識出 havencircle:// 就能直接跳轉到加入流程（AppTabs.route）。
+    private func joinURL(code: String) -> String {
+        "havencircle://join?code=\(code)"
+    }
+
     private func shareText(code: String) -> String {
-        "加入我的安心圈家庭，邀請碼：\(code)。下載 App 後在「家人」分頁輸入即可互相回報平安。"
+        "來加入我們的安心圈，災害來的時候互相知道平安。邀請碼：\(code)。" +
+        "已裝 App 的話，用相機掃我畫面上的 QR code 就能直接加入；" +
+        "或在 App 的「家人」分頁點「我收到了邀請碼」輸入。"
     }
 
     /// 用 CoreImage 產生 QR code（放大 12 倍再轉點陣，避免模糊）

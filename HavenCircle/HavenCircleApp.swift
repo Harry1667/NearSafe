@@ -141,6 +141,8 @@ struct HavenCircleApp: App {
             } else if phase == .active {
                 Task {
                     await familySync.fetchLiveLocations(context: modelContainer.mainContext)
+                    // A2：回前景順便刷新家庭成員清單（新成員加入、名字改動都要跟著新鮮）
+                    await familySync.refreshFamilyMembers(context: modelContainer.mainContext)
                 }
                 // 回前景時同步 FCM 行政區主題訂閱（生活圈可能已新增/編輯/刪除）
                 FCMTopicSync.sync(container: modelContainer)

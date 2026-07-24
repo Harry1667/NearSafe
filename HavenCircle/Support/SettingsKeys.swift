@@ -18,6 +18,9 @@ enum SettingsKeys {
     /// 目前所屬家庭圈的 Firestore familyId（取代上面兩個 CloudKit zone 鍵）。
     /// 本機快取；換裝置／重裝時由 Firebase uid 反查還原。
     static let currentFamilyID = "currentFamilyID"
+    /// A3：上次同步已知的家庭成員 uid 清單（用來偵測「新成員加入」並發本機通知）。
+    /// 鍵不存在＝從未同步過，首次同步只登記不通知，避免剛加入就被既有成員洗版。
+    static let knownFamilyMemberUids = "knownFamilyMemberUids"
     static let profileContactNote = "profileContactNote"
     /// 最後一次資料更新時間（timeIntervalSince1970；0 表示尚未更新過）
     static let lastDataRefresh = "lastDataRefresh"

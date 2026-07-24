@@ -23,6 +23,15 @@ struct FamilyMemberDoc: Identifiable, Equatable {
     var isOwner: Bool { role == "owner" }
 }
 
+/// 邀請碼預覽（C1）：加入前先讓使用者確認「要加入誰的家庭圈」，不加入就不寫任何資料。
+/// 舊邀請碼（建立於本欄位補上之前）沒有 familyName/ownerName，對應欄位為 nil，
+/// 呼叫端要處理「兩者皆 nil」的降級文案。
+struct InvitePreview: Equatable {
+    let familyId: String
+    let familyName: String?
+    let ownerName: String?
+}
+
 // MARK: - 錯誤
 
 enum FamilyBackendError: LocalizedError {
@@ -75,9 +84,13 @@ enum FirestoreFamilyBackend {
             "joinedAt": Timestamp(date: now)
         ])
         // 邀請碼索引：家人輸入碼 → 查到 familyId。獨立 collection 讓「用碼查家庭」不必掃全表。
+        // familyName/ownerName（C1）額外寫入：讓對方輸碼後能在加入前看到「要加入誰的家庭圈」，
+        // 不必先加入才知道加錯人。
         try await db.collection(FirestoreConfig.Path.inviteCodes).document(code).setData([
             "familyId": familyRef.documentID,
-            "createdAt": Timestamp(date: now)
+            "createdAt": Timestamp(date: now),
+            "familyName": familyName,
+            "ownerName": ownerDisplayName
         ])
 
         return FamilyCircleDoc(
@@ -159,10 +172,39 @@ enum FirestoreFamilyBackend {
 
     // MARK: - 邀請碼
 
-    /// 產生 8 碼邀請碼。刻意排除易混淆字元（0/O、1/I、Z/2 等），家人口頭或手抄不易出錯。
+    /// 邀請碼合法字元集：刻意排除易混淆字元（0/O、1/I、Z/2 等）。
+    /// 抽成共用常數讓輸入端（JoinByCodeView）能驗證字元合法性，不只是驗長度。
+    static let inviteCodeCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+    /// 產生 8 碼邀請碼。
     static func generateInviteCode() -> String {
-        let charset = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        let charset = Array(inviteCodeCharset)
         return String((0..<8).map { _ in charset.randomElement()! })
+    }
+
+    /// 邀請碼格式是否合法（8 碼、全落在合法字元集）。純本機檢查，不打網路，
+    /// 讓 UI 能在送出查詢前先擋掉明顯打錯的輸入，給出「格式不對」這種更精準的錯誤文案。
+    static func isValidInviteCodeFormat(_ code: String) -> Bool {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard trimmed.count == 8 else { return false }
+        let allowed = Set(inviteCodeCharset)
+        return trimmed.allSatisfy(allowed.contains)
+    }
+
+    /// 加入前確認（C1）：只讀 inviteCodes 索引，不寫入任何資料、不會讓人「不小心就加入了」。
+    /// 舊邀請碼沒有 familyName/ownerName 欄位時，對應回傳 nil，交由呼叫端決定降級文案。
+    static func lookupInvite(code: String) async throws -> InvitePreview {
+        let db = FirestoreConfig.store()
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let codeDoc = try await db.collection(FirestoreConfig.Path.inviteCodes).document(normalized).getDocument()
+        guard codeDoc.exists, let data = codeDoc.data(), let familyId = data["familyId"] as? String else {
+            throw FamilyBackendError.invalidInviteCode
+        }
+        return InvitePreview(
+            familyId: familyId,
+            familyName: data["familyName"] as? String,
+            ownerName: data["ownerName"] as? String
+        )
     }
 
     // MARK: - 即時位置（同意式：只有開啟分享的人才會被寫入 locations 子集合）
