@@ -90,6 +90,7 @@ struct InviteOptionsView: View {
                     Label("重新產生邀請碼", systemImage: "arrow.clockwise")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
                 }
             }
             if let regenerateError {

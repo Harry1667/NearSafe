@@ -109,6 +109,7 @@ struct EventDetailView: View {
                     Task { await runImpactAnalysis(force: true) }
                 } label: {
                     Label("重新分析", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
                 }
                 .font(.caption)
                 .disabled(aiImpactLoading)
@@ -117,12 +118,13 @@ struct EventDetailView: View {
                     Task { await runImpactAnalysis(force: false) }
                 } label: {
                     HStack {
+                        Spacer()
                         Label("AI 分析：這起事件對我的影響", systemImage: "sparkles")
                             .foregroundStyle(HCColor.brand)
                         if aiImpactLoading {
-                            Spacer()
                             ProgressView()
                         }
+                        Spacer()
                     }
                 }
                 .disabled(aiImpactLoading)
@@ -552,14 +554,20 @@ struct EventDetailView: View {
 
     private var actionSection: some View {
         Section {
-            Button("隱藏此裝置的相似提醒", systemImage: "hand.thumbsdown") {
+            Button {
                 EventVisibility.suppressSimilar(to: event)
                 dismiss()
+            } label: {
+                Label("隱藏此裝置的相似提醒", systemImage: "hand.thumbsdown")
+                    .frame(maxWidth: .infinity)
             }
             // 降級只影響「吵不吵醒」，不影響通知送不送達——scheduleAlert 的 effectiveTimeSensitive 規則 f 讀同一集合
-            Button("這類警報以後不吵醒我", systemImage: "moon.zzz") {
+            Button {
                 AlertWakePrefs.mute(event.eventType)
                 wakeMuteFeedback = "已設定，這類警報以後不會吵醒你"
+            } label: {
+                Label("這類警報以後不吵醒我", systemImage: "moon.zzz")
+                    .frame(maxWidth: .infinity)
             }
             if let wakeMuteFeedback {
                 Label(wakeMuteFeedback, systemImage: "checkmark.circle")
@@ -571,12 +579,18 @@ struct EventDetailView: View {
                     showResolveConfirmation = true
                 }
             }
-            Button("人身安全或犯罪請撥 110", systemImage: "phone.fill") {
+            Button {
                 call("110")
+            } label: {
+                Label("人身安全或犯罪請撥 110", systemImage: "phone.fill")
+                    .frame(maxWidth: .infinity)
             }
             .foregroundStyle(HCColor.danger)
-            Button("火災或緊急救護請撥 119", systemImage: "cross.case.fill") {
+            Button {
                 call("119")
+            } label: {
+                Label("火災或緊急救護請撥 119", systemImage: "cross.case.fill")
+                    .frame(maxWidth: .infinity)
             }
             .foregroundStyle(HCColor.danger)
         }

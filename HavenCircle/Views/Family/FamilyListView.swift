@@ -509,6 +509,7 @@ struct FamilyListView: View {
                 gateAddPlace()
             } label: {
                 Label("新增守護地點", systemImage: "plus.circle.fill")
+                    .frame(maxWidth: .infinity)
             }
         }
     }
@@ -523,11 +524,12 @@ struct FamilyListView: View {
                 showLeaveConfirm = true
             } label: {
                 HStack {
-                    Text(isCircleSolo && sync.isFamilyOwner ? "解散家庭圈" : "退出家庭圈")
                     Spacer()
+                    Text(isCircleSolo && sync.isFamilyOwner ? "解散家庭圈" : "退出家庭圈")
                     if isLeavingFamily {
                         ProgressView()
                     }
+                    Spacer()
                 }
             }
             .disabled(isLeavingFamily)

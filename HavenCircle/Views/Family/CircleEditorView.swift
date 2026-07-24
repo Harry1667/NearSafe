@@ -121,8 +121,10 @@ struct CircleEditorView: View {
                     }
                 } label: {
                     HStack {
+                        Spacer()
                         Label("把目前位置設為這個守護地點", systemImage: "location.fill")
-                        if locating { Spacer(); ProgressView() }
+                        if locating { ProgressView() }
+                        Spacer()
                     }
                 }
                 .confirmationDialog(

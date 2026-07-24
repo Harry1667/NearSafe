@@ -61,6 +61,7 @@ struct MemberDetailView: View {
                 } label: {
                     Label("完成設定警戒圈", systemImage: "exclamationmark.circle.fill")
                         .foregroundStyle(HCColor.attention)
+                        .frame(maxWidth: .infinity)
                 }
             } else {
                 // 正常情況只有一個；若有多個（舊測試資料殘留）全部列出可編輯/刪除，但不給新增按鈕。

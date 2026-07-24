@@ -76,8 +76,11 @@ struct DrillView: View {
                     Task { await endDrill(drill) }
                 }
             } else {
-                Button("開始演練", systemImage: "bell.and.waves.left.and.right") {
+                Button {
                     Task { await startDrill() }
+                } label: {
+                    Label("開始演練", systemImage: "bell.and.waves.left.and.right")
+                        .frame(maxWidth: .infinity)
                 }
                 Text("會在你的第一個警戒圈附近產生一個模擬事件，走完整的「判斷 → 推播 → 解除」流程。")
                     .font(.caption)

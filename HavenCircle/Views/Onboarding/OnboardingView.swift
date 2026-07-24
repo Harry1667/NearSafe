@@ -264,8 +264,11 @@ struct OnboardingView: View {
                                 do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
                                 await search()
                             }
-                        Button("使用 Apple Maps 搜尋位置", systemImage: "magnifyingglass") {
+                        Button {
                             Task { await search() }
+                        } label: {
+                            Label("使用 Apple Maps 搜尋位置", systemImage: "magnifyingglass")
+                                .frame(maxWidth: .infinity)
                         }
                         .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         currentLocationPicker
@@ -488,8 +491,10 @@ struct OnboardingView: View {
             Task { await useCurrentLocation() }
         } label: {
             HStack {
+                Spacer()
                 Label(isFollowMe ? "取得目前位置作為起點" : "使用目前位置", systemImage: "location.fill")
-                if locating { Spacer(); ProgressView() }
+                if locating { ProgressView() }
+                Spacer()
             }
         }
         if !pickedLabel.isEmpty {
@@ -503,7 +508,12 @@ struct OnboardingView: View {
         if !isReplay,
            LocationService.shared.authorization == .denied ||
            LocationService.shared.authorization == .restricted {
-            Button("前往系統設定開啟定位", systemImage: "gearshape") { openSystemSettings() }
+            Button {
+                openSystemSettings()
+            } label: {
+                Label("前往系統設定開啟定位", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity)
+            }
         }
     }
 
