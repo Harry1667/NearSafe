@@ -144,8 +144,11 @@ enum EventCategory {
     static let disaster = "天災"
     static let publicSafety = "公共安全"
     static let all = [fire, traffic, disaster, publicSafety]
-    /// 生活圈預設接收的類型（公共安全預設只在高可信度時提醒，由設定另行控制）。
+    /// 生活圈預設接收的類型。
+    /// 公共安全（槍擊、械鬥、攻擊等治安事件）先前未列入預設，導致這類真實事件即使
+    /// 有資料來源也永遠比對不到任何生活圈、等同對使用者隱形——這是覆蓋漏抓，
+    /// 危害不亞於漏報天災，故補上。
     /// 「重大交通事故」目前沒有政府即時資料源，不列入預設——勾了卻永遠收不到是空承諾，
     /// 接上資料源後再加回。
-    static let defaultSelection = [fire, disaster]
+    static let defaultSelection = [fire, disaster, publicSafety]
 }

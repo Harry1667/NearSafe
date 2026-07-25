@@ -35,14 +35,19 @@ enum AlertPolicy {
         for member in members {
             for circle in member.lifeCircles {
                 guard circle.isActiveForAlerts else { continue }
-                guard circle.alertTypes.contains(event.eventType) else { continue }
+                // 危險類（火災／天災／公共安全等保命災型）一律通過類型閘門——即使使用者的圈
+                // alertTypes 還是舊的〔火災,天災〕沒勾到公共安全，槍擊／械鬥這種保命事件也要能
+                // 命中，不必去改動已存的 SwiftData 資料（見 RemoteConfig.isDangerKind）。其餘
+                // 一般提醒（空品、停水…）仍照該圈的 alertTypes 設定過濾。
+                guard circle.alertTypes.contains(event.eventType)
+                        || RemoteConfig.isDangerKind(event.eventType) else { continue }
                 let distance = point.distance(
                     from: CLLocation(latitude: circle.latitude, longitude: circle.longitude)
                 )
-                // 交集判定：事件影響圈（災型影響半徑＋位置精度緩衝）碰到警戒圈就算命中。
-                // 車禍只掃一個路口、火災濃煙波及上千公尺——影響半徑依災型而異，可遠端調參
-                let impactMeters = RemoteConfig.impactRadiusMeters(for: event.eventType)
-                guard distance <= Double(circle.radiusMeters + event.precisionMeters + impactMeters) else { continue }
+                // 只看「事件是否落在警戒圈半徑內」（＋位置精度緩衝——新聞事件常只精確到行政區，
+                // 沒這個緩衝會漏掉行政區中心稍遠、但其實就在你附近的事件）。
+                // 使用者要求：只有圈內的事件才叫，不再額外疊加「災型影響半徑」把命中範圍往圈外擴張。
+                guard distance <= Double(circle.radiusMeters + event.precisionMeters) else { continue }
                 matches.append(CircleMatch(
                     memberName: member.name,
                     circleName: circle.name,

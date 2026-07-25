@@ -240,12 +240,10 @@ enum EventPipeline {
         let events = (try? context.fetch(FetchDescriptor<LocalSafetyEvent>())) ?? []
         let sevenDaysAgo = Date.now.addingTimeInterval(-7 * 86_400)
         for event in events {
-            // 過期的進行中事件自動解除；曾經推播過的要補發解除通知
+            // 過期的進行中事件自動解除。不再補發「已解除」推播——使用者不需要這類通知
+            // （減少通知噪音）；演練模式的解除通知走 DrillView.endDrill 另一條路徑，不受影響。
             if !event.isResolved && event.isExpired {
                 event.resolve()
-                if event.hasNotified {
-                    await NotificationScheduler.notifyResolved(for: event)
-                }
             }
             // 結束超過 7 天 → 封存（保留供歷史回顧，不再出現在提醒中心）
             if event.isEnded && event.occurredAt < sevenDaysAgo && !event.isArchived {

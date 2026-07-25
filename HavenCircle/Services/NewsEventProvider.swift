@@ -21,14 +21,19 @@ struct NewsEventProvider: EventProvider {
         let envelope = try JSONDecoder().decode(NewsEnvelope.self, from: data)
 
         return envelope.data.events.compactMap { event in
-            // 沒有縣市的事件不收：無法比對生活圈也無法上圖，硬顯示只會製造焦慮
-            guard let county = event.county, !county.isEmpty else { return nil }
             guard let published = Self.parseDate(event.publishedAt) else { return nil }
             let ttl = published.addingTimeInterval(Self.ttlSeconds).timeIntervalSinceNow
             guard ttl > 0 else { return nil }
-            guard let anchor = Self.coordinate(county: county, district: event.district) else { return nil }
 
-            let location = [county, event.district ?? "", event.place ?? ""]
+            // 定位失敗（縣市缺失、或縣市/行政區都比對不到座標）才會真的丟棄這則事件；
+            // 丟棄前一律記 log，方便日後查「事件為何在 App 裡消失」——過去是靜默丟棄，
+            // 真實治安事件（例如縣市欄位吐「台中」而非「台中市」）就這樣悄悄不見了。
+            guard let anchor = Self.locate(county: event.county, district: event.district) else {
+                print("⚠️ NewsEventProvider 丟棄事件：無法定位縣市 '\(event.county ?? "nil")' district '\(event.district ?? "nil")' title=\(event.title)")
+                return nil
+            }
+
+            let location = [event.county ?? "", event.district ?? "", event.place ?? ""]
                 .filter { !$0.isEmpty }
                 .joined()
             return RawEventReport(
@@ -52,36 +57,66 @@ struct NewsEventProvider: EventProvider {
         }
     }
 
-    /// 爬蟲分類 → App 的 MVP 四類
+    /// 爬蟲分類 → App 的 MVP 四類。
+    /// 除了既有的精準分類字串，額外用治安關鍵字掃描分類文字本身——爬蟲來源的分類欄位
+    /// 不一定乾淨吐出「公共安全」四字，槍擊/攻擊/械鬥類事件曾因此被誤歸為天災（default），
+    /// 使用者完全看不到本該最緊急的治安警訊。找不到任何關鍵字時維持原本的 default 行為。
     static func eventType(for category: String?) -> String {
-        switch category {
-        case "火災": EventCategory.fire
-        case "交通": EventCategory.traffic
-        case "公共安全": EventCategory.publicSafety
-        default: EventCategory.disaster // 天災、民生
+        guard let category, !category.isEmpty else { return EventCategory.disaster }
+        if category == "火災" { return EventCategory.fire }
+        if category == "交通" { return EventCategory.traffic }
+        let publicSafetyKeywords = ["公共安全", "槍", "擊", "襲", "械", "攻擊", "治安", "爆", "持刀", "兇"]
+        if publicSafetyKeywords.contains(where: { category.contains($0) }) {
+            return EventCategory.publicSafety
         }
+        return EventCategory.disaster // 天災、民生
     }
 
-    /// 事件錨點：優先用行政區邊界外框中心（縣市名對得上才用，避免同名區誤置），
-    /// 抽不到區時退回縣市代表點
-    static func coordinate(county: String, district: String?) -> CLLocationCoordinate2D? {
+    /// 事件錨點：優先用行政區邊界外框中心（縣市名對得上才用，避免同名區誤置）；
+    /// 縣市缺失、或縣市對不上行政區資料時，退而求其次只用行政區名比對第一筆結果
+    /// （放寬同名風險，換取「能靠 district 補救就別丟事件」）；
+    /// 最後才退回縣市代表點。全部落空才回傳 nil，交由呼叫端記 log 後丟棄。
+    static func locate(county: String?, district: String?) -> CLLocationCoordinate2D? {
         if let district, !district.isEmpty {
             let candidates = DistrictBoundaries.shared.districts(named: district)
-            let match = candidates.first { normalize($0.county) == normalize(county) }
-            if let ring = match?.rings.first, !ring.isEmpty {
-                let lats = ring.map(\.latitude)
-                let lons = ring.map(\.longitude)
-                return CLLocationCoordinate2D(
-                    latitude: (lats.min()! + lats.max()!) / 2,
-                    longitude: (lons.min()! + lons.max()!) / 2
-                )
+            if let county, !county.isEmpty,
+               let match = candidates.first(where: { normalize($0.county) == normalize(county) }),
+               let ring = match.rings.first, !ring.isEmpty {
+                return ringCenter(ring)
+            }
+            // 縣市缺失或比對不到同名同縣市的行政區：退一步只認行政區名
+            if let fallback = candidates.first, let ring = fallback.rings.first, !ring.isEmpty {
+                return ringCenter(ring)
             }
         }
-        return Self.countyCenters[normalize(county)]
+        guard let county, !county.isEmpty else { return nil }
+        return countyCenter(for: county)
     }
 
+    private static func ringCenter(_ ring: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D {
+        let lats = ring.map(\.latitude)
+        let lons = ring.map(\.longitude)
+        return CLLocationCoordinate2D(
+            latitude: (lats.min()! + lats.max()!) / 2,
+            longitude: (lons.min()! + lons.max()!) / 2
+        )
+    }
+
+    /// 只做「臺→台」置換，**不**在這裡去掉「市/縣」字尾——新竹市／新竹縣、
+    /// 嘉義市／嘉義縣字根相同、字尾不同，若在正規化階段就砍掉字尾會讓兩者互相打架，
+    /// 缺字尾的容錯改在 `countyCenter(for:)` 查表端做，才不會製造新的誤配。
     static func normalize(_ name: String) -> String {
         name.replacingOccurrences(of: "臺", with: "台")
+    }
+
+    /// 依縣市名查代表點座標。容錯：先照原樣查，查不到且輸入缺「市/縣」字尾時
+    /// （例如爬蟲吐「台中」而非「台中市」），依序補「市」「縣」再查一次——
+    /// 確保「台中」「台中市」「臺中市」都能對到同一座標，不會因缺字尾就整則事件被丟棄。
+    static func countyCenter(for rawCounty: String) -> CLLocationCoordinate2D? {
+        let key = normalize(rawCounty)
+        if let hit = countyCenters[key] { return hit }
+        guard !key.hasSuffix("市"), !key.hasSuffix("縣") else { return nil }
+        return countyCenters[key + "市"] ?? countyCenters[key + "縣"]
     }
 
     /// 縣市代表點（政府所在地概略座標）：只在抽不到行政區時使用，

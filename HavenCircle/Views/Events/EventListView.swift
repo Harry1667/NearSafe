@@ -47,10 +47,6 @@ struct EventListView: View {
     private var confirming: [LocalSafetyEvent] {
         visibleEvents.filter { !$0.isEnded && !$0.isOfficiallyConfirmed }
     }
-    private var ended: [LocalSafetyEvent] {
-        Array(visibleEvents.filter(\.isEnded).prefix(20))
-    }
-
     private func isInAnyCircle(_ event: LocalSafetyEvent) -> Bool {
         !AlertPolicy.evaluate(event: event, members: members).matches.isEmpty
     }
@@ -85,7 +81,7 @@ struct EventListView: View {
             section(title: "未驗證線索", subtitle: "資料尚未充分驗證，不會推播", items: confirming, collapsible: true)
             section(title: "附近動態", subtitle: "官方事件，離警戒圈 30 公里內", items: elsewhere, collapsible: true)
             nationwideSection
-            section(title: "已結束", subtitle: "已解除或已過期的事件", items: ended, collapsible: true)
+            // #B：不再顯示「已結束」區塊——使用者不需要看已解除／已過期的事件（地圖也早已排除）
         }
         .navigationTitle("提醒中心")
         .toolbar {
