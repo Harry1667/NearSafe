@@ -43,12 +43,13 @@ struct EventDetailView: View {
         NavigationStack {
             List {
                 statusSection
+                actionAdviceSection
                 detailSection
                 whySection
                 aiImpactSection
                 checkInSection
                 infoSection
-                sourceSection
+                sourceTimelineSection
                 resourceSection
                 actionSection
             }
@@ -240,6 +241,43 @@ struct EventDetailView: View {
                 }
             }
             .hcCard()
+        }
+        .listRowInsets(
+            EdgeInsets(
+                top: HCSpacing.x1,
+                leading: HCSpacing.x4,
+                bottom: HCSpacing.x1,
+                trailing: HCSpacing.x4
+            )
+        )
+        .listRowBackground(Color.clear)
+    }
+
+    /// 任務 A：「建議行動」獨立成醒目卡片——把「你現在該怎麼做」跟「發生什麼」分開，
+    /// 不再讓建議行動埋在 LLM 生成的 detail 描述裡（那段文字每次生成用字都不同，
+    /// 行動指引不該跟著變）。文案來自 EventActionAdvice 依 eventType 的靜態對照，不解析 LLM 文字。
+    /// 底色沿用 event.typeColor（任務 C 的類型色），已結束事件改中性灰階，呼應狀態與類型色分離的原則。
+    private var actionAdviceSection: some View {
+        let advice = EventActionAdvice.advice(for: event)
+        let tint = event.isEnded ? Color.secondary : event.typeColor
+        return Section {
+            HStack(alignment: .top, spacing: HCSpacing.x3) {
+                Image(systemName: event.isEnded ? "checkmark.shield" : "figure.walk")
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(tint)
+                    .frame(width: HCSpacing.x6 * 2, height: HCSpacing.x6 * 2)
+                    .background(tint.opacity(0.12), in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                    Text("建議行動")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(advice)
+                        .font(.subheadline.weight(.medium))
+                }
+            }
+            .padding(HCSpacing.x3)
+            .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
         }
         .listRowInsets(
             EdgeInsets(
@@ -475,27 +513,57 @@ struct EventDetailView: View {
         Analytics.track("role_selected")
     }
 
+    /// 任務 C：「類型」改用類型色 pill（圖示＋文字），紅／黃分級一眼可辨，
+    /// 不再是純文字——與可信度／狀態的顏色（statusSection）各用各的屬性，互不參照。
     private var infoSection: some View {
         Section("事件資訊") {
-            LabeledContent("類型", value: event.eventType)
+            LabeledContent("類型") {
+                Label(event.eventType, systemImage: EventCategory.icon(for: event.eventType))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(event.typeColor)
+                    .padding(.horizontal, HCSpacing.x2)
+                    .padding(.vertical, 3)
+                    .background(event.typeColor.opacity(0.12), in: Capsule())
+            }
             LabeledContent("概略位置", value: event.approximateLocation)
             LabeledContent("嚴重程度", value: event.severity)
-            LabeledContent("位置精準度", value: "約 \(event.precisionMeters) 公尺")
-            LabeledContent("發生時間", value: localizedDate(event.occurredAt))
-            LabeledContent("最近更新", value: localizedDate(event.updatedAt))
+            LabeledContent("位置精準度") {
+                Text("約 \(event.precisionMeters) 公尺").monospacedDigit()
+            }
+            LabeledContent("最近更新") {
+                Text(localizedDate(event.updatedAt)).monospacedDigit()
+            }
         }
         .font(.subheadline)
         .listRowSeparatorTint(.secondary.opacity(0.16))
     }
 
-    private var sourceSection: some View {
-        Section("來源") {
-            LabeledContent("資訊來源", value: event.sourceName)
+    /// 任務 B：「來源與時效」透明度區塊——把來源全名、可信度、發生時間、有效期限攤開，
+    /// 讓使用者自己判斷資訊新舊與有效性，不必只靠 App 的信任背書。
+    /// 數字（日期時間）一律套 `.monospacedDigit()`，多行對齊時不會因數字寬度不一而歪斜。
+    private var sourceTimelineSection: some View {
+        Section("來源與時效") {
+            LabeledContent("來源", value: event.sourceName)
             if let url = URL(string: event.sourceURL) {
-                Link("查看原始來源", destination: url)
+                LabeledContent("原始連結") {
+                    Link("查看原始來源", destination: url)
+                }
             } else {
                 // 來源網址格式異常時仍以文字呈現，不讓 App 因強制解包閃退
                 LabeledContent("來源網址", value: event.sourceURL)
+            }
+            LabeledContent("可信度", value: event.trustStatus)
+            LabeledContent("發生時間") {
+                Text(localizedDate(event.occurredAt)).monospacedDigit()
+            }
+            LabeledContent("有效至") {
+                if event.isExpired {
+                    Text("已過期・\(localizedDate(event.expiresAt))")
+                        .monospacedDigit()
+                        .foregroundStyle(HCColor.danger)
+                } else {
+                    Text(localizedDate(event.expiresAt)).monospacedDigit()
+                }
             }
         }
         .font(.subheadline)

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 /// 可信度狀態（對外顯示一律用文字說明，不能只靠顏色）
 enum TrustStatus {
@@ -109,4 +110,9 @@ extension LocalSafetyEvent {
         status = EventStatus.resolved.rawValue
         updatedAt = .now
     }
+
+    /// 事件「類型色」：只回答這個 eventType 本質上多危險（見 EventCategory.typeColor 的判斷規則），
+    /// 與是否已結束（isEnded／statusText 那套「狀態色」）完全獨立——已結束的火災類型色仍是紅，
+    /// 呼叫端要不要因為已結束而改用灰階，是畫面自己的決定，不該混進這個屬性裡。
+    var typeColor: Color { EventCategory.typeColor(for: eventType) }
 }

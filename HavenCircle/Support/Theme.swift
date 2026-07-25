@@ -185,4 +185,15 @@ extension EventCategory {
         default: "exclamationmark.circle.fill"
         }
     }
+
+    /// 「類型色」兩層色彩紀律的單一判斷來源：危及生命的危險級（RemoteConfig.isDangerKind：
+    /// 火災、公共安全、地震、海嘯、颱風）＝ danger（紅）；其餘留意/行政級（空品、停水、
+    /// 高溫、降雨…）＝ attention（琥珀）。刻意與「狀態色」（進行中/已結束，見
+    /// LocalSafetyEvent.statusText／isEnded）完全分開判斷、互不參照——類型色回答「這個類型
+    /// 本質上多危險」，狀態色回答「這件事現在還在不在發生」，兩件事不該共用同一個屬性。
+    /// 點狀事件（eventType）與區域警報（RegionAlert.kind）兩個命名空間字串不重疊，
+    /// 這個函式對兩者都能直接呼叫——詳情頁與（未來）地圖共用同一套判斷，紅/黃分級才對得起來。
+    static func typeColor(for type: String) -> Color {
+        RemoteConfig.isDangerKind(type) ? HCColor.danger : HCColor.attention
+    }
 }
