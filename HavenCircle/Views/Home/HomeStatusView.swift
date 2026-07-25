@@ -24,6 +24,8 @@ struct HomeStatusView: View {
     /// 單人態「守護更多地方卡」：兩段式流程（先存地點、sheet 收合後再開固定圈編輯器）
     @State private var addingPlace = false
     @State private var newPlaceForCircle: LocalFamilyMember?
+    /// 剛選好建好、等「選地點 sheet 完全關閉」後才開圈編輯器的地點成員（見 addingPlace onDismiss）
+    @State private var pendingCirclePlace: LocalFamilyMember?
     /// 地點額度閘門觸發時開這個付費頁（見 [gateAddPlace]，共用判斷在 EntitlementStore）
     @State private var showPaywall = false
 
@@ -127,12 +129,13 @@ struct HomeStatusView: View {
             .sheet(item: $selectedEvent) {
                 EventDetailView(event: $0, members: members)
             }
-            .sheet(isPresented: $addingPlace) {
-                // 名字用點擊選擇取代打字（少一步輸入畫面）；選定後直接建立地點成員，
-                // 沿用既有的兩段式時序接固定圈編輯器
+            .sheet(isPresented: $addingPlace, onDismiss: presentPendingCircleEditor) {
+                // 選定後先建好地點成員暫存，等這個 sheet 完全關閉再由 onDismiss 開圈編輯器——
+                // 不能在關閉動畫途中就 present 下一個 sheet，否則會被 SwiftUI 靜默丟掉
+                // （＝新增固定圈完全打不開的根因，與 FamilyListView 同款修正）。
                 PlaceSelectView { name, _ in
+                    pendingCirclePlace = createPlace(name: name)
                     addingPlace = false
-                    createPlace(name: name)
                 }
             }
             .sheet(item: $newPlaceForCircle) { member in
@@ -722,24 +725,24 @@ struct HomeStatusView: View {
         addingPlace = true
     }
 
-    /// 等前一張 sheet（新增重要地點）收合動畫結束再開固定圈編輯器；
-    /// 立刻 present 會撞上仍在收合中的 sheet 而被系統丟棄
-    /// （兩段式時序照抄 FamilyListView.scheduleCircleEditor 的作法）
-    private func scheduleCircleEditor(_ member: LocalFamilyMember) {
-        Task {
-            try? await Task.sleep(for: .milliseconds(550))
-            newPlaceForCircle = member
-        }
+    /// 等「新增重要地點」sheet 完全關閉（onDismiss）後才開固定圈編輯器。
+    /// 用 onDismiss 取代舊的 sleep 550ms 計時接力——後者在真機上常撞到「前一個 sheet 仍在
+    /// 收合就 present 下一個」被系統丟棄，導致圈編輯器沒出現、地點變孤兒（新增固定圈打不開的根因）。
+    private func presentPendingCircleEditor() {
+        guard let member = pendingCirclePlace else { return }
+        pendingCirclePlace = nil
+        newPlaceForCircle = member
     }
 
     /// PlaceSelectView 選定名稱後直接建立地點成員（不再經過 MemberEditorView 的打字表單），
-    /// 接著沿用既有兩段式時序開固定圈編輯器（照抄 FamilyListView.createPlace 的作法）。
-    private func createPlace(name: String) {
+    /// 回傳建好的成員交由呼叫端暫存，待 sheet 關閉後開固定圈編輯器。
+    @discardableResult
+    private func createPlace(name: String) -> LocalFamilyMember {
         let member = LocalFamilyMember(name: name, relationship: "重要地點", kind: "place")
         context.insert(member)
         context.saveReporting()
         Analytics.track("place_added")
-        scheduleCircleEditor(member)
+        return member
     }
 }
 
