@@ -10,6 +10,7 @@ struct SafetyMapView: View {
     @Query private var members: [LocalFamilyMember]
     @Query private var regionAlerts: [RegionAlert]
     @State private var selected: LocalSafetyEvent?
+    @State private var selectedCluster: EventCluster?
     @State private var selectedAlert: RegionAlert?
 
     // 圖層與過濾（顯示偏好，不影響通知決策）
@@ -59,6 +60,10 @@ struct SafetyMapView: View {
     @State private var previewRadiusMeters: Double = 1_000
     /// 地圖的具名座標空間：guidance 脈動圈換算螢幕直徑要用 proxy.convert（見 circleScreenDiameter）
     private static let mapSpace = "safetyMapSpace"
+    /// 跨縣市以上視野改顯示數字叢集，避免全國尺度的事件標記互相遮擋。
+    private static let eventClusterZoomThreshold: CLLocationDegrees = 1.5
+    /// 每個方向切成八格，兼顧叢集密度與線性分組成本。
+    private static let eventClusterGridDivisions = 8
     /// 「警戒圈可拖動調整」的提示：第一次點開事件、關掉詳情後顯示一次（不在帶領卡就先講）
     @AppStorage(SettingsKeys.seenCircleAdjustHint) private var seenCircleAdjustHint = false
     @State private var showCircleAdjustHint = false
@@ -100,6 +105,38 @@ struct SafetyMapView: View {
         allActiveEvents.filter {
             enabledTypes.contains($0.eventType) && (showUnverified || $0.isOfficiallyConfirmed)
         }
+    }
+
+    /// 地圖尚未回報鏡頭範圍時維持逐筆標記，避免首屏狀態不確定。
+    private var isEventClusteringEnabled: Bool {
+        guard let region = visibleRegion else { return false }
+        return region.span.latitudeDelta > Self.eventClusterZoomThreshold
+            || region.span.longitudeDelta > Self.eventClusterZoomThreshold
+    }
+
+    /// 遠距視野只聚合真實事件；演練標記一律保留原本的鈴鐺圖示。
+    private var eventClusters: [EventCluster] {
+        guard isEventClusteringEnabled, let region = visibleRegion else { return [] }
+        let items = filteredEvents.lazy
+            .filter { !$0.isDrill }
+            .map {
+                EventClusterItem(
+                    event: $0,
+                    eventKey: $0.eventKey,
+                    coordinate: CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude),
+                    isOfficiallyConfirmed: $0.isOfficiallyConfirmed,
+                    occurredAt: $0.occurredAt
+                )
+            }
+        return EventClustering.cluster(
+            items: Array(items),
+            region: region,
+            gridDivisions: Self.eventClusterGridDivisions
+        )
+    }
+
+    private var drillEvents: [LocalSafetyEvent] {
+        filteredEvents.filter(\.isDrill)
     }
 
     /// 安全狀態一律以「未過濾」的事件計算——聚合邏輯與安心頁共用 SafetyStatus，
@@ -265,6 +302,17 @@ struct SafetyMapView: View {
                 }
                 .sheet(item: $selected) {
                     MapEventSheet(event: $0, members: members)
+                }
+                .sheet(item: $selectedCluster) { cluster in
+                    EventClusterListSheet(cluster: cluster) { event in
+                        selectedCluster = nil
+                        // 等叢集清單退場後再開既有事件詳情，避免兩張 sheet 爭用呈現時機。
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(250))
+                            guard !Task.isCancelled else { return }
+                            selected = event
+                        }
+                    }
                 }
                 .sheet(item: $selectedAlert) {
                     RegionAlertDetailView(alert: $0, members: members)
@@ -504,29 +552,79 @@ struct SafetyMapView: View {
                     resourceAnnotation(resource, icon: "cross.case.fill", color: HCColor.medical)
                 }
             }
-            ForEach(filteredEvents) { event in
-                Annotation(event.isDrill ? "演練" : event.eventType,
-                           coordinate: .init(latitude: event.latitude, longitude: event.longitude)) {
-                    Button {
-                        selected = event
-                    } label: {
-                        // 兩套視覺通道：圖示＝事件類型、顏色＝可信度（官方紅／確認中琥珀）；
-                        // 白色外圈讓標記在任何底圖上都可辨識
-                        Image(systemName: event.isDrill
-                              ? "bell.and.waves.left.and.right"
-                              : EventCategory.icon(for: event.eventType))
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention, in: Circle())
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+            if isEventClusteringEnabled {
+                ForEach(eventClusters) { cluster in
+                    Annotation(
+                        "事件叢集",
+                        coordinate: cluster.coordinate
+                    ) {
+                        Button {
+                            selectedCluster = cluster
+                        } label: {
+                            Text("\(cluster.count)")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .minimumScaleFactor(0.6)
+                                .lineLimit(1)
+                                .frame(width: 40, height: 40)
+                                .background(
+                                    cluster.hasOfficialConfirmed ? HCColor.danger : HCColor.attention,
+                                    in: Circle()
+                                )
+                                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                        }
+                        .accessibilityLabel(
+                            "\(cluster.count) 件事件，\(cluster.hasOfficialConfirmed ? "含官方已確認事件" : "事件皆在持續確認中")，點擊查看清單"
+                        )
                     }
-                    .accessibilityLabel("\(event.title)，\(event.trustStatus)，\(event.approximateLocation)")
+                    .annotationTitles(.hidden)
                 }
-                // 事件 pin 不顯示文字標籤：圖示已表達類型，縮遠時一堆「重大交通事故」
-                // 文字互相壓、被鄰近 pin 截斷（實機回報）；點 pin 後底部卡片有完整標題
-                .annotationTitles(.hidden)
+                ForEach(drillEvents) { event in
+                    Annotation(event.isDrill ? "演練" : event.eventType,
+                               coordinate: .init(latitude: event.latitude, longitude: event.longitude)) {
+                        Button {
+                            selected = event
+                        } label: {
+                            // 演練不參與叢集，遠距視野仍沿用原本的個別鈴鐺標記。
+                            Image(systemName: event.isDrill
+                                  ? "bell.and.waves.left.and.right"
+                                  : EventCategory.icon(for: event.eventType))
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention, in: Circle())
+                                .overlay(Circle().stroke(.white, lineWidth: 2))
+                                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                        }
+                        .accessibilityLabel("\(event.title)，\(event.trustStatus)，\(event.approximateLocation)")
+                    }
+                    .annotationTitles(.hidden)
+                }
+            } else {
+                ForEach(filteredEvents) { event in
+                    Annotation(event.isDrill ? "演練" : event.eventType,
+                               coordinate: .init(latitude: event.latitude, longitude: event.longitude)) {
+                        Button {
+                            selected = event
+                        } label: {
+                            // 兩套視覺通道：圖示＝事件類型、顏色＝可信度（官方紅／確認中琥珀）；
+                            // 白色外圈讓標記在任何底圖上都可辨識
+                            Image(systemName: event.isDrill
+                                  ? "bell.and.waves.left.and.right"
+                                  : EventCategory.icon(for: event.eventType))
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention, in: Circle())
+                                .overlay(Circle().stroke(.white, lineWidth: 2))
+                                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                        }
+                        .accessibilityLabel("\(event.title)，\(event.trustStatus)，\(event.approximateLocation)")
+                    }
+                    // 事件 pin 不顯示文字標籤：圖示已表達類型，縮遠時一堆「重大交通事故」
+                    // 文字互相壓、被鄰近 pin 截斷（實機回報）；點 pin 後底部卡片有完整標題
+                    .annotationTitles(.hidden)
+                }
             }
             // 第一次帶領：脈動圈把目光吸到「你的警戒圈」或「附近事件」（目標自己動、幾乎不用文字）
             if guidanceStep == 0, let mine = guidanceCircle {
@@ -1467,6 +1565,87 @@ struct SafetyMapView: View {
             }
             .padding(.vertical, HCSpacing.x2)
         }
+    }
+}
+
+/// 點選數字叢集後顯示其中事件；每筆仍導向既有的事件詳情。
+private struct EventClusterListSheet: View {
+    let cluster: EventCluster
+    let onSelect: (LocalSafetyEvent) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var sortedEvents: [LocalSafetyEvent] {
+        cluster.events.sorted { $0.occurredAt > $1.occurredAt }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(sortedEvents) { event in
+                        Button {
+                            onSelect(event)
+                        } label: {
+                            HStack(alignment: .top, spacing: HCSpacing.x3) {
+                                Image(systemName: EventCategory.icon(for: event.eventType))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 32, height: 32)
+                                    .background(
+                                        event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention,
+                                        in: Circle()
+                                    )
+                                    .accessibilityHidden(true)
+
+                                VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                                    Text(event.title)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text("\(event.eventType)・\(event.approximateLocation)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text("\(event.trustStatus)・\(relativeTime(event.occurredAt))")
+                                        .font(.caption)
+                                        .foregroundStyle(
+                                            event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention
+                                        )
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, HCSpacing.x2)
+                                    .accessibilityHidden(true)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("開啟事件詳情")
+                    }
+                } header: {
+                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                        Text(cluster.hasOfficialConfirmed ? "含官方已確認事件" : "事件皆在持續確認中")
+                        if let latest = cluster.latestOccurredAt {
+                            Text("最新事件：\(relativeTime(latest))")
+                        }
+                    }
+                } footer: {
+                    Text("社群資訊在官方或多來源驗證前皆視為尚未確認。有立即危險請直接撥打 110 或 119。")
+                }
+            }
+            .navigationTitle("\(cluster.count) 件事件")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationSizing(.form)
     }
 }
 
