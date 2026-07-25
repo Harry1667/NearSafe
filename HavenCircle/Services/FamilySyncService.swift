@@ -30,6 +30,13 @@ final class FamilySyncService {
     private(set) var pings: [SafetyPing] = []
     private(set) var liveLocations: [FamilyLiveLocation] = []
     private(set) var liveLocationError: String?
+    /// 家人目前仍在求救中的清單（已篩掉自己、已篩 isStillUrgent）。
+    private(set) var activeSOSAlerts: [SOSAlert] = []
+    /// 本人是否正在求救中；預設從 UserDefaults 還原（跨 App 重啟保留），
+    /// 讓首頁在 App 被強制關閉又重開後，能直接顯示「求救中」卡片而不是又冒出「發出求救」按鈕。
+    private(set) var mySOSActive: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.mySOSActive)
+    /// 求救／解除求救失敗時的人話錯誤訊息，供首頁顯示（不 silent fail）。
+    private(set) var sosError: String?
     /// 目前家庭圈的邀請碼（給 UI 顯示、分享給家人）；未在家庭圈時為 nil
     private(set) var currentInviteCode: String?
     /// 目前邀請碼的到期時間（C4：InviteOptionsView 顯示「效期至」用）。
@@ -51,6 +58,11 @@ final class FamilySyncService {
     private var lastPublishedRadius: Int?
     /// MainActor 在 await 期間仍可重入；只允許一筆位置寫入在途，避免重複建立同一 doc
     private var liveLocationPublishInFlight = false
+
+    /// SOS 週期性位置更新的背景 Task（activateSOS 啟動、cancelSOS 呼叫 .cancel() 停止，
+    /// 或本地判斷超過 8 小時自動停止）。App 重啟後若 mySOSActive 還原為 true，
+    /// [resumeSOSLoopIfNeeded] 會在有 familyID 可用時重新啟動它。
+    private var sosUpdateTask: Task<Void, Never>?
 
     /// Firebase 身份（未登入為 nil）
     private var uid: String? { AuthService.shared.uid }
@@ -118,6 +130,7 @@ final class FamilySyncService {
             AppLog.cloud.error("查詢所屬家庭失敗：\(error.localizedDescription)")
         }
         state = currentFamilyID == nil ? .ready : .sharing
+        resumeSOSLoopIfNeeded()
     }
 
     /// 把家庭圈根文件套用到本服務暴露的欄位（邀請碼／名稱／成員 uid 清單），
@@ -612,6 +625,156 @@ final class FamilySyncService {
         }
     }
 
+    // MARK: - SOS 一鍵求救
+
+    /// 發出求救：需已登入（未登入給明確錯誤訊息，不 silent fail）。取得目前位置
+    /// （[LocationService.currentLocation] 內建約 12 秒逾時、未授權或取不到一律回 nil）；
+    /// 拿不到位置仍要能發出「求救狀態」本身——這是保命功能，位置是加分不是必要條件，
+    /// 拿不到就用 0,0 明顯標記「沒有座標」（見 [SOSAlert.hasLocation]），並在本機提示。
+    /// 成功後啟動週期性位置更新迴圈（見 [startSOSLocationLoop]），直到 [cancelSOS] 或
+    /// 本地判斷超過 8 小時為止。
+    func activateSOS(context: ModelContext) async {
+        guard AuthService.shared.isSignedIn, let uid else {
+            sosError = "請先用 Apple 帳號登入，才能發出求救給家人"
+            return
+        }
+        let name = displayName.isEmpty ? "家人" : displayName
+        do {
+            let familyID = try await ensureFamily()
+            let location = await LocationService.shared.currentLocation()
+            try await FirestoreFamilyBackend.publishSOS(
+                familyId: familyID,
+                uid: uid,
+                displayName: name,
+                latitude: location?.coordinate.latitude ?? 0,
+                longitude: location?.coordinate.longitude ?? 0
+            )
+            sosError = location == nil
+                ? "已發出求救，但無法取得你的位置——請確認定位權限已開啟，之後取得位置會自動補上。"
+                : nil
+            mySOSActive = true
+            UserDefaults.standard.set(true, forKey: SettingsKeys.mySOSActive)
+            startSOSLocationLoop(familyID: familyID, uid: uid, name: name)
+        } catch {
+            AppLog.cloud.error("發出求救失敗：\(error.localizedDescription)")
+            sosError = Self.humanSOSErrorMessage(error)
+        }
+    }
+
+    /// 解除求救：停止週期性更新 Task、標記本機與雲端狀態。context 目前 SOS 沒有 SwiftData
+    /// 投影可清（純 Firestore struct，不進 SwiftData schema），保留參數是為了跟
+    /// activateSOS／其他家庭圈方法的呼叫慣例一致，供未來需要時使用。
+    func cancelSOS(context: ModelContext) async {
+        sosUpdateTask?.cancel()
+        sosUpdateTask = nil
+        mySOSActive = false
+        UserDefaults.standard.set(false, forKey: SettingsKeys.mySOSActive)
+        guard let uid, let familyID = currentFamilyID else { return }
+        do {
+            try await FirestoreFamilyBackend.resolveSOS(familyId: familyID, uid: uid)
+            sosError = nil
+        } catch {
+            AppLog.cloud.error("解除求救失敗：\(error.localizedDescription)")
+            sosError = "解除求救時網路連線有問題，請稍後再試一次；家人可能仍會看到你在求救中。"
+        }
+    }
+
+    /// 讀取家庭圈所有成員的求救狀態，篩掉自己與已不再緊急的（isStillUrgent），
+    /// 並對「新出現的」求救觸發一則本機通知（見 [notifyIncomingSOS] 去重邏輯）。
+    func fetchActiveSOSAlerts(context: ModelContext) async {
+        guard let familyID = currentFamilyID else { return }
+        do {
+            let alerts = try await FirestoreFamilyBackend.fetchActiveSOSAlerts(familyId: familyID)
+            let urgent = alerts
+                .filter(\.isStillUrgent)
+                .filter { $0.participantID != uid }
+                .sorted { $0.updatedAt > $1.updatedAt }
+            activeSOSAlerts = urgent
+            await notifyIncomingSOS(urgent)
+        } catch {
+            AppLog.cloud.error("讀取求救狀態失敗：\(error.localizedDescription)")
+        }
+    }
+
+    /// 週期性位置更新：每 90 秒重新取得位置並更新 Firestore 求救文件，只要 mySOSActive
+    /// 仍為真就持續，直到 [cancelSOS] 呼叫 `.cancel()`，或本地判斷這次求救已經開始超過
+    /// 8 小時（保守的本地保險絲，避免忘記解除的求救無限期消耗電力；家人端「這筆是否還算
+    /// 緊急」則交由 [SOSAlert.isStillUrgent] 獨立判斷，兩者門檻一致但用途不同）。
+    private func startSOSLocationLoop(familyID: String, uid: String, name: String) {
+        sosUpdateTask?.cancel()
+        let loopStartedAt = Date.now
+        sosUpdateTask = Task { [weak self] in
+            while true {
+                do {
+                    try await Task.sleep(for: .seconds(90))
+                } catch {
+                    return // 被 cancelSOS 取消
+                }
+                guard let self, self.mySOSActive else { return }
+                guard Date.now.timeIntervalSince(loopStartedAt) < 8 * 3600 else { return }
+                if let location = await LocationService.shared.currentLocation() {
+                    try? await FirestoreFamilyBackend.publishSOS(
+                        familyId: familyID,
+                        uid: uid,
+                        displayName: name,
+                        latitude: location.coordinate.latitude,
+                        longitude: location.coordinate.longitude
+                    )
+                }
+            }
+        }
+    }
+
+    /// App 重啟後若仍在求救中（mySOSActive 從 UserDefaults 還原為 true），重新啟動週期性
+    /// 位置更新迴圈——否則重開 App 後求救狀態還在但位置不再更新，家人看到的座標會愈來愈舊。
+    /// 已有 Task 在跑（例如同一次執行期間重複呼叫 refreshAccountStatus）就不重啟。
+    private func resumeSOSLoopIfNeeded() {
+        guard mySOSActive, sosUpdateTask == nil, let uid, let familyID = currentFamilyID else { return }
+        startSOSLocationLoop(familyID: familyID, uid: uid, name: displayName.isEmpty ? "家人" : displayName)
+    }
+
+    /// 求救求救失敗的人話文案：逾時的真相是「不確定送沒送出」，緊急狀況下要教使用者
+    /// 立刻改用其他管道（電話、簡訊），不能只等 App 這一條路徑。
+    private static func humanSOSErrorMessage(_ error: Error) -> String {
+        if error is SOSTimeoutError {
+            return "網路不穩，求救可能未送出——連上網路後會自動重試；情況緊急請同時嘗試電話或簡訊聯繫家人。"
+        }
+        return "發出求救失敗，請再試一次；情況緊急請同時嘗試電話或簡訊聯繫家人。"
+    }
+
+    /// 求救通知：抓到「別人新發出」的求救時發本機通知。去重鍵含 startedAt（不是只用
+    /// participantID）：同一人解除後重新求救會拿到新的 startedAt，視為「新的一次」重新
+    /// 通知；同一次求救持續的位置更新（updatedAt 一直變但 startedAt 不變）則不會重複吵。
+    /// 已通知過的鍵存本機（上限 300，比照 [notifyIncomingPings]）；首次同步只登記不通知，
+    /// 避免剛加入就被既有的求救紀錄洗版。
+    private func notifyIncomingSOS(_ latest: [SOSAlert]) async {
+        let defaults = UserDefaults.standard
+        let seenKey = "seenSOSAlertKeys"
+        let previouslySeen = defaults.stringArray(forKey: seenKey)
+        let isFirstSync = previouslySeen == nil
+        var seenSet = Set(previouslySeen ?? [])
+        var seenList = previouslySeen ?? []
+
+        for alert in latest {
+            let key = "\(alert.participantID)#\(Int(alert.startedAt.timeIntervalSince1970))"
+            guard !seenSet.contains(key) else { continue }
+            seenSet.insert(key)
+            seenList.append(key)
+            guard !isFirstSync else { continue }
+            // interruptionLevel 用 timeSensitive（kind: 家人安否 視同重大）：求救比一般
+            // 家人安否更急，理應能突破勿擾模式。
+            await NotificationScheduler.scheduleAlert(
+                title: "⚠️ \(alert.displayName)發出求救",
+                body: "開啟 App 查看即時位置與導航；非即時通知，回到前景才會看到最新狀態。",
+                id: "sos-\(key)",
+                timeSensitive: true,
+                kind: "家人安否"
+            )
+        }
+        if seenList.count > 300 { seenList.removeFirst(seenList.count - 300) }
+        defaults.set(seenList, forKey: seenKey)
+    }
+
     // MARK: - 退出／解散家庭圈（帳號刪除流程／主動退出用）
 
     /// 退出（一般成員／圈主但還有其他成員）或解散（圈主且只剩自己一人）目前的家庭圈。
@@ -642,6 +805,13 @@ final class FamilySyncService {
         }
         pings = []
         liveLocations = []
+        // 離開／解散家庭圈：這個家庭圈的求救狀態不再與我相關，停掉背景更新迴圈與本機旗標
+        // （雲端 sos 文件已由 FirestoreFamilyBackend.leaveFamily/deleteFamily 清掉）。
+        sosUpdateTask?.cancel()
+        sosUpdateTask = nil
+        mySOSActive = false
+        UserDefaults.standard.set(false, forKey: SettingsKeys.mySOSActive)
+        activeSOSAlerts = []
         currentFamilyID = nil
         currentInviteCode = nil
         currentInviteCodeExpiresAt = nil

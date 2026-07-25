@@ -68,6 +68,15 @@ struct SafetyPingTimeoutError: LocalizedError {
     }
 }
 
+/// 求救保命級 P0：理由同 [SafetyPingTimeoutError]——Firestore 離線時 setData 會無限期等待
+/// 伺服器 ack。SOS 是這個 App 最不能默默失敗的一次寫入，逾時文案要誠實反映「可能未送出」，
+/// 並提醒使用者緊急狀況下同時嘗試其他聯繫方式（電話、簡訊），不能只依賴這一條路徑。
+struct SOSTimeoutError: LocalizedError {
+    var errorDescription: String? {
+        "已等候 8 秒未收到送出確認，求救可能未送出。若已連上網路，離線佇列稍後可能自動補送——情況緊急請同時嘗試電話或簡訊聯繫家人。"
+    }
+}
+
 // MARK: - Firestore 家庭圈後端
 
 /// 家庭圈的 Firestore 資料層（無狀態的操作集合）。
@@ -162,13 +171,14 @@ enum FirestoreFamilyBackend {
         return familyId
     }
 
-    /// 離開家庭圈：從 memberUids 移除自己，並刪掉自己的成員與位置文件。
+    /// 離開家庭圈：從 memberUids 移除自己，並刪掉自己的成員、位置與 SOS 文件。
     static func leaveFamily(familyId: String, uid: String) async throws {
         let db = FirestoreConfig.store()
         let familyRef = db.collection(FirestoreConfig.Path.families).document(familyId)
         try await familyRef.updateData(["memberUids": FieldValue.arrayRemove([uid])])
         try? await familyRef.collection(FirestoreConfig.Path.members).document(uid).delete()
         try? await familyRef.collection(FirestoreConfig.Path.locations).document(uid).delete()
+        try? await familyRef.collection(FirestoreConfig.Path.sos).document(uid).delete()
     }
 
     /// 解散家庭圈：只有圈主能呼叫（對照 firestore.rules `families/{familyId}` 的
@@ -195,7 +205,7 @@ enum FirestoreFamilyBackend {
         // 之後每一步 rules 的 isOwner() 才查得到 ownerUid。
         let family = try await fetchFamily(familyId: familyId)
 
-        // ①members/*、locations/* 子文件：列出目前實際存在的文件逐一刪，
+        // ①members/*、locations/*、sos/* 子文件：列出目前實際存在的文件逐一刪，
         // 而不是只刪 memberUids 陣列裡的 uid——陣列可能因為某些歷史因素跟子集合不完全同步，
         // 直接列 collection 才能保證刪乾淨。
         let membersSnapshot = try await familyRef.collection(FirestoreConfig.Path.members).getDocuments()
@@ -204,6 +214,10 @@ enum FirestoreFamilyBackend {
         }
         let locationsSnapshot = try await familyRef.collection(FirestoreConfig.Path.locations).getDocuments()
         for doc in locationsSnapshot.documents {
+            try await doc.reference.delete()
+        }
+        let sosSnapshot = try await familyRef.collection(FirestoreConfig.Path.sos).getDocuments()
+        for doc in sosSnapshot.documents {
             try await doc.reference.delete()
         }
 
@@ -473,6 +487,74 @@ enum FirestoreFamilyBackend {
             ])
     }
 
+    // MARK: - SOS 求救（單文件覆寫，比照 locations，不是 pings 那種可累加子集合）
+
+    /// 寫入／更新這個成員的求救狀態。單文件覆寫模式：文件已存在且仍在求救中（isActive
+    /// 為 true）視為「延續現有求救」，只更新位置與 updatedAt、保留原 startedAt；
+    /// 文件不存在或上一次已被解除，視為「全新一次求救」，startedAt 重置為現在——
+    /// 這樣使用者解除後又重新長按，家人看到的「求救開始」時間才是這次的，不是舊的那次。
+    static func publishSOS(
+        familyId: String,
+        uid: String,
+        displayName: String,
+        latitude: Double,
+        longitude: Double
+    ) async throws {
+        let db = FirestoreConfig.store()
+        let ref = db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.sos).document(uid)
+
+        // 讀一次現有文件判斷是否延續；讀取失敗（例如剛好離線）保守視為「全新一次」，
+        // 頂多讓 startedAt 多刷新一次，不影響求救本身能不能發出去。
+        let existing = try? await ref.getDocument()
+        let isContinuing = (existing?.data()?[SOSAlert.Field.isActive] as? Bool) == true
+
+        var data: [String: Any] = [
+            SOSAlert.Field.displayName: displayName,
+            SOSAlert.Field.latitude: latitude,
+            SOSAlert.Field.longitude: longitude,
+            SOSAlert.Field.updatedAt: Timestamp(date: Date()),
+            SOSAlert.Field.isActive: true
+        ]
+        if !isContinuing {
+            data[SOSAlert.Field.startedAt] = Timestamp(date: Date())
+        }
+
+        // 逾時保護（8 秒）：SOS 是保命等級的第一次發送，離線時 setData 會無限期等伺服器 ack，
+        // 沿用 postPing 的 timeout race 模式（withThrowingTaskGroup 讓寫入與計時賽跑）。
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await ref.setData(data, merge: true)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 8_000_000_000)
+                throw SOSTimeoutError()
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+    }
+
+    /// 解除求救：標記 isActive=false。比照 stopLocation，不需要逾時保護——
+    /// 解除失敗頂多讓家人多看一陣子「求救中」，不像「發出求救」逾時那樣攸關安危的第一時間。
+    static func resolveSOS(familyId: String, uid: String) async throws {
+        let db = FirestoreConfig.store()
+        try await db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.sos).document(uid).setData([
+                SOSAlert.Field.isActive: false,
+                SOSAlert.Field.updatedAt: Timestamp(date: Date())
+            ], merge: true)
+    }
+
+    /// 讀取家庭圈所有成員的求救狀態（不分是否仍在求救中、是否過期——原始資料交給
+    /// 呼叫端判斷，呼叫端用 [SOSAlert.isStillUrgent] 篩選要不要顯示）。
+    static func fetchActiveSOSAlerts(familyId: String) async throws -> [SOSAlert] {
+        let db = FirestoreConfig.store()
+        let snap = try await db.collection(FirestoreConfig.Path.families).document(familyId)
+            .collection(FirestoreConfig.Path.sos).getDocuments()
+        return snap.documents.compactMap(sosAlert(from:))
+    }
+
     // MARK: - 文件 → struct
 
     private static func family(from doc: DocumentSnapshot) -> FamilyCircleDoc? {
@@ -545,6 +627,25 @@ enum FirestoreFamilyBackend {
             latitude: data["latitude"] as? Double,
             longitude: data["longitude"] as? Double,
             placeName: (data["placeName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    /// Firestore SOS 文件 → SOSAlert（文件 ID = 成員 uid，同時當 participantID）。
+    /// startedAt 缺欄位（理論上不會發生，防禦保留）時退回 updatedAt，避免整筆被 compactMap 丟棄。
+    private static func sosAlert(from doc: QueryDocumentSnapshot) -> SOSAlert? {
+        let data = doc.data()
+        guard let displayName = data[SOSAlert.Field.displayName] as? String,
+              let updatedAt = (data[SOSAlert.Field.updatedAt] as? Timestamp)?.dateValue()
+        else { return nil }
+        return SOSAlert(
+            id: doc.documentID,
+            participantID: doc.documentID,
+            displayName: displayName,
+            latitude: data[SOSAlert.Field.latitude] as? Double ?? 0,
+            longitude: data[SOSAlert.Field.longitude] as? Double ?? 0,
+            startedAt: (data[SOSAlert.Field.startedAt] as? Timestamp)?.dateValue() ?? updatedAt,
+            updatedAt: updatedAt,
+            isActive: data[SOSAlert.Field.isActive] as? Bool ?? false
         )
     }
 }

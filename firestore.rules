@@ -61,6 +61,15 @@ service cloud.firestore {
         allow delete: if request.auth != null && (request.auth.uid == uid || isOwner(familyId));
       }
 
+      // SOS 求救：家庭成員可讀；每人只能新增/修改自己的 SOS 狀態（同意式求救的技術保證，
+      // 求救是使用者自己主動觸發的行為，不是被動追蹤）。
+      // 刪除同 locations：本人或圈主（解散時清掉其他成員留下的 SOS 文件）。
+      match /sos/{uid} {
+        allow read: if isMember(familyId);
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow delete: if request.auth != null && (request.auth.uid == uid || isOwner(familyId));
+      }
+
       // 安否回報：家庭成員可讀、可發、可標記已讀（更新）；一般情況下不開放刪除，
       // 只有圈主解散家庭圈時能刪（避免解散後留下永久孤兒資料）。
       match /pings/{pingId} {

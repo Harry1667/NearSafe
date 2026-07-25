@@ -84,6 +84,13 @@ enum SettingsKeys {
     static let mapShowShelters = "mapShowShelters"
     /// 急救責任醫院圖層開關；預設關，理由同避難收容所
     static let mapShowHospitals = "mapShowHospitals"
+
+    // MARK: - SOS 一鍵求救
+
+    /// 本人目前是否正在求救中（跨 App 重啟保留）：App 被強制關閉、下次啟動時
+    /// [FamilySyncService] 用這個值還原 mySOSActive，讓首頁能直接顯示「求救中」卡片，
+    /// 而不是又冒出一次「發出求救」按鈕；同時也用來判斷要不要恢復週期性位置更新迴圈。
+    static let mySOSActive = "mySOSActive"
 }
 
 /// 吵醒門檻：勿擾／靜音下，時效性通知能不能突破。使用者在設定頁「勿擾與吵醒」調整；

@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import UIKit // UINotificationFeedbackGenerator（SOS 觸覺回饋）
+import AudioToolbox // AudioServicesPlaySystemSound（SOS 警報音權宜方案，沒有專用音檔素材）
 
 /// 安心頁——App 的第一畫面。
 /// 90% 的開啟只為確認一件事：「家人都平安嗎」。這頁把答案做成 3 秒可讀完的三段式：
@@ -29,6 +31,16 @@ struct HomeStatusView: View {
     /// 地點額度閘門觸發時開這個付費頁（見 [gateAddPlace]，共用判斷在 EntitlementStore）
     @State private var showPaywall = false
 
+    // MARK: - SOS 一鍵求救狀態
+
+    /// 長按進度環（0→1，滿 1.2 秒才真正觸發，見 [sosButton] 的 onLongPressGesture）
+    @State private var sosPressProgress: Double = 0
+    /// 求救中卡片的脈動動畫開關（比照 statusHero 的 breathing，reduceMotion 時不啟用）
+    @State private var sosCardPulse = false
+    /// 全螢幕紅／白閃爍 overlay 的目前透明度與顏色（0＝不顯示）
+    @State private var sosFlashOpacity: Double = 0
+    @State private var sosFlashColor: Color = HCColor.danger
+
     /// 與地圖頁共用同一個聚合（SafetyStatus）：兩頁對「平安與否」的說法永遠一致，
     /// 且一律以未過濾事件計算——假性安心是這頁最不可犯的錯
     private var status: SafetyOverview {
@@ -55,7 +67,28 @@ struct HomeStatusView: View {
     }
 
     var body: some View {
-        // 導航堆疊綁在 router 上：deep link（widget/通知的 alerts）能直接推入提醒中心
+        ZStack {
+            homeNavigationStack
+            // 螢幕閃光：SOS 觸發當下的全螢幕紅／白交替閃爍，純視覺提醒不吃互動——
+            // .allowsHitTesting(false) 避免蓋住下方畫面導致按不到東西。
+            // reduceMotion 時 [startSOSFlash] 直接不啟動，這裡的 opacity 永遠是 0。
+            if sosFlashOpacity > 0 {
+                sosFlashColor
+                    .opacity(sosFlashOpacity)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .task {
+            // 家人是否有人在求救：比照 refreshFamilyMembers 的既有呼叫時機，安心頁是最常開的
+            // 分頁，這裡抓一次可以最快讓「新求救」的本機通知觸發。
+            await sync.fetchActiveSOSAlerts(context: context)
+        }
+    }
+
+    // 導航堆疊綁在 router 上：deep link（widget/通知的 alerts）能直接推入提醒中心
+    private var homeNavigationStack: some View {
         NavigationStack(path: Bindable(router).homePath) {
             ScrollViewReader { scrollProxy in
             ScrollView {
@@ -121,8 +154,9 @@ struct HomeStatusView: View {
                 case .history: HistoryView()
                 }
             }
-            // 單人時按了沒人看見，「回報我平安」直接不出現，不留一顆死路按鈕
-            .safeAreaInset(edge: .bottom) { if !isSoloUser { checkInButton } }
+            // SOS 常駐顯眼位置：不因單人／多人而隱藏——常駐才有「保命網」的意義。
+            // 「回報我平安」單人時按了沒人看見，直接不出現，不留一顆死路按鈕。
+            .safeAreaInset(edge: .bottom) { bottomActionBar }
             .sheet(isPresented: $showCheckIn) {
                 NavigationStack { SafetyCheckInView(myName: myName) }
             }
@@ -629,6 +663,28 @@ struct HomeStatusView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - 底部行動列（SOS 常駐＋回報我平安）
+
+    /// 常駐底部：SOS（求救中則換成解除卡）在最上面最顯眼，回報我平安在下面——
+    /// 兩者共用同一份外距與底色，取代各自分開的 padding/background。
+    private var bottomActionBar: some View {
+        VStack(spacing: HCSpacing.x3) {
+            if sync.mySOSActive {
+                sosActiveCard
+            } else {
+                sosButton
+            }
+            // 單人時按了沒人看見，「回報我平安」直接不出現，不留一顆死路按鈕
+            if !isSoloUser {
+                checkInButton
+            }
+        }
+        .padding(.horizontal, HCSpacing.x4)
+        .padding(.top, HCSpacing.x2)
+        .padding(.bottom, HCSpacing.x2)
+        .background(.bar)
+    }
+
     // MARK: - 回報平安
 
     private var checkInButton: some View {
@@ -643,9 +699,134 @@ struct HomeStatusView: View {
         .buttonStyle(.borderedProminent)
         .tint(HCColor.brand)
         .tourAnchor(.checkInButton)
+    }
+
+    // MARK: - SOS 一鍵求救
+
+    /// 常駐 SOS 入口：長按（滿 1.2 秒）才觸發，避免手滑誤觸——單純點擊完全不會啟動。
+    /// 按住期間用進度環顯示倒數視覺回饋；紅色系比「回報我平安」更醒目（HCColor.danger）。
+    private var sosButton: some View {
+        HStack(spacing: HCSpacing.x3) {
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.35), lineWidth: 3)
+                    .frame(width: 28, height: 28)
+                Circle()
+                    .trim(from: 0, to: sosPressProgress)
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .frame(width: 28, height: 28)
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+            .accessibilityHidden(true)
+            Text("長按發出求救")
+                .font(.body.weight(.bold))
+                .foregroundStyle(.white)
+            Spacer()
+        }
         .padding(.horizontal, HCSpacing.x4)
-        .padding(.bottom, HCSpacing.x2)
-        .background(.bar)
+        .padding(.vertical, HCSpacing.x3)
+        .frame(maxWidth: .infinity)
+        .background(HCColor.danger, in: RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous))
+        .onLongPressGesture(minimumDuration: 1.2, maximumDistance: 60) {
+            triggerSOS()
+        } onPressingChanged: { pressing in
+            if pressing {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.linear(duration: 1.2)) { sosPressProgress = 1.0 }
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) { sosPressProgress = 0 }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("發出求救")
+        .accessibilityHint("長按兩秒發出求救，家人下次開啟 App 會看到你的求救狀態與位置")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// 求救中狀態卡：紅色、脈動動畫（reduceMotion 時靜止），明講「非即時」——
+    /// 目前沒有伺服器推播能力，不能讓卡片暗示家人會馬上收到通知。
+    private var sosActiveCard: some View {
+        VStack(alignment: .leading, spacing: HCSpacing.x2) {
+            HStack(spacing: HCSpacing.x2) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.white)
+                Text("求救中").font(.title3.weight(.bold)).foregroundStyle(.white)
+                Spacer()
+            }
+            if let sosError = sync.sosError {
+                Text(sosError)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            Text("非即時通知：家人開啟 App 或回到前景時才會看到")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.8))
+            Button {
+                Task { await sync.cancelSOS(context: context) }
+            } label: {
+                Text("解除求救")
+                    .font(.body.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, HCSpacing.x1)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.white)
+            .foregroundStyle(HCColor.danger)
+        }
+        .padding(HCSpacing.x4)
+        .frame(maxWidth: .infinity)
+        .background(HCColor.danger, in: RoundedRectangle(cornerRadius: HCRadius.control, style: .continuous))
+        .scaleEffect(sosCardPulse ? 1.02 : 1.0)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+            value: sosCardPulse
+        )
+        .onAppear { sosCardPulse = true }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 長按滿時觸發：呼叫 activateSOS、播警報音＋震動、啟動螢幕閃光（reduceMotion 時不閃）。
+    private func triggerSOS() {
+        sosPressProgress = 0
+        Task { await sync.activateSOS(context: context) }
+        playSOSAlarm()
+        startSOSFlash()
+        Analytics.track("sos_activated")
+    }
+
+    /// 警報聲＋震動：沒有專用音檔素材，權宜方案用系統內建音效（1005，近似警示音）；
+    /// 震動用 UINotificationFeedbackGenerator 重複觸發三次加強警覺感。
+    private func playSOSAlarm() {
+        AudioServicesPlaySystemSound(SystemSoundID(1005))
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.warning)
+        Task {
+            for _ in 0..<2 {
+                try? await Task.sleep(for: .milliseconds(400))
+                generator.notificationOccurred(.warning)
+            }
+        }
+    }
+
+    /// 全螢幕紅／白交替閃爍，約 3 秒（6 次切換）。光敏感癲癇是真實的安全風險——
+    /// reduceMotion 開啟時直接不啟動，opacity 永遠維持 0，完全不閃爍。
+    private func startSOSFlash() {
+        guard !reduceMotion else { return }
+        Task {
+            for i in 0..<6 {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    sosFlashColor = i % 2 == 0 ? HCColor.danger : .white
+                    sosFlashOpacity = 0.5
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+                withAnimation(.easeInOut(duration: 0.25)) { sosFlashOpacity = 0 }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
     }
 
     // MARK: - 單人態引導卡
