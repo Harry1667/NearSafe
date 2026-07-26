@@ -53,6 +53,9 @@ protocol RegionAlertProvider {
 enum EventPipeline {
     static let providers: [any EventProvider] = [
         NCDRPointEventProvider(),
+        // 消防署全國即時派遣：官方第一手（isOfficial=true，可推播），對標 Beacon 後補上的
+        // 治安/意外事件缺口——不依賴新聞媒體報導與否、也不依賴關鍵字猜得準不準
+        NFAIncidentProvider(),
         // 媒體報導層：中央社/自由/ETtoday 現場事故（isOfficial=false，只顯示永不推播）
         NewsEventProvider(),
         // 空品惡化連鎖：圈附近測站 AQI 破門檻→官方事件→推播（門檻與開關走遠端設定）
