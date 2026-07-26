@@ -40,7 +40,7 @@ struct NewsEventProvider: EventProvider {
                 // 優先用爬蟲 LLM 產的 10–12 字短摘要（地點＋事件重點）；
                 // 舊資料或 LLM 未產出時退回原始新聞標題，永不因缺欄位丟事件
                 title: event.summary?.isEmpty == false ? event.summary! : event.title,
-                eventType: Self.eventType(for: event.category),
+                eventType: Self.eventType(for: event.category, title: event.title, detail: event.detail),
                 approximateLocation: location,
                 latitude: anchor.latitude,
                 longitude: anchor.longitude,
@@ -57,11 +57,17 @@ struct NewsEventProvider: EventProvider {
         }
     }
 
-    /// 爬蟲分類 → App 的 MVP 四類。
-    /// 除了既有的精準分類字串，額外用治安關鍵字掃描分類文字本身——爬蟲來源的分類欄位
-    /// 不一定乾淨吐出「公共安全」四字，槍擊/攻擊/械鬥類事件曾因此被誤歸為天災（default），
-    /// 使用者完全看不到本該最緊急的治安警訊。找不到任何關鍵字時維持原本的 default 行為。
-    static func eventType(for category: String?) -> String {
+    /// 爬蟲分類 → App 的事件類型。
+    /// 先用既有的精準分類字串／治安關鍵字判斷落在哪個粗類（跟先前邏輯完全相同，不動，
+    /// 避免既有行為回歸），粗類判斷完才用標題＋詳述文字做細分類（對標 Beacon 後補上）——
+    /// 細分類抓不到任何關鍵字時，穩穩退回粗類，絕不因為細分類失敗而讓事件消失或分類錯誤。
+    static func eventType(for category: String?, title: String = "", detail: String? = nil) -> String {
+        let broad = broadCategory(for: category)
+        let haystack = title + " " + (detail ?? "")
+        return refine(broad, haystack: haystack)
+    }
+
+    private static func broadCategory(for category: String?) -> String {
         guard let category, !category.isEmpty else { return EventCategory.disaster }
         if category == "火災" { return EventCategory.fire }
         if category == "交通" { return EventCategory.traffic }
@@ -70,6 +76,48 @@ struct NewsEventProvider: EventProvider {
             return EventCategory.publicSafety
         }
         return EventCategory.disaster // 天災、民生
+    }
+
+    /// 細分類關鍵字表：依序比對，第一個命中的就用；找不到就維持傳入的粗類不變。
+    /// 刻意只在對應的粗類範圍內細分（例：只有 publicSafety 才去猜是槍擊還是持刀），
+    /// 不跨粗類細分，避免一則車禍新聞因標題含「爆」字誤判成爆炸。
+    private static func refine(_ broad: String, haystack: String) -> String {
+        switch broad {
+        case EventCategory.publicSafety:
+            let rules: [(String, [String])] = [
+                (EventCategory.shooting, ["槍擊", "開槍", "掃射", "槍手", "亂槍", "開火", "中彈"]),
+                (EventCategory.knifeAttack, ["持刀", "刺傷", "砍傷", "砍人"]),
+                (EventCategory.explosion, ["爆炸", "氣爆", "爆裂物"]),
+                (EventCategory.disturbance, ["鬥毆", "群毆", "互毆", "大亂鬥", "打群架"]),
+                (EventCategory.harassment, ["性騷擾", "性侵", "猥褻"]),
+                (EventCategory.suspiciousPerson, ["可疑人物", "可疑男子", "可疑女子", "尾隨"]),
+                (EventCategory.animalAttack, ["野生動物攻擊", "犬隻攻擊", "動物咬傷", "熊出沒"]),
+            ]
+            for (type, keywords) in rules where keywords.contains(where: { haystack.contains($0) }) {
+                return type
+            }
+            return broad
+        case EventCategory.disaster:
+            let rules: [(String, [String])] = [
+                (EventCategory.earthquake, ["地震"]),
+                (EventCategory.flood, ["淹水", "積水"]),
+                (EventCategory.landslide, ["土石流", "落石", "山崩", "走山"]),
+                (EventCategory.powerOutage, ["停電", "斷電", "跳電"]),
+                (EventCategory.waterOutage, ["停水", "斷水"]),
+                (EventCategory.gasLeak, ["瓦斯外洩", "瓦斯洩漏"]),
+                (EventCategory.injuredAnimal, ["受傷動物", "動物受傷", "動物救援"]),
+            ]
+            for (type, keywords) in rules where keywords.contains(where: { haystack.contains($0) }) {
+                return type
+            }
+            return broad
+        case EventCategory.traffic:
+            if ["捷運"].contains(where: { haystack.contains($0) }) { return EventCategory.metroIncident }
+            if ["火車", "台鐵", "臺鐵", "鐵路"].contains(where: { haystack.contains($0) }) { return EventCategory.trainIncident }
+            return broad
+        default:
+            return broad
+        }
     }
 
     /// 事件錨點：優先用行政區邊界外框中心（縣市名對得上才用，避免同名區誤置）；

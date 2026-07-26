@@ -57,6 +57,12 @@ enum RemoteConfig {
     private static let defaultDangerKinds = [
         EventCategory.fire, EventCategory.publicSafety, // 點狀：火災、械鬥/槍擊
         "地震", "海嘯", "颱風",                            // 區域：三大重災
+        // 對標 Beacon 後補上的細分類——直接危及人身安全的進行式事件，維持保命推播；
+        // 「地震」細分類跟區域警報用同一個字串，已經在上面涵蓋不必重複。
+        // 可疑人物／性騷擾／受傷動物／交通/軌道事故／停水停電等留在留意級（不推播），
+        // 避免把不確定/非立即人身危險的事件也推成保命等級造成通知疲乏。
+        EventCategory.knifeAttack, EventCategory.shooting, EventCategory.disturbance,
+        EventCategory.gasLeak, EventCategory.explosion, EventCategory.animalAttack,
     ]
 
     /// 內建預設（遠端沒給或斷網時生效）

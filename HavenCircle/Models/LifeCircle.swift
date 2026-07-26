@@ -137,7 +137,14 @@ extension LocalLifeCircle {
     }
 }
 
-/// 事件類型清單（MVP 四類）
+/// 事件類型清單（MVP 四大類＋對標 Beacon 後補上的細分類）。
+///
+/// 「四大類」（fire/traffic/disaster/publicSafety）是生活圈 alertTypes 的粗顆粒度選項，
+/// defaultSelection 跟閘門判斷都繼續用這四個，不動——避免影響既有的圈子比對邏輯。
+/// 下面的細分類只當作 eventType 的實際值（更精確的圖示/文案用），本身不是使用者要
+/// 勾選的「類型」，而是「這件事具體是哪一種」，讓地圖/事件卡能顯示對的圖示而不是
+/// 一律套用「公共安全」的通用盾牌。細分類事件仍會被 publicSafety／disaster 等
+/// 既有 isDangerKind 判斷涵蓋是否推播（見 RemoteConfig.defaultDangerKinds）。
 enum EventCategory {
     static let fire = "火災"
     static let traffic = "重大交通事故"
@@ -151,4 +158,24 @@ enum EventCategory {
     /// 「重大交通事故」目前沒有政府即時資料源，不列入預設——勾了卻永遠收不到是空承諾，
     /// 接上資料源後再加回。
     static let defaultSelection = [fire, disaster, publicSafety]
+
+    // MARK: - 細分類（對標 Beacon 守護臺灣後補上，僅供圖示/文案更精確，不影響上面四類的閘門邏輯）
+
+    static let knifeAttack = "持刀傷人"
+    static let shooting = "槍擊案"
+    static let disturbance = "公共騷動/鬥毆"
+    static let harassment = "性騷擾"
+    static let suspiciousPerson = "可疑人物"
+    static let animalAttack = "動物攻擊"
+    static let injuredAnimal = "受傷動物"
+    static let gasLeak = "瓦斯外洩"
+    static let explosion = "爆炸"
+    static let emergencyMedical = "緊急救護"
+    static let trainIncident = "火車事故"
+    static let metroIncident = "捷運異常"
+    static let earthquake = "地震"
+    static let flood = "淹水"
+    static let landslide = "土石流"
+    static let powerOutage = "停電"
+    static let waterOutage = "停水"
 }

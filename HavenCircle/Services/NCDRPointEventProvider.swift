@@ -74,8 +74,13 @@ struct NCDRPointEventProvider: EventProvider {
             EventCategory.fire
         case "疏散避難", "防空", "輻射災害", "傳染病", "急門診通報", "縣市災情通報":
             EventCategory.publicSafety
-        case "道路封閉", "鐵路事故", "高速公路路況", "聯絡道淹水封閉",
-             "強風管制路段", "地下道積淹水", "捷運營運":
+        case "鐵路事故":
+            EventCategory.trainIncident
+        case "捷運營運":
+            EventCategory.metroIncident
+        case "地下道積淹水":
+            EventCategory.flood
+        case "道路封閉", "高速公路路況", "聯絡道淹水封閉", "強風管制路段":
             EventCategory.traffic
         default:
             EventCategory.disaster

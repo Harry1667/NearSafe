@@ -72,21 +72,30 @@ struct NFAIncidentProvider: EventProvider {
     /// 消防署分類 → App 的事件分類。消防署的分類顆粒度比我們細很多
     /// （住宅火災/機關火災/汽車火災/餐廳火災/雞舍火災…都算火災），用 contains 判斷
     /// 比窮舉每個組合字串更耐用（消防署可能出現新的細分類名稱）。
+    /// 對標 Beacon 後：能明確判斷細分類的直接給細分類圖示，判斷不出來才退回四大類。
     static func eventType(for category: String) -> String {
         if category.contains("火災") {
             return EventCategory.fire
         }
+        if category.contains("地震") { return EventCategory.earthquake }
+        if category.contains("淹水") { return EventCategory.flood }
+        if category.contains("土石流") || category.contains("坍塌") { return EventCategory.landslide }
+        if category.contains("瓦斯") { return EventCategory.gasLeak }
+        if category.contains("停水") { return EventCategory.waterOutage }
+        if category.contains("停電") { return EventCategory.powerOutage }
+        if category.contains("捷運") { return EventCategory.metroIncident }
+        if category.contains("火車") || category.contains("鐵路") { return EventCategory.trainIncident }
         if category.contains("交通") || category.contains("車禍") {
             return EventCategory.traffic
         }
-        if category.contains("地震") || category.contains("海嘯") || category.contains("颱風")
-            || category.contains("土石流") || category.contains("淹水") || category.contains("坍塌") {
+        if category.contains("海嘯") || category.contains("颱風") {
             return EventCategory.disaster
         }
-        if category.contains("瓦斯") || category.contains("停水") || category.contains("停電") {
-            return EventCategory.disaster // 民生類事件走 disaster 分類（跟 NewsEventProvider 一致）
+        if category.contains("動物") { return EventCategory.animalAttack }
+        if category.contains("緊急救護") || category.contains("救護") {
+            return EventCategory.emergencyMedical
         }
-        // 山域事故、動物咬傷、職業災害、鬥毆等其餘案類，一律歸公共安全
+        // 山域事故、職業災害、鬥毆等其餘案類，判斷不出更細的分類，一律歸公共安全
         return EventCategory.publicSafety
     }
 }
