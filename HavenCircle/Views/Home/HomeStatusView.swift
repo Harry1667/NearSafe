@@ -29,6 +29,13 @@ struct HomeStatusView: View {
     /// 地點額度閘門觸發時開這個付費頁（見 [gateAddPlace]，共用判斷在 EntitlementStore）
     @State private var showPaywall = false
 
+    /// 浮動分頁列（膠囊）從系統安全區下緣量到膠囊頂端的視覺高度：與 FeatureTour.swift 的
+    /// TourTarget.tabBar 挖洞框用同一組數字（12pt 間距＋64pt 膠囊高度＝76），
+    /// 那裡是已經對過真實裝置畫面校準過的框，不是這裡重新用猜的。
+    /// 用 safeAreaInset 疊加（而非塞進可捲動內容尾端的固定 padding）：不論系統本身
+    /// 已經自動保留多少安全區，這裡都只是「再往上多補一段」，不必猜測兩者加總是否剛好蓋滿。
+    private static let floatingTabBarClearance: CGFloat = 76
+
     /// 與地圖頁共用同一個聚合（SafetyStatus）：兩頁對「平安與否」的說法永遠一致，
     /// 且一律以未過濾事件計算——假性安心是這頁最不可犯的錯
     private var status: SafetyOverview {
@@ -81,8 +88,6 @@ struct HomeStatusView: View {
                 }
                 .padding(.horizontal, HCSpacing.x4)
                 .padding(.top, HCSpacing.x4)
-                // 單人態沒有底部回報鈕的 safeAreaInset 墊高，內容會被浮動分頁列遮住尾巴，補等量留白
-                .padding(.bottom, isSoloUser ? 96 : 0)
                 // iPad 上限制內容主欄寬度並置中，避免 hcCard 卡片撐滿 13 吋螢幕
                 .frame(maxWidth: 600)
                 .frame(maxWidth: .infinity)
@@ -121,8 +126,17 @@ struct HomeStatusView: View {
                 case .history: HistoryView()
                 }
             }
-            // 單人時按了沒人看見，「回報我平安」直接不出現，不留一顆死路按鈕
-            .safeAreaInset(edge: .bottom) { if !isSoloUser { checkInButton } }
+            // 單人時按了沒人看見，「回報我平安」直接不出現，不留一顆死路按鈕；
+            // 但沒有按鈕就沒有東西墊在內容與浮動分頁列之間，改補一段等高透明留白（floatingTabBarClearance），
+            // 兩支路徑都走 safeAreaInset（而非其中一支用可捲動內容裡的固定 padding），
+            // 確保無論系統本身自動保留多少安全區，這裡都正確疊加在上面，捲到底不會被膠囊分頁列蓋到文字。
+            .safeAreaInset(edge: .bottom) {
+                if isSoloUser {
+                    Color.clear.frame(height: Self.floatingTabBarClearance)
+                } else {
+                    checkInButton
+                }
+            }
             .sheet(isPresented: $showCheckIn) {
                 NavigationStack { SafetyCheckInView(myName: myName) }
             }
@@ -156,24 +170,27 @@ struct HomeStatusView: View {
         if status.isAllClear {
             let needsLocationUpdate = staleLiveCircleCount > 0
             let clearColor = needsLocationUpdate ? HCColor.attention : HCColor.safe
-            VStack(spacing: HCSpacing.x6) {
+            // 縮小約 35-40%：狀態區只傳達一個布林狀態，不該佔掉螢幕近半高度——
+            // 同心圓 motif（品牌識別）保留，三圈比例不變，只是整體係數從 7/5.5/4 降到 4.5/3.5/2.5
+            // （約原尺寸 62-65%），把空間還給下面的事件動態與家人資訊。
+            VStack(spacing: HCSpacing.x4) {
                 ZStack {
                     // 守護圈環：同心圓 motif（與地圖盾牌、Onboarding 同一簽名語言）
                     Circle()
                         .fill(clearColor.opacity(0.04))
-                        .frame(width: HCSpacing.x6 * 7, height: HCSpacing.x6 * 7)
+                        .frame(width: HCSpacing.x6 * 4.5, height: HCSpacing.x6 * 4.5)
                     Circle()
                         .stroke(clearColor.opacity(0.10), lineWidth: HCSpacing.x1 / 2)
-                        .frame(width: HCSpacing.x6 * 7, height: HCSpacing.x6 * 7)
+                        .frame(width: HCSpacing.x6 * 4.5, height: HCSpacing.x6 * 4.5)
                     Circle()
                         .stroke(clearColor.opacity(0.22), lineWidth: HCSpacing.x1 / 2)
-                        .frame(width: HCSpacing.x6 * 5.5, height: HCSpacing.x6 * 5.5)
+                        .frame(width: HCSpacing.x6 * 3.5, height: HCSpacing.x6 * 3.5)
                     Circle()
                         .fill(clearColor.gradient)
-                        .frame(width: HCSpacing.x6 * 4, height: HCSpacing.x6 * 4)
-                        .shadow(color: clearColor.opacity(0.28), radius: HCSpacing.x4, y: HCSpacing.x1)
+                        .frame(width: HCSpacing.x6 * 2.5, height: HCSpacing.x6 * 2.5)
+                        .shadow(color: clearColor.opacity(0.28), radius: HCSpacing.x3, y: HCSpacing.x1)
                     Image(systemName: needsLocationUpdate ? "location.slash.fill" : "checkmark.shield.fill")
-                        .font(.largeTitle.weight(.medium))
+                        .font(.title.weight(.medium))
                         .foregroundStyle(.white)
                 }
                 // 呼吸動效：緩慢、低幅度——安心不是興奮；reduceMotion 時靜止
@@ -204,25 +221,26 @@ struct HomeStatusView: View {
                         .frame(maxWidth: 420)
                 }
             }
-            .padding(.vertical, HCSpacing.x6 * 2)
+            .padding(.vertical, HCSpacing.x4)
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .combine)
         } else {
-            // 有事件靠近生活圈：全 App 唯一「變臉」的時刻
-            VStack(spacing: HCSpacing.x6) {
+            // 有事件靠近生活圈：全 App 唯一「變臉」的時刻。同樣縮小約 35-40%（6/4 → 3.75/2.5），
+            // 與上面平安態的縮小比例一致，只是危險態原本就比較克制，係數起點略小。
+            VStack(spacing: HCSpacing.x4) {
                 ZStack {
                     Circle()
                         .fill(HCColor.danger.opacity(0.04))
-                        .frame(width: HCSpacing.x6 * 6, height: HCSpacing.x6 * 6)
+                        .frame(width: HCSpacing.x6 * 3.75, height: HCSpacing.x6 * 3.75)
                     Circle()
                         .stroke(HCColor.danger.opacity(0.16), lineWidth: HCSpacing.x1 / 2)
-                        .frame(width: HCSpacing.x6 * 6, height: HCSpacing.x6 * 6)
+                        .frame(width: HCSpacing.x6 * 3.75, height: HCSpacing.x6 * 3.75)
                     Circle()
                         .fill(HCColor.danger.gradient)
-                        .frame(width: HCSpacing.x6 * 4, height: HCSpacing.x6 * 4)
-                        .shadow(color: HCColor.danger.opacity(0.28), radius: HCSpacing.x4, y: HCSpacing.x1)
+                        .frame(width: HCSpacing.x6 * 2.5, height: HCSpacing.x6 * 2.5)
+                        .shadow(color: HCColor.danger.opacity(0.28), radius: HCSpacing.x3, y: HCSpacing.x1)
                     Image(systemName: "exclamationmark.shield.fill")
-                        .font(.largeTitle.weight(.medium))
+                        .font(.title.weight(.medium))
                         .foregroundStyle(.white)
                 }
                 .accessibilityHidden(true)
@@ -249,7 +267,7 @@ struct HomeStatusView: View {
                 .tint(HCColor.danger)
                 .controlSize(.large)
             }
-            .padding(.vertical, HCSpacing.x6)
+            .padding(.vertical, HCSpacing.x4)
             .frame(maxWidth: .infinity)
         }
     }
@@ -441,6 +459,10 @@ struct HomeStatusView: View {
             .buttonStyle(.plain)
         }
         .hcCard()
+        // statusHero 是淡雅漸層＋大量留白，這張卡若只是硬邊灰底會顯得突兀（上空下擠）；
+        // 加一點點陰影讓它像「浮」在頁面上而非「貼」在頁面上，跟其他卡片一樣用 HCRadius.card 圓角，
+        // 視覺重量往 statusHero 那邊拉近一些——不動留白量本身，只是加一點呼吸感。
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 3)
     }
 
     /// D4 重問通道：情境式權限卡（A4）被按過「先不用」之後，通知就永遠沒有回頭路——
