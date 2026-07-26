@@ -721,9 +721,16 @@ struct HomeStatusView: View {
                     .foregroundStyle(.white)
             }
             .accessibilityHidden(true)
-            Text("長按發出求救")
-                .font(.body.weight(.bold))
-                .foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("長按發出求救")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.white)
+                // 非官方報案服務的免責文字要放在按下去「之前」就看得到的地方，
+                // 不能只藏在 accessibilityHint 裡——一般使用者不會聽到那段。
+                Text("非報案專線・有生命危險請先撥 110 / 119")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.85))
+            }
             Spacer()
         }
         .padding(.horizontal, HCSpacing.x4)
@@ -765,6 +772,9 @@ struct HomeStatusView: View {
             Text("非即時通知：家人開啟 App 或回到前景時才會看到")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.8))
+            Text("這不是報案專線，安心圈也非官方救援單位——有生命危險請立刻撥打 110 或 119")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white)
             Button {
                 Task { await sync.cancelSOS(context: context) }
             } label: {
