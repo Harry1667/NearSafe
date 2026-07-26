@@ -83,8 +83,10 @@ LLM_MIN_CONFIDENCE = 0.6  # LLM 信心低於此值 → 丟棄 LLM 結果、退�
 # seen.json 滾動上限
 SEEN_MAX = 2000
 
-# 資料來源。RSS 2.0 為預設；format="atom" 走 parse_atom（公視）。
-# 2026-07-18 擴充背景：實測 TVBS／東森 EBC／三立官網均已無公開 RSS，可加的只有下面兩條。
+# 資料來源。RSS 2.0 為預設；format="atom" 走 parse_atom（公視）；format="tvbs_html" 走
+# parse_tvbs_local（TVBS 沒有可用 RSS，改直接爬 /local 分類頁的「即時」清單區塊）。
+# 2026-07-26：實測三立官網為前端 JS 動態渲染，簡單 HTML 爬取抓不到內容，暫不支援
+# （需要無頭瀏覽器等級的技術投入，非目前爬蟲架構的量級，故不強做）。
 FEEDS = [
     {"name": "中央社", "feed": "社會", "url": "https://feeds.feedburner.com/rsscna/social"},
     {"name": "中央社", "feed": "地方", "url": "https://feeds.feedburner.com/rsscna/local"},
@@ -94,6 +96,7 @@ FEEDS = [
     # UDN 從海外 IP 實測回「合法 RSS 外殼但 item 全空」（疑地區過濾）；
     # 爬蟲機在台灣網路，掛著觀察——若仍為空殼，空 items 會被標題過濾自然略過，無害
     {"name": "聯合報", "feed": "社會", "url": "https://udn.com/news/rssfeed/6639"},  # 2026-07-26 修正：UDN 換了網址結構，舊網址吐空殼假資料（非地區封鎖）
+    {"name": "TVBS", "feed": "社會", "url": "https://news.tvbs.com.tw/local", "format": "tvbs_html"},  # 2026-07-26 新增：無公開RSS，直接爬即時清單區塊
 ]
 
 # ---------------------------------------------------------------------------
@@ -246,6 +249,52 @@ def parse_atom(data):
             "pubDate": text_of("published") or text_of("updated"),
         })
     return [i for i in items if i["title"]]
+
+
+TVBS_ARTICLE_SPLIT = '<li><a href="/local/'
+
+
+def parse_tvbs_local(html):
+    """
+    TVBS 沒有可用的公開 RSS（官方/RSSHub 皆無穩定路徑），改直接爬 /local 分類頁
+    的「即時」清單區塊。頁面同時有「頭條圖文」「即時」兩種不同 HTML 結構的清單，
+    這裡只解析「即時」清單（<li><a href="/local/{id}">...<h2>title</h2>...
+    class="time">time），比頭條圖文結構單純、時間新舊排序清楚。
+
+    輸出與 parse_rss 相同形狀的 dict 清單，讓下游分類/去重/LLM 完全共用一套邏輯，
+    不必為 TVBS 另外維護一份關鍵字表。
+    """
+    items = []
+    chunks = html.split(TVBS_ARTICLE_SPLIT)
+    for chunk in chunks[1:]:
+        id_m = re.match(r"(\d+)\"", chunk)
+        if not id_m:
+            continue
+        article_id = id_m.group(1)
+        boundary = chunk.find("</li>")
+        scope = chunk[:boundary] if boundary != -1 else chunk[:2000]
+        title_m = re.search(r"<h2[^>]*>(?:<p>)?([^<]+?)(?:</p>)?</h2>", scope)
+        if not title_m:
+            continue
+        time_m = re.search(
+            r'class="time">\s*([0-9]{4})/([0-9]{2})/([0-9]{2})\s+([0-9]{2}):([0-9]{2})',
+            scope,
+        )
+        if time_m:
+            y, mo, d, hh, mm = time_m.groups()
+            pub_date = f"{y}-{mo}-{d}T{hh}:{mm}:00+08:00"
+        else:
+            pub_date = datetime.now(TZ_TAIPEI).isoformat()
+        title = strip_html(title_m.group(1)).strip()
+        items.append({
+            "title": title,
+            "description": "",
+            "link": f"https://news.tvbs.com.tw/local/{article_id}",
+            "guid": article_id,
+            "pubDate": pub_date,
+        })
+    return items
+
 
 
 def stable_id(item):
@@ -596,7 +645,13 @@ def main(feeds=None, out_dir=None):
         # 單一 feed 失敗：記 log、標 ok=false，繼續跑其他 feed
         try:
             data = fetch_url(feed["url"])
-            items = parse_atom(data) if feed.get("format") == "atom" else parse_rss(data)
+            fmt = feed.get("format")
+            if fmt == "atom":
+                items = parse_atom(data)
+            elif fmt == "tvbs_html":
+                items = parse_tvbs_local(data.decode("utf-8", errors="replace"))
+            else:
+                items = parse_rss(data)
         except Exception as e:
             log("feed 抓取/解析失敗（跳過此 feed）：{} {} — {}".format(
                 feed["name"], feed["feed"], e))
