@@ -1,7 +1,5 @@
 import SwiftUI
 import SwiftData
-import MapKit
-import CoreLocation
 
 /// 家人清單：以「人」為中心呈現——災害時真正要看的是「誰在哪、平不平安」，
 /// 不是一排參數設定。版面仿 Apple 家庭共享：頂部固定「我的帳號」卡，
@@ -64,7 +62,6 @@ struct FamilyListView: View {
     @Environment(FamilySyncService.self) private var sync
     @Environment(TabRouter.self) private var router
     @Environment(EntitlementStore.self) private var entitlementStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var members: [LocalFamilyMember]
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.profileFamilyRole) private var familyRole = ""
@@ -93,9 +90,6 @@ struct FamilyListView: View {
     @State private var showLeaveConfirm = false
     @State private var isLeavingFamily = false
     @State private var leaveError: String?
-
-    // SOS 求救卡的脈動動畫開關（reduceMotion 時不啟用）
-    @State private var sosPulse = false
 
     /// D1：是否已加入或建立家庭圈——優先於本機成員數的分支依據
     private var isInFamilyCircle: Bool { sync.isInFamilyCircle }
@@ -134,9 +128,6 @@ struct FamilyListView: View {
 
     var body: some View {
         List {
-            // 求救卡永遠置頂：比「我的家庭」卡更醒目，不論目前是哪一種家庭狀態分支都要看得到。
-            // 沒有人在求救時完全不顯示這個區塊（不留空狀態文字），下面清單照舊。
-            sosAlertsSection
             if !isInFamilyCircle {
                 // 未入圈：邀請大鈕（連同「輸入邀請碼加入」次要鈕）永遠置頂——
                 // 這正是使用者罵「沒有引導」的畫面，入口不能被我的帳號卡擠到第二位（#16）
@@ -222,12 +213,10 @@ struct FamilyListView: View {
         .task {
             await sync.refreshAccountStatus()
             await sync.refreshFamilyMembers(context: context)
-            await sync.fetchActiveSOSAlerts(context: context)
         }
         .refreshable {
             await sync.refreshAccountStatus()
             await sync.refreshFamilyMembers(context: context)
-            await sync.fetchActiveSOSAlerts(context: context)
         }
         // B2：deep link 帶碼進來（QR 掃描／havencircle://join）——切到本頁後這裡接手，
         // 未登入先走登入預告卡，登入完成才開加入流程；消耗式旗標，用過就清空避免重觸發。
@@ -252,83 +241,6 @@ struct FamilyListView: View {
         .frame(maxWidth: 600)
         .frame(maxWidth: .infinity)
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
-    }
-
-    // MARK: - SOS 求救卡（家人端顯示）
-
-    /// 家人求救卡：只要 sync.activeSOSAlerts 非空就顯示，逐一列出「○○ 發出求救・X分鐘前」，
-    /// 紅色脈動、置頂於清單最上方（比 D2「我的帳號」卡更醒目）。點擊在地圖 App 開啟該成員座標——
-    /// 不含一鍵回撥（LocalFamilyMember 沒有電話欄位，加欄位是 SwiftData migration 風險，這次不做）。
-    @ViewBuilder
-    private var sosAlertsSection: some View {
-        if !sync.activeSOSAlerts.isEmpty {
-            Section {
-                VStack(spacing: HCSpacing.x2) {
-                    ForEach(sync.activeSOSAlerts) { alert in
-                        Button {
-                            openInMaps(alert)
-                        } label: {
-                            HStack(spacing: HCSpacing.x3) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.title3.weight(.bold))
-                                    .foregroundStyle(.white)
-                                VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                                    Text("\(alert.displayName) 發出求救")
-                                        .font(.body.weight(.bold))
-                                        .foregroundStyle(.white)
-                                    Text(sosAgoText(alert) + (alert.hasLocation ? "・點擊在地圖開啟位置" : "・目前沒有他的位置"))
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.85))
-                                }
-                                Spacer()
-                                if alert.hasLocation {
-                                    Image(systemName: "location.fill")
-                                        .foregroundStyle(.white)
-                                        .accessibilityHidden(true)
-                                }
-                            }
-                            .padding(HCSpacing.x3)
-                            .frame(maxWidth: .infinity)
-                            .background(HCColor.danger, in: RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!alert.hasLocation)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityHint(alert.hasLocation ? "點兩下在地圖開啟他的位置並導航過去" : "")
-                    }
-                }
-                .scaleEffect(sosPulse ? 1.015 : 1.0)
-                .animation(
-                    reduceMotion ? nil : .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
-                    value: sosPulse
-                )
-                .onAppear { sosPulse = true }
-            }
-            .listRowInsets(
-                EdgeInsets(
-                    top: HCSpacing.x1,
-                    leading: HCSpacing.x4,
-                    bottom: HCSpacing.x1,
-                    trailing: HCSpacing.x4
-                )
-            )
-            .listRowBackground(Color.clear)
-        }
-    }
-
-    private func sosAgoText(_ alert: SOSAlert) -> String {
-        alert.updatedAt.formatted(.relative(presentation: .named))
-    }
-
-    /// 開啟系統地圖 App 並定位到該成員求救時的座標，讓家人能一鍵導航過去。
-    /// 0,0（hasLocation == false）代表 activateSOS 當下拿不到 GPS，不開地圖。
-    private func openInMaps(_ alert: SOSAlert) {
-        guard alert.hasLocation else { return }
-        let coordinate = CLLocationCoordinate2D(latitude: alert.latitude, longitude: alert.longitude)
-        let placemark = MKPlacemark(coordinate: coordinate)
-        let item = MKMapItem(placemark: placemark)
-        item.name = "\(alert.displayName)的求救位置"
-        item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
     }
 
     // MARK: - D2：我的帳號卡（只在未入圈時顯示——已入圈後這件事由家庭圈 header／成員清單接手，

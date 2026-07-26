@@ -23,7 +23,5 @@ enum FirestoreConfig {
         static let locations = "locations"
         static let pings = "pings"
         static let inviteCodes = "inviteCodes"
-        /// SOS 求救：單文件覆寫（同 locations），不是像 pings 那樣可累加的子集合。
-        static let sos = "sos"
     }
 }
