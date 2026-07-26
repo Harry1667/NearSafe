@@ -87,6 +87,21 @@ struct DistrictBoundaries {
         byTown[town] ?? []
     }
 
+    /// 縣市名 → 轄下所有鄉鎮市區名（去重排序）。
+    /// 用途：地震等「官方只給到縣市層級影響範圍」的區域警報——氣象署震度分布只到
+    /// 「宜蘭縣地區」這種縣市粒度，我們的生活圈卻只存區名（不含縣市，見 RegionAlert 既有取捨），
+    /// 要讓「宜蘭縣有感」比對得到「宜蘭縣XX鄉」的生活圈，就得把縣市展開成該縣市全部的區。
+    /// 寧可多蓋（同縣市其他區也會顯示這則警報）不要漏接，跟現有 byTown 同名區的取捨方向一致。
+    func townNames(inCounty county: String) -> [String] {
+        let normalized = county.replacingOccurrences(of: "臺", with: "台")
+        return Set(
+            indexed
+                .map(\.district)
+                .filter { $0.county.replacingOccurrences(of: "臺", with: "台") == normalized }
+                .map(\.town)
+        ).sorted()
+    }
+
     /// 座標落在哪個「縣市＋區」——點面內判（先用 bounding box 篩，再對外框做射線法）。
     /// 這是把生活圈精確座標對應到唯一行政區（含縣市，解決同名區歧義）的入口。
     func district(at coord: CLLocationCoordinate2D) -> District? {

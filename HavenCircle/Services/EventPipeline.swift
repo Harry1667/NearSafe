@@ -19,6 +19,12 @@ struct RawEventReport {
     let ttlSeconds: TimeInterval
     /// AI 整理的詳細描述（新聞走 LLM、官方走原始 description）；缺則 nil
     var detail: String? = nil
+    /// 來源端已完成的交叉驗證數。新聞爬蟲可能把多家媒體合成一筆；
+    /// 若不把這個數字帶進 App，合併後反而會被誤判為單一來源。
+    var corroborationCount: Int = 1
+    /// 需要跨時間維持同一事件的來源可提供穩定鍵（例如 AQI 測站）。
+    /// 一般事故留 nil，改用「類型＋位置＋6 小時時間窗」去重。
+    var stableDeduplicationKey: String? = nil
 }
 
 protocol EventProvider {
@@ -56,13 +62,20 @@ enum EventPipeline {
         // 消防署全國即時派遣：官方第一手（isOfficial=true，可推播），對標 Beacon 後補上的
         // 治安/意外事件缺口——不依賴新聞媒體報導與否、也不依賴關鍵字猜得準不準
         NFAIncidentProvider(),
-        // 媒體報導層：中央社/自由/ETtoday 現場事故（isOfficial=false，只顯示永不推播）
+        // 台中市 119 派遣火災：每 2 分鐘更新，比全國消防署初報更細、更快；
+        // 只使用行政區概略位置，不把公開頁面的街道資訊帶進 App。
+        TaichungFireEventProvider(),
+        // 媒體報導層：多家公開新聞來源的現場事故（isOfficial=false，裝置端依可信度決策）
         NewsEventProvider(),
         // 空品惡化連鎖：圈附近測站 AQI 破門檻→官方事件→推播（門檻與開關走遠端設定）
         AirQualityEventProvider(),
     ]
     static let regionProviders: [any RegionAlertProvider] = [
         NCDRRegionAlertProvider(),
+        // 中央氣象署地震報告：官方第一手，用縣市展開成轄下行政區的區域比對——
+        // 地震是大範圍有感現象，不該用點狀事件的距離模型（見 CWARegionAlertProvider 檔頭說明
+        // 2026-07-26 使用者實測踩到的真實漏報：新北雙溪地震完全沒推播）。
+        CWARegionAlertProvider(),
     ]
 
     static func refresh(context: ModelContext) async {
@@ -110,9 +123,13 @@ enum EventPipeline {
                 predicate: #Predicate { $0.eventKey == key }
             )
             if let existing = ((try? context.fetch(descriptor)) ?? []).first {
-                // 使用者標記結束的事件不再喚醒
-                guard !existing.isEnded else { continue }
+                // 明確解除的事件不再喚醒；單純 TTL 到期但來源又回報仍在進行時可重新啟用。
+                guard !existing.isResolved else { continue }
                 existing.updatedAt = .now
+                existing.expiresAt = .now.addingTimeInterval(
+                    group.map(\.ttlSeconds).max() ?? 86_400
+                )
+                existing.isArchived = false
                 // 來源端的標題與地點可能改善（例：媒體事件改用 LLM 短摘要重推），同步最新版
                 if let primary = group.first(where: \.isOfficial) ?? group.first {
                     existing.title = primary.title
@@ -153,17 +170,26 @@ enum EventPipeline {
         }
     }
 
-    /// 去重簽名：類型＋約 500 公尺網格。相近位置、同類型的回報視為同一事件。
+    /// 去重簽名：一般事故用「類型＋約 500 公尺網格＋6 小時時間窗」。
+    /// 舊版沒有時間窗，某地第一場火災結束後，未來同地點的所有火災都會撞到同一個
+    /// 已結束 eventKey 而被永久略過。AQI 等連續量測來源則使用 provider 給的穩定鍵。
     private static func signature(of report: RawEventReport) -> String {
+        if let stable = report.stableDeduplicationKey, !stable.isEmpty {
+            return stable
+        }
         let gridLat = (report.latitude / 0.005).rounded() * 0.005
         let gridLon = (report.longitude / 0.005).rounded() * 0.005
-        return "\(report.eventType)@\(String(format: "%.3f", gridLat)),\(String(format: "%.3f", gridLon))"
+        let sixHourBucket = Int(report.occurredAt.timeIntervalSince1970 / (6 * 3_600))
+        return "\(report.eventType)@\(String(format: "%.3f", gridLat)),\(String(format: "%.3f", gridLon))#\(sixHourBucket)"
     }
 
     /// 可信度評分：官方 > 多來源交叉驗證 > 單一未驗證線索
     private static func trustLevel(for group: [RawEventReport]) -> String {
         if group.contains(where: \.isOfficial) { return TrustStatus.officialConfirmed }
-        if Set(group.map(\.sourceName)).count >= 2 { return TrustStatus.crossVerified }
+        if group.reduce(0, { $0 + max($1.corroborationCount, 1) }) >= 2
+            || Set(group.map(\.sourceName)).count >= 2 {
+            return TrustStatus.crossVerified
+        }
         return TrustStatus.confirming
     }
 
@@ -190,8 +216,13 @@ enum EventPipeline {
             let key = raw.alertKey
             let descriptor = FetchDescriptor<RegionAlert>(predicate: #Predicate { $0.alertKey == key })
             if let existing = ((try? context.fetch(descriptor)) ?? []).first {
-                guard !existing.isEnded else { continue }
+                guard existing.status != EventStatus.resolved.rawValue else { continue }
                 existing.updatedAt = .now
+                existing.title = raw.title
+                existing.affectedDistricts = raw.affectedDistricts
+                existing.severity = raw.severity
+                existing.guidance = raw.guidance
+                existing.expiresAt = .now.addingTimeInterval(raw.ttlSeconds)
             } else {
                 let alert = RegionAlert(
                     alertKey: raw.alertKey,
