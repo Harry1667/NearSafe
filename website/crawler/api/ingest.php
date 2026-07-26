@@ -19,7 +19,7 @@ if (!hash_equals(INGEST_KEY, $key)) {
 
 // 多資料集：ncdr（預設，災害示警）與 aqi（環境部空品）各存一份檔案
 $dataset = $_GET['dataset'] ?? 'ncdr';
-if (!in_array($dataset, ['ncdr', 'aqi', 'crime', 'cwa', 'taichung_fire'], true)) {
+if (!in_array($dataset, ['ncdr', 'aqi', 'crime', 'cwa', 'taichung_fire', 'nfa'], true)) {
     http_response_code(400);
     echo json_encode(['error' => 'unknown dataset']);
     exit;
@@ -47,7 +47,7 @@ $payload = [
     'data'        => $data,
 ];
 
-$basename  = ['ncdr' => 'latest', 'aqi' => 'latest_aqi', 'crime' => 'latest_crime', 'cwa' => 'latest_cwa', 'taichung_fire' => 'latest_taichung_fire'][$dataset] ?? 'latest';
+$basename  = ['ncdr' => 'latest', 'aqi' => 'latest_aqi', 'crime' => 'latest_crime', 'cwa' => 'latest_cwa', 'taichung_fire' => 'latest_taichung_fire', 'nfa' => 'latest_nfa'][$dataset] ?? 'latest';
 $tmpFile   = $dataDir . '/' . $basename . '.json.tmp';
 $finalFile = $dataDir . '/' . $basename . '.json';
 
