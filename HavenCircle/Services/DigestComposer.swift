@@ -6,7 +6,7 @@ enum DigestComposer {
         let last24h = Date.now.addingTimeInterval(-86_400)
         let recent = events.filter { $0.occurredAt >= last24h && !$0.isDrill }
         let attention = recent.filter { event in
-            !event.isEnded
+            event.isActiveForAwareness
                 && event.isOfficiallyConfirmed
                 && !AlertPolicy.evaluate(event: event, members: members).matches.isEmpty
         }

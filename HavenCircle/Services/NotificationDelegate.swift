@@ -38,7 +38,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
             }
             // 保命級 P0：舊版直接 postPing 就 return，零回饋——使用者長按通知回報後
             // 完全不知道有沒有送出。三種結局都要補一則本機通知讓使用者知道結果。
-            guard let sync = await AppRuntime.familySync else {
+            guard let sync = AppRuntime.familySync else {
                 // App 執行環境尚未就緒（極端的背景冷啟動情境），無法得知登入/送出狀態，
                 // 誠實告知並導去 App 確認，而不是靜默吞掉這次快速操作。
                 await postFeedback(title: "⚠️ 回報可能未送出", body: "請打開 App 確認家庭圈狀態後再回報一次")

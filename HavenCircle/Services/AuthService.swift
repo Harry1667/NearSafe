@@ -27,12 +27,10 @@ final class AuthService {
     private var currentNonce: String?
 
     /// Firebase Auth 狀態監聽 handle，deinit 時要移除，避免 listener 洩漏。
-    /// `nonisolated(unsafe)`：deinit 在 Swift 中一律 nonisolated，即使類別整體是 @MainActor，
-    /// 也不能在 deinit 直接讀寫 MainActor-isolated 的屬性；deinit 執行時保證沒有其他參照，
-    /// 不會有真的資料競爭，這裡用 nonisolated(unsafe) 只是滿足編譯器的隔離檢查。
-    private nonisolated(unsafe) var authStateHandle: AuthStateDidChangeListenerHandle?
+    /// 這兩個 token 只用於生命週期清理，無須觸發畫面重繪。
+    @ObservationIgnored private var authStateHandle: AuthStateDidChangeListenerHandle?
     /// Apple 帳號授權撤銷通知的 observer token，deinit 時要移除（理由同上）。
-    private nonisolated(unsafe) var credentialRevokedObserver: NSObjectProtocol?
+    @ObservationIgnored private var credentialRevokedObserver: NSObjectProtocol?
 
     /// 這次登入使用的 Apple 穩定使用者代碼（`credential.user`）存本機，供之後
     /// [checkAppleCredentialState] 複查 Apple 端授權是否被撤銷。只是 Apple 給的不透明代碼，
@@ -84,7 +82,7 @@ final class AuthService {
         }
     }
 
-    deinit {
+    isolated deinit {
         if let authStateHandle {
             Auth.auth().removeStateDidChangeListener(authStateHandle)
         }

@@ -20,6 +20,7 @@
 讓 cron 下次重試；本機檔案寫成功是基本盤，Oracle 波動不該讓整支失敗。
 """
 
+import hashlib
 import json
 import re
 import ssl
@@ -131,7 +132,7 @@ def roc_to_iso_date(pubdate_text):
     return int(roc_year) + 1911, int(month), int(day)
 
 
-def build_occurred_at(pubdate_text, title_day):
+def build_occurred_at(pubdate_text, title_day, title_hm):
     """
     標題只給「幾號幾點」（無月份），發布時間欄給民國年月日——用發布時間的年月，
     標題的日＋時分組出完整時間。發布時間解析失敗就用抓取當下時間打底（不讓整筆掉資料）。
@@ -140,20 +141,24 @@ def build_occurred_at(pubdate_text, title_day):
     now = datetime.now(TZ_TAIPEI)
     year, month = (parsed[0], parsed[1]) if parsed else (now.year, now.month)
     try:
-        dt = datetime(year, month, title_day, tzinfo=TZ_TAIPEI)
+        hour, minute = (int(part) for part in title_hm.split(":", 1))
+    except (AttributeError, TypeError, ValueError):
+        hour, minute = now.hour, now.minute
+    try:
+        dt = datetime(year, month, title_day, hour, minute, tzinfo=TZ_TAIPEI)
     except ValueError:
         # 標題日期跨月（例如月底案件、發布時間已跨到下月）——退回發布時間全部三個欄位
         if parsed:
-            dt = datetime(parsed[0], parsed[1], parsed[2], tzinfo=TZ_TAIPEI)
+            dt = datetime(parsed[0], parsed[1], parsed[2], hour, minute, tzinfo=TZ_TAIPEI)
         else:
             dt = now
     # 標題日 > 發布時間日超過一週：極可能是「跨月」（發布時間是次月初，標題日是上月底），
     # 月份往前推一個月修正
-    if parsed and abs(title_day - parsed[2]) > 7:
+    if parsed and title_day > parsed[2] + 7:
         month_back = month - 1 if month > 1 else 12
         year_back = year if month > 1 else year - 1
         try:
-            dt = datetime(year_back, month_back, title_day, tzinfo=TZ_TAIPEI)
+            dt = datetime(year_back, month_back, title_day, hour, minute, tzinfo=TZ_TAIPEI)
         except ValueError:
             pass
     return dt
@@ -175,11 +180,16 @@ def parse_records(html):
         category = title_m.group("category").strip()
         detail = title_m.group("detail").strip().lstrip("，,")
         day = int(title_m.group("day"))
+        hm = title_m.group("hm")
         county, county_end = county_from_text(detail)
         district = district_from_text(detail, county_end)
-        occurred_at = build_occurred_at(pubdate, day)
-        is_resolved = any(kw in detail for kw in ("已撲滅", "已獲救", "完成止漏", "無災情", "順利救出"))
+        occurred_at = build_occurred_at(pubdate, day, hm)
+        status_tag = title_m.group("statusTag") or ""
+        is_resolved = status_tag in ("結報", "初(結)報") or any(
+            kw in detail for kw in ("已撲滅", "已獲救", "完成止漏", "無災情", "順利救出")
+        )
         records.append({
+            "id": record_id(raw_title),
             "title": raw_title,
             "category": category,
             "detail": detail,
@@ -188,13 +198,18 @@ def parse_records(html):
             "unit": unit,
             "occurredAt": occurred_at.isoformat(),
             "isResolved": is_resolved,
-            "statusTag": title_m.group("statusTag") or "",
+            "statusTag": status_tag,
         })
     return records
 
 
+def record_id(title):
+    """公開穩定 ID：供 App 去重；不包含人名、地址以外的新資訊。"""
+    return hashlib.sha1(title.encode("utf-8")).hexdigest()[:16]
+
+
 def record_key(row):
-    return row["title"]
+    return row.get("id") or record_id(row["title"])
 
 
 def load_seen():

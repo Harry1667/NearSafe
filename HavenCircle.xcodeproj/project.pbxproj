@@ -185,8 +185,6 @@
 				C17535F43008C645003BEC75 /* HavenCircleWidget */,
 			);
 			name = HavenCircleWidgetExtension;
-			packageProductDependencies = (
-			);
 			productName = HavenCircleWidgetExtension;
 			productReference = C17535EE3008C645003BEC75 /* HavenCircleWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -399,6 +397,7 @@
 		C15F63D83007349000E2194F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HavenCircle/HavenCircle.entitlements;
@@ -408,7 +407,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HavenCircle/Info.plist;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "你主動開啟「即時圈」後，需要此權限在背景更新警戒圈，並透過家庭 iCloud 分享給已加入的家人；你可隨時停止分享。";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "你主動開啟「即時圈」後，需要此權限在背景更新警戒圈，並分享給你的家庭圈成員；你可隨時停止分享。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "用於在地圖上顯示你目前的位置、建立即時警戒圈，以及在你選擇時與家庭圈共享位置。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -435,6 +434,7 @@
 		C15F63D93007349000E2194F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HavenCircle/HavenCircle.entitlements;
@@ -444,7 +444,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HavenCircle/Info.plist;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "你主動開啟「即時圈」後，需要此權限在背景更新警戒圈，並透過家庭 iCloud 分享給已加入的家人；你可隨時停止分享。";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "你主動開啟「即時圈」後，需要此權限在背景更新警戒圈，並分享給你的家庭圈成員；你可隨時停止分享。";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "用於在地圖上顯示你目前的位置、建立即時警戒圈，以及在你選擇時與家庭圈共享位置。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

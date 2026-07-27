@@ -51,7 +51,11 @@ enum RemoteConfig {
     /// 點狀事件比對 eventType（火災／公共安全），區域警報比對 kind（地震／海嘯／颱風），
     /// 兩個命名空間字串不重疊，共用同一張清單
     static func isDangerKind(_ kind: String) -> Bool {
-        (current.dangerKinds ?? Self.defaultDangerKinds).contains(kind)
+        // 遠端設定只能「加」危險細分類，不能意外覆蓋 App 內建的保命基線。
+        // 舊版 app.json 只列粗分類時若直接取代，持刀、槍擊、氣爆等會悄悄失去
+        // 時效性通知與安否按鈕；這是 2026-07 的實際漏報根因之一。
+        let remote = current.dangerKinds ?? []
+        return Set(Self.defaultDangerKinds).union(remote).contains(kind)
     }
 
     private static let defaultDangerKinds = [

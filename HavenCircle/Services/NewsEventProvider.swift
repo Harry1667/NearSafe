@@ -3,7 +3,8 @@ import CoreLocation
 
 /// 媒體報導事件來源：中繼站新聞爬蟲（中央社／自由／ETtoday 的現場事故，
 /// 經 LLM 分類與地點抽取）。產品守則：媒體報導未經官方確認，
-/// `isOfficial = false` → 只進「持續確認中」層，**只顯示、永不推播**（AlertPolicy 會擋）。
+/// `isOfficial = false` → 單一來源只進「持續確認中」層；多來源合併後可升為
+/// 「多來源交叉驗證」。是否通知仍由 AlertPolicy 與使用者的提醒設定決定。
 /// 每則事件都帶 sourceName＋sourceURL，詳情頁的「來源」區會如實列出。
 struct NewsEventProvider: EventProvider {
     let sourceName = "媒體報導"
@@ -48,11 +49,15 @@ struct NewsEventProvider: EventProvider {
                 precisionMeters: (event.district?.isEmpty == false) ? 3_000 : 15_000,
                 sourceName: event.sourceLabel,
                 sourceURL: event.sourceURL,
-                isOfficial: false, // 媒體報導：永不推播
+                // 媒體報導不是官方資訊；是否通知由可信度設定與裝置端政策決定。
+                isOfficial: false,
                 occurredAt: published,
                 ttlSeconds: ttl,
                 // AI 整理的 1–2 句詳細描述（爬蟲 LLM 產）；沒有就 nil，詳情頁退回其他欄位
-                detail: event.detail?.isEmpty == false ? event.detail : nil
+                detail: event.detail?.isEmpty == false ? event.detail : nil,
+                corroborationCount: max(event.corroboration ?? 1, 1),
+                stableDeduplicationKey: "news-\(event.id)",
+                isOngoing: event.isOngoing ?? false
             )
         }
     }
@@ -227,8 +232,19 @@ private struct NewsEvent: Decodable {
     let summary: String?
     /// LLM 產的詳細描述（1–2 句，地點＋發生什麼＋現況）。同樣 Optional 相容舊資料
     let detail: String?
+    /// 爬蟲跨媒體合併後的來源數；舊資料缺欄時視為 1。
+    let corroboration: Int?
+    /// 新聞模型明確判定是否仍在發生。缺欄的舊資料採保守 false，
+    /// 避免只因 12 小時顯示壽命尚未到期就標示「進行中」。
+    let isOngoing: Bool?
     /// sourceName 可能是字串（單一來源）或陣列（跨來源合併），寬鬆解碼
     private let sourceName: SourceName?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, publishedAt, sourceURL, county, district, place, category
+        case summary, detail, corroboration, sourceName
+        case isOngoing = "is_ongoing"
+    }
 
     var sourceLabel: String {
         switch sourceName {

@@ -39,23 +39,49 @@ struct EventRow: View {
                 Text(event.isDrill ? "【演練】\(event.title)" : event.title)
                     .lineLimit(2) // 卡片定高：超長標題（媒體事件偶有）截斷，不撐爆版面
                     .font(.subheadline.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Text(event.approximateLocation)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                // 對應產品規格的事件摘要格式：「距離媽媽公司 0.8 公里，18 分鐘前」
-                Text("\(relativeDistance(event, members)) · \(relativeTime(event.occurredAt))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // 來源、狀態與時間一起露出：全台動態不必猜「這是誰說的／還在不在」。
+                // 概略位置仍只到行政區或測站周邊，避免把精確地址帶到資訊流。
+                standardMetadata
             }
-            Spacer()
+            Spacer(minLength: 0)
             Text(event.trustStatus)
                 .font(.caption2.weight(.semibold))
+                .lineLimit(1)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .foregroundStyle(trustColor)
                 .background(trustColor.opacity(0.12), in: Capsule())
         }
         .hcCard()
+        .overlay(
+            RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous)
+                .stroke(.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    /// 窄卡先保住來源與狀態，時間、距離則自動換行；避免「分鐘前」孤零零掉到下一行。
+    private var standardMetadata: some View {
+        ViewThatFits(in: .horizontal) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(event.sourceName) · \(event.statusText) · \(relativeTime(event.occurredAt))")
+                    .lineLimit(1)
+                Text(relativeDistance(event, members))
+                    .lineLimit(1)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(event.sourceName) · \(event.statusText)")
+                    .lineLimit(1)
+                Text("\(relativeTime(event.occurredAt)) · \(relativeDistance(event, members))")
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     /// 地圖底部只保留事件判讀所需的資訊層級，避免小螢幕被卡片遮住。
@@ -124,17 +150,27 @@ func relativeDistance(_ event: LocalSafetyEvent, _ members: [LocalFamilyMember])
             (
                 ownerName: member.name,
                 circleName: circle.name,
-                distance: point.distance(from: CLLocation(latitude: circle.latitude, longitude: circle.longitude))
+                distance: point.distance(from: CLLocation(latitude: circle.latitude, longitude: circle.longitude)),
+                isCurrentUser: member.isCurrentUser
             )
         }
     }
     guard let nearest = candidates.min(by: { $0.distance < $1.distance }) else { return "尚未設定警戒圈" }
     let meters = max(Int(nearest.distance / 100) * 100, 100)
-    if meters >= 1_000 {
-        let km = Double(meters) / 1_000
-        return "距離\(nearest.ownerName)的「\(nearest.circleName)」\(km.formatted(.number.precision(.fractionLength(0...1)))) 公里"
+    // 本人的預設圈常叫「我的附近」，重複顯示名稱只會讓全球事件卡變長；
+    // 家人圈仍保留名稱，讓使用者知道距離是以哪一個守護範圍判讀。
+    let circleLabel = nearest.isCurrentUser
+        ? "你的警戒圈"
+        : "\(nearest.ownerName)的「\(nearest.circleName)」"
+    // 全台動態不需要暴露到小數公里；超過 100 公里只表達「非你的附近」，保留閱讀價值而不製造假精確。
+    if meters >= 100_000 {
+        return "距離\(circleLabel)很遠"
     }
-    return "距離\(nearest.ownerName)的「\(nearest.circleName)」\(meters) 公尺"
+    if meters >= 1_000 {
+        let km = Int((Double(meters) / 1_000).rounded())
+        return "距離\(circleLabel)約 \(km) 公里"
+    }
+    return "距離\(circleLabel)\(meters) 公尺"
 }
 
 /// 相對時間文字（不依賴裝置語系，全繁中）

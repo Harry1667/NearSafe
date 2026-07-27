@@ -24,6 +24,14 @@ xcuserdata/
 # 爬蟲執行產物（每次執行重新生成，不入庫）
 tools/news-crawler/latest.json
 tools/news-crawler/seen.json
+tools/crawler/latest.json
+tools/crawler/seen.json
+tools/crawler/paid_gemini_keys.txt
+tools/crawler/paid_gemini_usage.json
+tools/crawler/paid_gemini_usage.lock
+tools/crawler/free_gemini_keys.txt
+tools/crawler/free_gemini_usage.json
+tools/crawler/free_gemini_usage.lock
 
 # APNs 私鑰絕不進 git（外洩＝任何人可對使用者發推播）
 *.p8

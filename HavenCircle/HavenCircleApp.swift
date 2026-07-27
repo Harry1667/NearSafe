@@ -48,9 +48,12 @@ struct HavenCircleApp: App {
     private static func makeContainer() -> ModelContainer {
         let schema = Schema([LocalSafetyEvent.self, LocalFamilyMember.self, LocalLifeCircle.self, RegionAlert.self])
         // 明確關閉 SwiftData 的 CloudKit 鏡像：本機模型只存這台裝置，
-        // 家庭同步走獨立的 CKShare（FamilySyncService）。
-        // 若不指定，SwiftData 偵測到 CloudKit entitlement 會嘗試鏡像，
-        // 但本機模型用了 @Attribute(.unique)（CloudKit 不支援）而建立失敗。
+        // 家庭同步已改走 Firebase Firestore（FamilySyncService），不再用 CloudKit/CKShare。
+        // entitlements 裡的 CloudKit 權限是舊架構殘留、目前未被程式碼使用，但若不指定
+        // cloudKitDatabase: .none，SwiftData 偵測到 entitlement 仍會嘗試鏡像，
+        // 而本機模型用了 @Attribute(.unique)（CloudKit 不支援）會建立失敗。
+        // TODO：確認 Apple Developer Portal 的 App ID 能力設定同步後，可考慮整組移除
+        // CloudKit entitlement——但要先確認移除不影響現有簽章/描述檔，此處先不動。
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
         do {
             return try ModelContainer(for: schema, configurations: [config])
@@ -143,6 +146,23 @@ struct HavenCircleApp: App {
                             return
                         }
                         await familySync.fetchLiveLocations(context: modelContainer.mainContext)
+                    }
+                }
+                // App 停在前景時不能只靠「打開／切回來」才更新：使用者會把安心圈
+                // 留在桌面上看，而 eventRefreshMinutes 已存在於遠端設定卻從未被使用。
+                // scenePhase 改成非 active 時 SwiftUI 會取消這個 task，不會在背景持續拉資料。
+                .task(id: scenePhase) {
+                    guard scenePhase == .active else { return }
+                    let minutes = max(1, RemoteConfig.tuning("eventRefreshMinutes", default: 5))
+                    let interval = Duration.seconds(Int(minutes * 60))
+                    while !Task.isCancelled {
+                        do {
+                            try await Task.sleep(for: interval)
+                        } catch {
+                            return
+                        }
+                        guard !Task.isCancelled, scenePhase == .active else { return }
+                        await EventPipeline.refresh(context: modelContainer.mainContext)
                     }
                 }
         }

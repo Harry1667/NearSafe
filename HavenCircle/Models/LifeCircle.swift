@@ -81,16 +81,10 @@ extension LocalLifeCircle {
     /// 即時位置超過 15 分鐘未更新，就不能再用來觸發安全判斷。
     /// 圈仍保留在畫面上並明示過期，避免把舊座標冒充現在位置。
     ///
-    /// 例外：isFollowMe 圈一律視為有效，不吃 15 分鐘規則。
-    /// 上面的 `kind` getter只要 isFollowMe==true 就一定回報 `.live`（無論 kindRawValue
-    /// 存了什麼），但「live」在這個 model 裡其實疊了兩種更新頻率完全不同的語意：
-    /// (1) 家人持續分享位置給我看的圈——位置來自對方裝置頻繁回報，15 分鐘沒更新代表
-    ///     對方可能已停止分享，過期判斷合理；(2) 本機「警報跟著我」跟隨圈——只在顯著
-    ///     位置變更（約移動 500 公尺）時才更新，使用者原地不動幾小時是正常狀態，不是
-    ///     圈失效。用同一條「15 分鐘」規則會把「沒有移動」誤判成「位置過期」，導致
-    ///     警戒圈悄悄退出警報比對——這是假性安心的反面，比誤報更危險。
+    /// 本人與家人的即時圈都遵守相同規則：沒有更新時間或超過 15 分鐘就不參與
+    /// 警報判斷。不能因為「警報跟著我」而把數小時前的位置當成現在位置。
     var isActiveForAlerts: Bool {
-        guard kind == .live, !isFollowMe else { return true }
+        guard kind == .live else { return true }
         guard let locationUpdatedAt else { return false }
         return locationUpdatedAt > Date.now.addingTimeInterval(-15 * 60)
     }
@@ -178,4 +172,20 @@ enum EventCategory {
     static let landslide = "土石流"
     static let powerOutage = "停電"
     static let waterOutage = "停水"
+
+    /// 細分類回推生活圈使用的四大類，避免圈只存「公共安全」時，
+    /// 「槍擊案／持刀傷人」等真實事件因字串不同而完全比對不到。
+    static func broadCategory(for eventType: String) -> String {
+        switch eventType {
+        case knifeAttack, shooting, disturbance, harassment, suspiciousPerson,
+             animalAttack, gasLeak, explosion, emergencyMedical:
+            publicSafety
+        case trainIncident, metroIncident:
+            traffic
+        case earthquake, flood, landslide, powerOutage, waterOutage:
+            disaster
+        default:
+            eventType
+        }
+    }
 }

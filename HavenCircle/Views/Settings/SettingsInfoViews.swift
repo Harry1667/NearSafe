@@ -2,20 +2,32 @@ import SwiftUI
 
 /// 資料來源頁：告訴使用者警報從哪來、多新鮮——這是安全 App 的信任基礎。
 struct DataSourceView: View {
+    @State private var statuses: [AlertSourceStatus] = []
+    @State private var isLoading = false
+
     var body: some View {
         List {
-            Section("即時災害示警") {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("NCDR 民生示警平台").font(.subheadline.bold())
-                    Text("國家災害防救科技中心彙整 28 個政府機關、43 類災害示警（颱風、地震、淹水、火災、停水等），本 App 最快每 1 分鐘同步一次。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            Section("警報來源與更新狀態") {
+                if statuses.isEmpty && isLoading {
+                    HStack {
+                        ProgressView()
+                        Text("正在檢查各來源…")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(statuses) { status in
+                        sourceRow(status)
+                    }
                 }
-                DataFreshnessLabel()
-                if let url = URL(string: "https://alerts.ncdr.nat.gov.tw/") {
-                    Link("前往 NCDR 民生示警平台", destination: url)
+
+                Button {
+                    Task { await reload() }
+                } label: {
+                    Label("重新檢查", systemImage: "arrow.clockwise")
                 }
+                .disabled(isLoading)
             }
+
             Section("緊急應變資源") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("避難收容所與急救責任醫院").font(.subheadline.bold())
@@ -30,11 +42,14 @@ struct DataSourceView: View {
                     .foregroundStyle(.secondary)
             }
             Section("資料怎麼到你手上") {
-                Text("政府示警 → 安心圈中繼站（整理與去重）→ 你的手機（依警戒圈與可信度篩選）。中繼站只傳遞公開示警；你主動開啟的即時圈位置另外只會存到 Firebase 雲端家庭圈資料庫（只有你的家庭圈成員能讀取），不會經過這台警報中繼站。")
+                Text("官方資料與公開新聞 → 安心圈爬蟲（整理、去重與標記來源）→ 警報中繼站只喚醒 App → 你的手機依警戒圈、距離、時效與可信度決定是否提醒。新聞線索一律先視為「未驗證」，除非已有官方來源或多家來源交叉佐證。")
+                    .font(.footnote)
+                Text("你主動開啟的家人即時位置與公開警報完全分流，不會傳給警報中繼站；超過 15 分鐘的位置不會參與警報判斷。")
                     .font(.footnote)
             }
-            Section("目前限制（誠實告知）") {
-                Text("即時交通事故與治安事件目前沒有政府公開的即時資料源；有新來源可用時會在更新中加入。")
+
+            Section("重要提醒") {
+                Text("新聞與社群資訊可能誤報或延遲，不能代替官方確認。安心圈不是 110、119 或緊急救難服務；遇到立即危險請直接撥打 110 或 119。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -42,6 +57,74 @@ struct DataSourceView: View {
         .navigationTitle("資料來源")
         .navigationBarTitleDisplayMode(.inline)
         .analyticsScreen("data_source")
+        .task {
+            guard statuses.isEmpty else { return }
+            await reload()
+        }
+        .refreshable {
+            await reload()
+        }
+    }
+
+    @ViewBuilder
+    private func sourceRow(_ status: AlertSourceStatus) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(status.name)
+                    .font(.subheadline.bold())
+                Spacer()
+                Label(status.health.rawValue, systemImage: healthIcon(status.health))
+                    .font(.caption.bold())
+                    .foregroundStyle(healthColor(status.health))
+            }
+            Text(status.sourceDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("可信度：\(status.trustLabel)")
+                .font(.caption)
+            Text("預計頻率：\(status.expectedUpdateText)・最後更新：\(updateText(status.updatedAt))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let count = status.itemCount {
+                Text("目前批次：\(count) 筆")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let detail = status.detail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    @MainActor
+    private func reload() async {
+        isLoading = true
+        statuses = await AlertSourceHealthService.fetchAll()
+        isLoading = false
+    }
+
+    private func updateText(_ date: Date?) -> String {
+        guard let date else { return "尚未取得" }
+        return date.formatted(date: .numeric, time: .shortened)
+    }
+
+    private func healthIcon(_ health: AlertSourceStatus.Health) -> String {
+        switch health {
+        case .healthy: "checkmark.circle.fill"
+        case .delayed: "clock.badge.exclamationmark"
+        case .unavailable: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func healthColor(_ health: AlertSourceStatus.Health) -> Color {
+        switch health {
+        case .healthy: .green
+        case .delayed: .orange
+        case .unavailable: .red
+        }
     }
 }
 

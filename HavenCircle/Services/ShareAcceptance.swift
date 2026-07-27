@@ -4,11 +4,12 @@ import FirebaseCore
 import FirebaseMessaging
 import os // Swift 6.2 MemberImportVisibility：直接使用 os.Logger 插值的檔案必須自行 import
 
-/// CKShare 邀請接受的處理鏈。
+/// AppDelegate 與家庭邀請深連結（deep link）的處理鏈（原為 CKShare 時代寫的檔案，
+/// 家庭同步改走 Firebase 邀請碼後功能已改為：Firebase 初始化、FCM 訂閱、深連結接手）。
 ///
 /// SwiftUI 生命週期的 App 沒有直接的分享接受修飾符，必須透過
 /// UIApplicationDelegate 設定一個 scene delegate，由系統在使用者點開邀請連結時回呼。
-/// 接受到的 metadata 透過 NotificationCenter 轉交給 FamilySyncService 處理。
+/// 接受到的內容透過 NotificationCenter 轉交給 FamilySyncService 處理。
 extension Notification.Name {
     static let didAcceptFamilyShare = Notification.Name("didAcceptFamilyShare")
     static let didReceiveDeepLink = Notification.Name("didReceiveDeepLink")
@@ -133,7 +134,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
 
     /// 伺服器偵測到新官方警報 → 廣播 {content-available:1} → 系統在背景叫醒 App 走到這裡。
     /// 喚醒後跑一次完整資料管線：抓最新警報、比對生活圈、相關才發本機通知——
-    /// 事件伺服器只做廣播喚醒，警報比對仍在裝置上完成；家庭位置只存在家庭 CKShare，不會送到這台伺服器。
+    /// 事件伺服器只做廣播喚醒，警報比對仍在裝置上完成；家庭位置存在 Firebase Firestore，不會送到這台事件伺服器。
     func application(
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
@@ -141,6 +142,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
     ) {
         // Firebase proxy 已關閉：手動把收到的推播轉交 FCM（資料訊息追蹤／分析所需）
         Messaging.messaging().appDidReceiveMessage(userInfo)
+        // 匿名漏斗：記「裝置實際收到無聲喚醒」，和伺服器端 FCM API 回傳成功分開看。
+        // 不記推播內容、主題、位置或裝置識別。
+        Analytics.track("silent_wake_received")
         guard let container = AppRuntime.container else {
             completionHandler(.noData)
             return
@@ -151,6 +155,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
             }
             await EventPipeline.refresh(context: container.mainContext)
             AppLog.notifications.info("無聲推播喚醒：資料管線刷新完成")
+            Analytics.track("silent_wake_refreshed")
             // 一律回 .newData：官方警報或家庭位置任一更新，都完成了一次有價值的同步
             completionHandler(.newData)
         }

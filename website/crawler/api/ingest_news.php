@@ -70,9 +70,16 @@ $payload = [
     'received_at' => gmdate('Y-m-d\TH:i:s\Z'),
     'count'       => count($merged),
     'data'        => [
-        'fetchedAt' => $incoming['fetchedAt'] ?? null,
-        'sources'   => $incoming['sources'] ?? [],
-        'events'    => $merged,
+        'fetchedAt'      => $incoming['fetchedAt'] ?? null,
+        'sources'        => $incoming['sources'] ?? [],
+        'totalFetched'   => $incoming['totalFetched'] ?? null,
+        'totalEligible'  => $incoming['totalEligible'] ?? null,
+        'skippedSeen'    => $incoming['skippedSeen'] ?? null,
+        'incidentCount'  => $incoming['incidentCount'] ?? null,
+        'droppedByRules' => $incoming['droppedByRules'] ?? null,
+        'droppedByLLM'   => $incoming['droppedByLLM'] ?? null,
+        'pipelineHealth' => $incoming['pipelineHealth'] ?? null,
+        'events'         => $merged,
     ],
 ];
 
@@ -83,6 +90,15 @@ if (file_put_contents($tmpFile, json_encode($payload, JSON_UNESCAPED_UNICODE | J
     exit;
 }
 rename($tmpFile, $finalFile); // 同檔案系統內 rename 是原子操作
+
+// 新聞同 id 可能先以規則降級落地、AI 重試後才升級為可播報；每次合併完成後都交給
+// cron_check 比對「播報狀態指紋」。背景執行不延遲爬蟲回應；部分主機會在 PHP
+// disable_functions 停用 exec（直接呼叫會變 Fatal Error），這時交由每分鐘 cron 補上。
+if (function_exists('exec')) {
+    @exec('php ' . escapeshellarg(__DIR__ . '/../../apns/cron_check.php') . ' > /dev/null 2>&1 &');
+} else {
+    error_log('HavenCircle ingest_news: exec unavailable; scheduled cron_check will handle this update');
+}
 
 echo json_encode([
     'status'   => 'ok',

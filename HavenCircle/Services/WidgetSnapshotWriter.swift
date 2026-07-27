@@ -21,7 +21,7 @@ enum WidgetSnapshotWriter {
         // 必須與 App 內用同一個判定式（含災型影響半徑），否則會出現
         // 「App 紅盾、小工具卻說平安」的矛盾（實機回報過的 bug）
         let attention = events
-            .filter { !$0.isEnded && !$0.isArchived && $0.isOfficiallyConfirmed }
+            .filter { $0.isActiveForAwareness && !$0.isArchived && $0.isOfficiallyConfirmed }
             .filter { !AlertPolicy.evaluate(event: $0, members: members).matches.isEmpty }
             .sorted { distance(from: $0, to: primary) < distance(from: $1, to: primary) }
 

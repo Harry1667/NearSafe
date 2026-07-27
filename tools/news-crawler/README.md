@@ -1,5 +1,9 @@
 # 新聞重大事故爬蟲（news-crawler）
 
+> 此目錄是舊版備份，已停止部署。正式版本與測試位於
+> `tools/crawler/fetch_news.py`、`tools/crawler/test_fetch_news.py`；
+> 請勿從本目錄覆蓋 Mac Mini。
+
 「安心圈」的媒體報導資料線。在官方示警（NCDR）之外，用新聞 RSS 補「事發到官方發布」的時間差。
 
 ## 與 NCDR 爬蟲的關係（信任分層）

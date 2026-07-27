@@ -207,7 +207,7 @@ struct EventDetailView: View {
     }
 
     private var statusSection: some View {
-        let statusColor = event.isEnded
+        let statusColor = event.isEnded || !event.isOngoing
             ? Color.secondary
             : (event.isOfficiallyConfirmed ? HCColor.danger : HCColor.attention)
         return Section {
@@ -216,7 +216,9 @@ struct EventDetailView: View {
                     Image(
                         systemName: event.isEnded
                             ? "checkmark.circle"
-                            : (event.isOfficiallyConfirmed ? "checkmark.seal.fill" : "clock.badge.questionmark")
+                            : (event.isOngoing
+                                ? (event.isOfficiallyConfirmed ? "checkmark.seal.fill" : "clock.badge.questionmark")
+                                : "newspaper")
                     )
                     .font(.title3.weight(.medium))
                     .foregroundStyle(statusColor)
@@ -230,6 +232,10 @@ struct EventDetailView: View {
                 Divider()
                 if event.isEnded {
                     Text("此事件已結束，無需進一步行動。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if !event.isOngoing {
+                    Text("這是非即時的背景資訊，不會作為警戒圈提醒或推播依據。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {

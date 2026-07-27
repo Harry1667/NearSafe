@@ -29,8 +29,16 @@ enum AlertPolicy {
         at date: Date = .now,
         frequency: AlertFrequency = .current
     ) -> AlertDecision {
+        guard event.isActiveForAwareness else {
+            return AlertDecision(
+                shouldPush: false,
+                matches: [],
+                reason: "來源未確認事件仍在發生，僅作背景資訊，不會推播"
+            )
+        }
         let point = CLLocation(latitude: event.latitude, longitude: event.longitude)
         var matches: [CircleMatch] = []
+        let broadCategory = EventCategory.broadCategory(for: event.eventType)
 
         for member in members {
             for circle in member.lifeCircles {
@@ -40,6 +48,7 @@ enum AlertPolicy {
                 // 命中，不必去改動已存的 SwiftData 資料（見 RemoteConfig.isDangerKind）。其餘
                 // 一般提醒（空品、停水…）仍照該圈的 alertTypes 設定過濾。
                 guard circle.alertTypes.contains(event.eventType)
+                        || circle.alertTypes.contains(broadCategory)
                         || RemoteConfig.isDangerKind(event.eventType) else { continue }
                 let distance = point.distance(
                     from: CLLocation(latitude: circle.latitude, longitude: circle.longitude)
@@ -65,6 +74,21 @@ enum AlertPolicy {
         // 通知頻率「小」：只推危險級事件；提醒級（高溫、降雨、停水…）僅在 App 內顯示，不發通知
         if frequency == .low && !RemoteConfig.isDangerKind(event.eventType) {
             return AlertDecision(shouldPush: false, matches: matches, reason: "通知頻率設為「小」，此類一般提醒僅在 App 內顯示")
+        }
+        // 設定頁的「公共安全事件僅高可信度提醒」過去只有 UI、沒有接進決策。
+        // 開啟時，公共安全粗類與所有細分類都要求官方或多來源驗證；關閉後仍須使用者
+        // 主動把提醒多寡設成「靈敏」，才會允許單一媒體早期線索。
+        let highConfidenceOnly = UserDefaults.standard.object(
+            forKey: SettingsKeys.highConfidenceOnly
+        ) as? Bool ?? true
+        if highConfidenceOnly,
+           broadCategory == EventCategory.publicSafety,
+           !event.isOfficiallyConfirmed {
+            return AlertDecision(
+                shouldPush: false,
+                matches: matches,
+                reason: "公共安全事件設定為僅高可信度提醒；此線索尚未經官方或多來源確認"
+            )
         }
         // 可信度門檻：未經官方／多來源確認的線索一般不推播；
         // 但通知頻率「大」時放寬，讓更早期的單一來源消息也能通知（代價是可能偶有誤報）

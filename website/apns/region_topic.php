@@ -5,6 +5,10 @@
 
 // 全台廣播主題（地震／海嘯／颱風等全區有感事件）。所有裝置都訂閱。
 const REGION_TOPIC_ALL = 'hc_all';
+// 環境監測主題。高 AQI 是區域性現象，但原始測站資料只有縣市、不能安全地猜到
+// 使用者所在行政區；因此只用來無聲喚醒 App 重新拉取資料，再由裝置端的生活圈判斷。
+// 這個主題不帶任何使用者位置，和 hc_all 一樣不會讓伺服器知道誰住在哪裡。
+const REGION_TOPIC_ENVIRONMENT = 'hc_environment';
 
 /// 正規化：臺→台、去前後空白（與 RegionTopic.swift 的 normalize 完全相同）。
 function region_normalize(string $s): string {

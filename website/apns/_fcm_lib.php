@@ -70,11 +70,6 @@ function fcm_access_token(): ?string {
 /// $target = ['topic' => 'hc_all'] 或 ['condition' => "'hc_r_x' in topics || 'hc_r_y' in topics"]。
 /// 回 ['ok' => bool, 'status' => int, 'name' => ?string, 'error' => ?string]。
 function fcm_send(array $target, string $title, string $body, array $data = []): array {
-    $sa = fcm_service_account();
-    $token = fcm_access_token();
-    if ($sa === null || $token === null) {
-        return ['ok' => false, 'status' => 0, 'name' => null, 'error' => 'no-token'];
-    }
     $message = [
         'notification' => ['title' => $title, 'body' => $body],
         'apns' => [
@@ -83,14 +78,53 @@ function fcm_send(array $target, string $title, string $body, array $data = []):
         ],
     ];
     if (!empty($data)) { $message['data'] = array_map('strval', $data); }
+    $message = fcm_apply_target($message, $target);
+    if ($message === null) {
+        return ['ok' => false, 'status' => 0, 'name' => null, 'error' => 'no-target'];
+    }
+    return fcm_send_message($message);
+}
+
+/// 對主題發「無聲資料更新」而非可見通知。
+/// iOS 喚醒 App 後，由 EventPipeline 在裝置端套用生活圈、提醒時段、可信度與暫停設定，
+/// 命中才建立本機通知。這避免伺服器可見推播繞過使用者的「暫停提醒」。
+function fcm_send_wake(array $target, array $data = []): array {
+    $message = [
+        'data' => array_map('strval', $data),
+        'apns' => [
+            'headers' => [
+                'apns-priority' => '5',
+                'apns-push-type' => 'background',
+            ],
+            'payload' => ['aps' => ['content-available' => 1]],
+        ],
+    ];
+    $message = fcm_apply_target($message, $target);
+    if ($message === null) {
+        return ['ok' => false, 'status' => 0, 'name' => null, 'error' => 'no-target'];
+    }
+    return fcm_send_message($message);
+}
+
+/// 套用 topic/condition；無有效目標回 null。
+function fcm_apply_target(array $message, array $target): ?array {
     if (isset($target['topic'])) {
         $message['topic'] = $target['topic'];
     } elseif (isset($target['condition'])) {
         $message['condition'] = $target['condition'];
     } else {
-        return ['ok' => false, 'status' => 0, 'name' => null, 'error' => 'no-target'];
+        return null;
     }
+    return $message;
+}
 
+/// 送出已完成的 FCM HTTP v1 message。
+function fcm_send_message(array $message): array {
+    $sa = fcm_service_account();
+    $token = fcm_access_token();
+    if ($sa === null || $token === null) {
+        return ['ok' => false, 'status' => 0, 'name' => null, 'error' => 'no-token'];
+    }
     $url = 'https://fcm.googleapis.com/v1/projects/' . $sa['project_id'] . '/messages:send';
     $ch = curl_init($url);
     curl_setopt_array($ch, [

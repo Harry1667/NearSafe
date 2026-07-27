@@ -96,9 +96,15 @@ How to test the family features with a single device:
 3. Family tab → "邀請家人" (Invite family) shows an invite code and QR code.
    Joining normally requires a second device; the rest of the app is fully
    usable solo.
-4. Location permission is used to show nearby shelters/hospitals and (optionally)
-   share location with family members. Sharing is opt-in and can be disabled in
-   the Family tab at any time.
+4. Background location (Guideline 2.5.4): the app only requests "Always"
+   location when the user explicitly turns on "即時圈" (Live Circle) sharing in
+   the Family tab — this is opt-in and OFF by default. When enabled, background
+   updates let the app keep the user's shared location current for family
+   members without requiring the app to stay open, and let the app flag the
+   shared location as "expired" once it is more than 15 minutes old. Users who
+   never enable Live Circle sharing are only ever asked for "When In Use"
+   location, used solely to show nearby shelters/hospitals on the map. Sharing
+   can be turned off at any time from the Family tab.
 5. Push notifications deliver disaster alerts for the user's saved places.
    Alerts come from our relay server which polls official Taiwan government
    open-data feeds (NCDR / CWA).
@@ -113,8 +119,16 @@ post-event alerts only.
 [中文]
 安心圈為台灣家庭災害安全 App。單一裝置測試方式：以任一 Apple ID 透過
 Sign in with Apple 登入即可完整體驗；家人加入需第二台裝置，但邀請碼／QR
-畫面可直接檢視。位置權限用於顯示附近避難所與（可選的）家人位置分享，
-可隨時關閉。警報推播來自官方公開資料（NCDR／氣象署），App 不宣稱地震預警。
+畫面可直接檢視。
+
+背景定位說明（對應 Guideline 2.5.4）：只有使用者在家人頁主動開啟「即時圈」位置
+分享時，App 才會要求「永遠」定位權限，預設關閉、完全由使用者選擇開啟。開啟後
+需要背景更新位置，讓家人不用開著 App 也看得到最新位置，並在位置超過 15 分鐘
+未更新時明確提示「已過期」，避免用舊位置誤導家人。沒有開啟即時圈的使用者，
+App 只會要求「使用期間」定位，用於在地圖上顯示附近的避難所／醫院。位置分享
+可隨時在家人頁關閉。
+
+警報推播來自官方公開資料（NCDR／氣象署），App 不宣稱地震預警。
 訂閱 Guardian+ 只解鎖數量與歷史上限，所有保命警報功能免費。
 ```
 

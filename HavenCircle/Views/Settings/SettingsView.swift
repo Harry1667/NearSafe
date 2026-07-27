@@ -12,8 +12,6 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.profileDisplayName) private var displayName = ""
     @AppStorage(SettingsKeys.appleAccountEmail) private var appleEmail = ""
     @AppStorage(SettingsKeys.apnsDeviceToken) private var apnsToken = ""
-    @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
-    @AppStorage(SettingsKeys.appTextSize) private var appTextSize = AppTextSize.system.rawValue
     @AppStorage(SettingsKeys.analyticsEnabled) private var analyticsEnabled = true
     @State private var showPaywall = false
     @State private var showDeleteConfirm = false
@@ -103,37 +101,10 @@ struct SettingsView: View {
                                 icon: "bell.badge.fill", color: HCColor.brand) {
                         AlertSettingsView()
                     }
-                    Picker(selection: $appearanceMode) {
-                        ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
-                            Text(mode.label).tag(mode.rawValue)
-                        }
-                    } label: {
-                        Label {
-                            Text("外觀")
-                        } icon: {
-                            settingsIcon("circle.lefthalf.filled", color: HCColor.brand)
-                        }
+                    settingsRow("顯示與文字", subtitle: "深淺外觀、字體大小與即時預覽",
+                                icon: "textformat.size", color: HCColor.brand) {
+                        DisplaySettingsView()
                     }
-                    VStack(alignment: .leading, spacing: HCSpacing.x1) {
-                        Label {
-                            Text("字體大小")
-                        } icon: {
-                            settingsIcon("textformat.size", color: HCColor.brand)
-                        }
-                        Picker("字體大小", selection: $appTextSize) {
-                            ForEach(AppTextSize.allCases) { size in
-                                Text(size.shortLabel).tag(size.rawValue)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        Text("警報來時，這行字就是這個大小")
-                            .font(.body)
-                        Text("跟隨系統會使用 iOS 設定 > 螢幕顯示與亮度 > 文字大小")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, HCSpacing.x1)
                 }
 
                 Section {
@@ -225,7 +196,7 @@ struct SettingsView: View {
             }
             .analyticsScreen("settings")
             .task { await sync.refreshAccountStatus() }
-            .sheet(isPresented: $showPaywall) {
+            .fullScreenCover(isPresented: $showPaywall) {
                 PaywallView()
             }
             .confirmationDialog("確定要刪除帳號與所有資料嗎？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -577,6 +548,107 @@ struct SettingsView: View {
             "帳號服務暫時無法使用"
         case .unknown:
             "正在檢查登入狀態"
+        }
+    }
+}
+
+/// 將外觀與字級移出一列四段的 segmented control：當使用者選「最大」時，
+/// 控制項本身也會放大；每個選項改為完整列，確保不截字、不重疊且有 44pt 以上點按範圍。
+private struct DisplaySettingsView: View {
+    @AppStorage(SettingsKeys.appearanceMode) private var appearanceMode = AppearanceMode.system.rawValue
+    @AppStorage(SettingsKeys.appTextSize) private var appTextSize = AppTextSize.system.rawValue
+
+    private var selectedAppearance: AppearanceMode {
+        AppearanceMode(rawValue: appearanceMode) ?? .system
+    }
+
+    private var selectedTextSize: AppTextSize {
+        AppTextSize(rawValue: appTextSize) ?? .system
+    }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(AppearanceMode.allCases, id: \.rawValue) { mode in
+                    Button {
+                        appearanceMode = mode.rawValue
+                    } label: {
+                        optionRow(
+                            title: mode.label,
+                            detail: appearanceDetail(for: mode),
+                            isSelected: selectedAppearance == mode
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("外觀：\(mode.label)")
+                    .accessibilityValue(selectedAppearance == mode ? "已選取" : "未選取")
+                }
+            } header: {
+                Text("外觀")
+            } footer: {
+                Text("切換後立即套用；選「跟隨系統」會使用 iPhone 目前的深淺外觀。")
+            }
+
+            Section {
+                ForEach(AppTextSize.allCases) { size in
+                    Button {
+                        appTextSize = size.rawValue
+                    } label: {
+                        optionRow(
+                            title: size.label,
+                            detail: size.detail,
+                            isSelected: selectedTextSize == size
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("字體大小：\(size.label)")
+                    .accessibilityValue(selectedTextSize == size ? "已選取" : "未選取")
+                }
+            } header: {
+                Text("字體大小")
+            } footer: {
+                Text("跟隨系統會使用 iOS「設定 > 螢幕顯示與亮度 > 文字大小」。")
+            }
+
+            Section("即時預覽") {
+                Text("警報來時，這行字就是目前設定的大小。")
+                    .font(.body)
+                Text("選最大時，清單可捲動但不會縮字或截斷選項。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("顯示與文字")
+        .navigationBarTitleDisplayMode(.inline)
+        .analyticsScreen("display_settings")
+    }
+
+    private func optionRow(title: String, detail: String, isSelected: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: HCSpacing.x3) {
+            VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: HCSpacing.x2)
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(HCColor.brand)
+                    .accessibilityHidden(true)
+            }
+        }
+        .contentShape(Rectangle())
+        .frame(minHeight: 44)
+    }
+
+    private func appearanceDetail(for mode: AppearanceMode) -> String {
+        switch mode {
+        case .system: return "依照 iPhone 目前的外觀設定"
+        case .light: return "固定使用淺色背景與深色文字"
+        case .dark: return "固定使用深色背景與淺色文字"
         }
     }
 }
@@ -982,6 +1054,7 @@ private struct AlertSettingsView: View {
     @AppStorage(SettingsKeys.quietEndHour) private var quietEndHour = 7
     @Query private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
+    @Query private var circles: [LocalLifeCircle]
     /// 「允許通知」按下後的結果（nil＝尚未按過）——按了沒反應等於壞掉，必須有可見回饋
     @State private var notificationGranted: Bool?
     /// 2026-07-24：關閉「災害警報通知」等於關掉所有保命警報，一滑就掉風險太高，
@@ -1100,6 +1173,9 @@ private struct AlertSettingsView: View {
         // 摘要設定變更時立即重排通知
         .onChange(of: digestEnabled) { refreshDigest() }
         .onChange(of: digestHour) { refreshDigest() }
+        // FCM 現在只負責無聲喚醒；停用或暫停時立即退訂，恢復時重訂目前有效生活圈。
+        .onChange(of: alertsEnabled) { FCMTopicSync.sync(circles: circles) }
+        .onChange(of: paused) { FCMTopicSync.sync(circles: circles) }
         // 保命 App 的總開關不能一滑就掉：關閉「災害警報通知」需二次確認，取消則維持開啟
         .confirmationDialog(
             "確定要關閉災害警報通知？",

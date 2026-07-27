@@ -63,8 +63,11 @@ struct NFAIncidentProvider: EventProvider {
                 sourceURL: event.sourceURL ?? "https://www.nfa.gov.tw/pro/index.php?code=list&ids=114",
                 isOfficial: true, // 消防署自己的派遣紀錄，官方第一手來源，可推播
                 occurredAt: occurredAt,
-                ttlSeconds: ttl,
-                detail: event.detail
+                // 傳剩餘時間，不是完整 TTL；否則一筆已發生很久的事件在首次下載時
+                // 會被錯誤延長 2/12 小時。
+                ttlSeconds: remaining,
+                detail: event.detail,
+                stableDeduplicationKey: event.id.map { "nfa-\($0)" }
             )
         }
     }
@@ -109,6 +112,7 @@ private struct NFAPayload: Decodable {
 }
 
 private struct NFARecord: Decodable {
+    let id: String?
     let title: String
     let category: String
     let detail: String

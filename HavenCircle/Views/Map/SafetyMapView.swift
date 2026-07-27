@@ -50,7 +50,7 @@ struct SafetyMapView: View {
     @State private var selectedMemberKey: String?
     /// 鏡頭明確框住生活圈（不能用 .automatic——它會框住所有內容，
     /// 加了全台塗層後開圖會變成全台灣視角，失去「聚焦自家」的預設）
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var cameraPosition: MapCameraPosition = .region(Self.taiwanWideRegion)
     /// 目前「半徑調整面板」開著的圈（circleKey）；nil＝面板關閉。
     /// 點自己的圈標記開啟／收起面板——底部滑桿取代舊的拖曳把手
     /// （2026-07-23 使用者實測裁決：拖曳跟地圖平移手勢打架、圈大時把手在螢幕邊緣、讀數膠囊被切）。
@@ -196,7 +196,8 @@ struct SafetyMapView: View {
     /// 框住目前顯示對象所有生活圈的鏡頭範圍
     private var circlesRegion: MapCameraPosition {
         let circles = visibleMembers.flatMap(\.lifeCircles)
-        guard !circles.isEmpty else { return .automatic }
+        // 沒有生活圈時仍從台灣開始，不能把第一次開圖交給 MapKit 的任意海外預設位置。
+        guard !circles.isEmpty else { return .region(Self.taiwanWideRegion) }
         let lats = circles.map(\.latitude)
         let lons = circles.map(\.longitude)
         // 邊界加緩衝：至少涵蓋最大半徑的兩倍，避免圈貼著螢幕邊
@@ -210,6 +211,27 @@ struct SafetyMapView: View {
             longitudeDelta: max(lons.max()! - lons.min()! + maxRadiusDeg, 0.02)
         )
         return .region(MKCoordinateRegion(center: center, span: span))
+    }
+
+    /// 統一「點事件 marker → 選中它」的入口。事件詳情用 `.sheet(item: $selected)` 呈現，
+    /// 而詳情卡的 `.presentationBackgroundInteraction` 刻意讓地圖在小尺寸卡片顯示期間仍可互動——
+    /// 代表使用者能在事件 A 的卡片還開著時直接點事件 B 的 marker，`selected` 會從一個非 nil 值
+    /// 直接換成另一個非 nil 值。SwiftUI 的 `.sheet(item:)` 遇到這種情況不會銷毀重建同一張 sheet，
+    /// `MapEventSheet`／`EventDetailView` 內部的 `@State`（選中 detent、安否回報結果、AI 分析…）
+    /// 會殘留上一個事件的舊狀態，使用者看到的就是「換了事件但畫面沒跟著換」的 bug。
+    /// 修法比照下面 `selectedCluster` → `selected` 那條路徑：先關掉再等一小段時間才開新的，
+    /// 強制 SwiftUI 真的銷毀舊 sheet、重建一張乾淨的。
+    private func selectEvent(_ event: LocalSafetyEvent) {
+        guard selected != nil, selected?.id != event.id else {
+            selected = event
+            return
+        }
+        selected = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            selected = event
+        }
     }
 
     var body: some View {
@@ -583,7 +605,7 @@ struct SafetyMapView: View {
                     Annotation(event.isDrill ? "演練" : event.eventType,
                                coordinate: .init(latitude: event.latitude, longitude: event.longitude)) {
                         Button {
-                            selected = event
+                            selectEvent(event)
                         } label: {
                             // 演練不參與叢集，遠距視野仍沿用原本的個別鈴鐺標記。
                             Image(systemName: event.isDrill
@@ -605,7 +627,7 @@ struct SafetyMapView: View {
                     Annotation(event.isDrill ? "演練" : event.eventType,
                                coordinate: .init(latitude: event.latitude, longitude: event.longitude)) {
                         Button {
-                            selected = event
+                            selectEvent(event)
                         } label: {
                             // 兩套視覺通道：圖示＝事件類型、顏色＝可信度（官方紅／確認中琥珀）；
                             // 白色外圈讓標記在任何底圖上都可辨識
@@ -669,8 +691,18 @@ struct SafetyMapView: View {
                 }
                 .annotationTitles(.hidden)
             }
-            // 自己的位置（藍點）：需要 when-in-use 權限，未授權時 MapKit 自動不畫
+            // 自己的位置（藍點）：需要 when-in-use 權限，未授權時 MapKit 自動不畫。
+            // ⚠️ UserAnnotation() 本身會在 Map 顯示時直接向 MapKit 內部的定位管理器要權限，
+            // 完全繞過 LocationService 那層——--skip-location-prompt 只擋得住我們自己呼叫的
+            // requestPermissionIfNeeded／requestAlwaysPermission，擋不住這個，所以自動化截圖
+            // 模式下要整個不畫這個 annotation，系統對話框才不會跳出來卡住畫面。
+            #if DEBUG
+            if !ProcessInfo.processInfo.arguments.contains("--skip-location-prompt") {
+                UserAnnotation()
+            }
+            #else
             UserAnnotation()
+            #endif
             // 沒有即時圈時，以最近一次自願安否回報位置作為降級資訊。
             ForEach(familyPingAnnotations, id: \.id) { ping in
                 Annotation(ping.senderName,

@@ -43,6 +43,9 @@ final class LocalSafetyEvent {
     var status: String = EventStatus.active.rawValue
     /// 演練模式產生的模擬事件
     var isDrill: Bool = false
+    /// 來源明確表示仍在發生或剛發生、需要即時反應。
+    /// 這與顯示到期時間不同：新聞壽命尚未到期不代表事故仍在進行。
+    var isOngoing: Bool = true
     /// 是否已成功推播過（避免同一事件重複打擾；生活圈事後新增時補通知也靠它判斷）
     var hasNotified: Bool = false
     /// 已封存（過期後保留供歷史回顧，不再出現在提醒中心）
@@ -66,7 +69,8 @@ final class LocalSafetyEvent {
         expiresAt: Date,
         detail: String? = nil,
         status: EventStatus = .active,
-        isDrill: Bool = false
+        isDrill: Bool = false,
+        isOngoing: Bool = true
     ) {
         self.eventKey = eventKey
         self.title = title
@@ -86,6 +90,7 @@ final class LocalSafetyEvent {
         self.detail = detail
         self.status = status.rawValue
         self.isDrill = isDrill
+        self.isOngoing = isOngoing
     }
 }
 
@@ -102,8 +107,14 @@ extension LocalSafetyEvent {
     /// 提醒中心「已結束」分類：使用者標記解除、或已過期
     var isEnded: Bool { isResolved || isExpired }
 
+    /// 可作為即時安全狀態、地圖與通知判斷的事件；不能僅以 TTL 推論「還在發生」。
+    var isActiveForAwareness: Bool { !isEnded && isOngoing }
+
     /// 對使用者顯示的狀態文字（不能只靠顏色）
-    var statusText: String { isEnded ? EventStatus.resolved.rawValue : EventStatus.active.rawValue }
+    var statusText: String {
+        if isEnded { return EventStatus.resolved.rawValue }
+        return isOngoing ? EventStatus.active.rawValue : "非即時資訊"
+    }
 
     /// 標記為已解除（呼叫端負責存檔與發送解除通知）
     func resolve() {

@@ -3,17 +3,24 @@ import SwiftData
 
 /// 提醒中心：按「需要注意 / 持續確認中 / 已結束」分類（對應產品規格的通知頁分類）
 struct EventListView: View {
+    private enum FeedScope: String, CaseIterable, Identifiable {
+        case related = "與我有關"
+        case nationwide = "全台動態"
+
+        var id: Self { self }
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(TabRouter.self) private var router
     @Query(sort: \LocalSafetyEvent.occurredAt, order: .reverse) private var events: [LocalSafetyEvent]
     @Query private var members: [LocalFamilyMember]
     @Query private var regionAlerts: [RegionAlert]
-    @State private var showDrill = false
     /// 可收合分組的展開狀態（預設全部收合：未驗證與已結束的資訊不該搶版面）
     @State private var expandedSections: Set<String> = []
     @State private var selected: LocalSafetyEvent?
     @State private var selectedAlert: RegionAlert?
     @State private var didOpenDebugDetail = false
+    @State private var feedScope: FeedScope = .related
 
     private var visibleEvents: [LocalSafetyEvent] {
         events.filter { !$0.isArchived && !EventVisibility.isSuppressed($0) }
@@ -21,7 +28,7 @@ struct EventListView: View {
     /// 需要注意＝官方確認「且真的落在某個生活圈的提醒範圍」（分類標籤與邏輯必須一致）
     private var attention: [LocalSafetyEvent] {
         visibleEvents
-            .filter { !$0.isEnded && $0.isOfficiallyConfirmed && isInAnyCircle($0) }
+            .filter { $0.isActiveForAwareness && $0.isOfficiallyConfirmed && isInAnyCircle($0) }
             .sorted { nearestCircleDistance($0, members) < nearestCircleDistance($1, members) }
     }
     /// 官方確認、但離所有生活圈較遠的事件另立分類，不冒充「需要注意」。
@@ -29,7 +36,7 @@ struct EventListView: View {
     private var elsewhere: [LocalSafetyEvent] {
         visibleEvents
             .filter {
-                !$0.isEnded && $0.isOfficiallyConfirmed && !isInAnyCircle($0)
+                $0.isActiveForAwareness && $0.isOfficiallyConfirmed && !isInAnyCircle($0)
                     && nearestCircleDistance($0, members) <= NearbyScope.maxMeters
             }
             .sorted { nearestCircleDistance($0, members) < nearestCircleDistance($1, members) }
@@ -39,13 +46,25 @@ struct EventListView: View {
     private var nationwide: [LocalSafetyEvent] {
         visibleEvents
             .filter {
-                !$0.isEnded && $0.isOfficiallyConfirmed && !isInAnyCircle($0)
+                $0.isActiveForAwareness && $0.isOfficiallyConfirmed && !isInAnyCircle($0)
                     && nearestCircleDistance($0, members) > NearbyScope.maxMeters
             }
             .sorted { $0.occurredAt > $1.occurredAt }
     }
     private var confirming: [LocalSafetyEvent] {
-        visibleEvents.filter { !$0.isEnded && !$0.isOfficiallyConfirmed }
+        visibleEvents.filter { $0.isActiveForAwareness && !$0.isOfficiallyConfirmed }
+    }
+    /// 全台動態是「看見資訊密度」的獨立層，不改變首頁與通知的生活圈優先原則。
+    /// 未驗證新聞也可在這裡閱讀，但每一列都保留明確的驗證文字，絕不偽裝成官方訊息。
+    private var nationwideDynamics: [LocalSafetyEvent] {
+        visibleEvents
+            .filter(\.isActiveForAwareness)
+            .sorted { lhs, rhs in
+                if lhs.isOfficiallyConfirmed != rhs.isOfficiallyConfirmed {
+                    return lhs.isOfficiallyConfirmed
+                }
+                return lhs.occurredAt > rhs.occurredAt
+            }
     }
     private func isInAnyCircle(_ event: LocalSafetyEvent) -> Bool {
         !AlertPolicy.evaluate(event: event, members: members).matches.isEmpty
@@ -67,26 +86,32 @@ struct EventListView: View {
     // 自己不再包 NavigationStack（巢狀堆疊會讓 push/pop 行為錯亂）
     var body: some View {
         List {
-            miniMapSection
+            scopeSection
+            // 「全台動態」是閱讀入口，不需要先讓一張地圖把首屏推走；
+            // 小地圖只輔助判讀「與我有關」的事件和警戒圈相對位置。
+            if feedScope == .related {
+                miniMapSection
+            }
             if visibleEvents.isEmpty && activeRegionAlerts.isEmpty {
                 Section {
                     safeStateHero
                         .listRowBackground(Color.clear)
                 }
             }
-            regionAlertSection
-            // 顯示面積跟「可信度／急迫性」成正比：需要注意永遠攤開；
-            // 未驗證的確認中、離圈遠的附近動態、已結束——預設收合，點標題展開
-            section(title: "需要注意", subtitle: "官方確認且位於有效警戒圈內", items: attention)
-            section(title: "未驗證線索", subtitle: "資料尚未充分驗證，不會推播", items: confirming, collapsible: true)
-            section(title: "附近動態", subtitle: "官方事件，離警戒圈 30 公里內", items: elsewhere, collapsible: true)
-            nationwideSection
+            if feedScope == .related {
+                regionAlertSection
+                // 顯示面積跟「可信度／急迫性」成正比：需要注意永遠攤開；
+                // 未驗證的確認中、離圈遠的附近動態、已結束——預設收合，點標題展開
+                section(title: "需要注意", subtitle: "官方確認且位於有效警戒圈內", items: attention)
+                section(title: "未驗證線索", subtitle: "資料尚未充分驗證，不會推播", items: confirming, collapsible: true)
+                section(title: "附近動態", subtitle: "官方事件，離警戒圈 10 公里內", items: elsewhere, collapsible: true)
+                nationwideSection
+            } else {
+                nationwideDynamicsSection
+            }
             // #B：不再顯示「已結束」區塊——使用者不需要看已解除／已過期的事件（地圖也早已排除）
         }
         .navigationTitle("提醒中心")
-        .toolbar {
-            Button("演練", systemImage: "bell.and.waves.left.and.right") { showDrill = true }
-        }
         .analyticsScreen("alert_center")
         // 手動下拉刷新：重跑一次資料管線
         .refreshable { await EventPipeline.refresh(context: context) }
@@ -100,7 +125,6 @@ struct EventListView: View {
             try? await Task.sleep(for: .milliseconds(450))
             selected = match
         }
-        .sheet(isPresented: $showDrill) { DrillView() }
         .sheet(item: $selected) { EventDetailView(event: $0, members: members) }
         .sheet(item: $selectedAlert) { RegionAlertDetailView(alert: $0, members: members) }
         #if DEBUG
@@ -118,6 +142,21 @@ struct EventListView: View {
             selected = target
         }
         #endif
+    }
+
+    private var scopeSection: some View {
+        Section {
+            Picker("動態範圍", selection: $feedScope) {
+                ForEach(FeedScope.allCases) { scope in
+                    Text(scope.rawValue).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+        } footer: {
+            Text(feedScope == .related
+                 ? "通知只會依你的生活圈與設定發送；全台內容不會干擾你。"
+                 : "全台內容供了解動態；「持續確認中」代表尚未由官方或多來源充分驗證。")
+        }
     }
 
     /// 品牌簽名：平安不是「沒有內容」，是產品最想傳達的一刻——同心圓環＝守護圈完好。
@@ -151,7 +190,7 @@ struct EventListView: View {
     /// 頂部精簡地圖：只放進行中的事件，點標記開詳情
     @ViewBuilder
     private var miniMapSection: some View {
-        let active = visibleEvents.filter { !$0.isEnded }
+        let active = visibleEvents.filter(\.isActiveForAwareness)
         if !active.isEmpty {
             Section {
                 EventsMiniMap(
@@ -218,6 +257,34 @@ struct EventListView: View {
                 }
             } footer: {
                 Text("離所有警戒圈超過 30 公里的官方事件收在這裡，避免稀釋與你相關的訊號。")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var nationwideDynamicsSection: some View {
+        if nationwideDynamics.isEmpty {
+            Section {
+                ContentUnavailableView {
+                    Label("目前沒有全台動態", systemImage: "dot.radiowaves.left.and.right")
+                } description: {
+                    Text("來源仍會持續更新；未驗證線索會清楚標示。")
+                }
+            }
+        } else {
+            Section {
+                ForEach(nationwideDynamics) { event in
+                    Button {
+                        selected = event
+                    } label: {
+                        EventRow(event: event, members: members)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("全台動態（\(nationwideDynamics.count)）")
+            } footer: {
+                Text("顯示官方事件與未驗證新聞線索。未驗證內容不會單獨觸發可見通知。")
             }
         }
     }

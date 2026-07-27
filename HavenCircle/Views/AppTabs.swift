@@ -75,7 +75,8 @@ struct AppTabs: View {
             .sheet(isPresented: Bindable(router).showSettings) { SettingsView() }
             #if DEBUG
             // DEBUG：--show-paywall 直接開付費牆，供自動化截圖（同 --start-tab 定式）
-            .sheet(isPresented: $debugShowPaywall) { PaywallView() }
+            // 跟正式的 4 個入口一樣改用 fullScreenCover，截圖才會反映使用者實際看到的樣子。
+            .fullScreenCover(isPresented: $debugShowPaywall) { PaywallView() }
             #endif
             // Coach marks 顯示時，VoiceOver 只應讀到導覽卡，不可穿透到背景按鈕。
             .accessibilityHidden(tourStep != nil)

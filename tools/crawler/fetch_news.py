@@ -5,7 +5,8 @@ fetch_news.py — 「安心圈」新聞重大事故爬蟲
 
 用途：
     在官方示警（NCDR）之外，用新聞 RSS 補「事發到官方發布」的時間差。
-    產出的事件只進 App 的「持續確認中」信任層（trust = media-report，永不推播），
+    產出的事件先進 App 的「持續確認中」信任層（trust = media-report），
+    是否提醒由 App 的可信度、生活圈與使用者通知設定統一決定。
     每則事件都帶清楚的來源標示（sourceName + sourceURL）。
 
 設計慣例（與既有 NCDR 爬蟲相同）：
@@ -22,12 +23,14 @@ fetch_news.py — 「安心圈」新聞重大事故爬蟲
 
 import difflib
 import email.utils
+import fcntl
 import hashlib
 import json
 import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
@@ -52,6 +55,78 @@ FETCH_TIMEOUT = 20
 AI_PROXY_URL = "http://cli.twloop.com:8080/api/chat"
 AI_PROXY_TOKEN = os.environ.get("AI_PROXY_TOKEN", "").strip()
 AI_PROXY_PROJECT = os.environ.get("AI_PROXY_PROJECT", "harry-HavenCircle").strip()
+try:
+    PROXY_LLM_TIMEOUT = max(3, min(20, int(os.environ.get("NEWS_PROXY_LLM_TIMEOUT", "10"))))
+except ValueError:
+    PROXY_LLM_TIMEOUT = 10
+# 新聞分類的 ProxyCLI 優先序固定為 OpenAI → Gemini → Claude；模型名稱可由 .env
+# 覆蓋，避免新模型推出時必須更新 App 或爬蟲程式。
+PROXY_LLM_ROUTE = (
+    ("openai", os.environ.get("NEWS_PROXY_OPENAI_MODEL", "gpt-4o-mini").strip()),
+    ("gemini", os.environ.get("NEWS_PROXY_GEMINI_MODEL", "gemini-2.5-flash").strip()),
+    ("claude", os.environ.get("NEWS_PROXY_CLAUDE_MODEL", "claude-haiku-4-5").strip()),
+)
+
+# Gemini 免費層也與 ProxyCLI、付費 Gemini 完全隔離。免費 key 必須屬於沒有啟用
+# Gemini 付費帳務的專案；程式不從環境變數讀 key、不會拿免費 key 放進付費池。
+# 預設關閉，且有每日本機呼叫上限，避免來源突增把免費額度瞬間吃完。
+FREE_GEMINI_ENABLED = os.environ.get("FREE_GEMINI_ENABLED", "0").strip() == "1"
+FREE_GEMINI_MODEL = os.environ.get(
+    "FREE_GEMINI_MODEL", "gemini-2.5-flash"
+).strip()
+FREE_GEMINI_KEYS_PATH = os.environ.get(
+    "FREE_GEMINI_KEYS_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "free_gemini_keys.txt"),
+)
+FREE_GEMINI_USAGE_PATH = os.environ.get(
+    "FREE_GEMINI_USAGE_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "free_gemini_usage.json"),
+)
+try:
+    FREE_GEMINI_DAILY_CALL_LIMIT = max(
+        0, int(os.environ.get("FREE_GEMINI_DAILY_CALL_LIMIT", "200"))
+    )
+except ValueError:
+    FREE_GEMINI_DAILY_CALL_LIMIT = 0
+FREE_GEMINI_MAX_OUTPUT_TOKENS = max(
+    64, min(1024, int(os.environ.get("FREE_GEMINI_MAX_OUTPUT_TOKENS", "512")))
+)
+# 2.5 Flash 預設會把輸出額度分給 thinking；新聞分類只需要固定 JSON，關閉 thinking
+# 才不會在輸出欄位中途被截斷。若換成需要推理的模型，必須重新評估這個設定與成本。
+FREE_GEMINI_THINKING_BUDGET = 0
+
+# Google Gemini 付費路徑必須與免費池、ProxyCLI 憑證、免費 RSS 完全分離。
+# 預設關閉且月費上限為 0；只有前兩條免費路徑失敗，且兩個設定都明確開啟、
+# 獨立金鑰檔也存在時，才會使用。金鑰永遠不進 .env、不進 repo、不寫 log。
+PAID_GEMINI_ENABLED = os.environ.get("PAID_GEMINI_ENABLED", "0").strip() == "1"
+try:
+    PAID_GEMINI_MONTHLY_LIMIT_USD = max(
+        0.0, float(os.environ.get("PAID_GEMINI_MONTHLY_LIMIT_USD", "0"))
+    )
+except ValueError:
+    PAID_GEMINI_MONTHLY_LIMIT_USD = 0.0
+PAID_GEMINI_MODEL = os.environ.get(
+    "PAID_GEMINI_MODEL", "gemini-2.5-flash-lite"
+).strip()
+PAID_GEMINI_KEYS_PATH = os.environ.get(
+    "PAID_GEMINI_KEYS_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "paid_gemini_keys.txt"),
+)
+PAID_GEMINI_USAGE_PATH = os.environ.get(
+    "PAID_GEMINI_USAGE_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "paid_gemini_usage.json"),
+)
+# Gemini 2.5 Flash-Lite Standard（2026-07-09 官方價格）：每百萬 input $0.10、
+# output（含 thinking）$0.40。若換模型必須連同這兩個環境值一起改，不能低估成本。
+PAID_GEMINI_INPUT_USD_PER_M = max(
+    0.0, float(os.environ.get("PAID_GEMINI_INPUT_USD_PER_M", "0.10"))
+)
+PAID_GEMINI_OUTPUT_USD_PER_M = max(
+    0.0, float(os.environ.get("PAID_GEMINI_OUTPUT_USD_PER_M", "0.40"))
+)
+PAID_GEMINI_MAX_OUTPUT_TOKENS = max(
+    64, min(1024, int(os.environ.get("PAID_GEMINI_MAX_OUTPUT_TOKENS", "512")))
+)
 
 # ProxyCLI gRPC SDK（把 proxy.py＋aiproxy_pb2*.py 放進同目錄即自動啟用）。
 # 實測 REST 8080 從外部連不到（防火牆），gRPC 443/TLS 才是通的路；
@@ -79,6 +154,16 @@ def to_traditional(text):
 
 LLM_TIMEOUT = 30
 LLM_MIN_CONFIDENCE = 0.6  # LLM 信心低於此值 → 丟棄 LLM 結果、退回規則結果
+LLM_MAX_TITLE_CHARS = 300
+LLM_MAX_DESCRIPTION_CHARS = 1_200
+# 單輪最多呼叫幾則 LLM。避免新來源第一次上線或 feed 突然回傳大量歷史項目時，
+# 一輪吃光每日額度並卡住下一個 cron。超過預算的事件不寫入 seen，下輪繼續補分類。
+LLM_MAX_CALLS_PER_RUN = max(0, int(os.environ.get("NEWS_LLM_MAX_CALLS_PER_RUN", "20")))
+
+# 只處理仍有即時價值的新聞。Oracle 最多保留 24 小時，爬蟲端先擋舊聞可避免把
+# 數百筆歷史 RSS 全送進規則與 LLM。
+NEWS_MAX_AGE_HOURS = max(1, int(os.environ.get("NEWS_MAX_AGE_HOURS", "24")))
+DEFAULT_FEED_ITEM_LIMIT = max(10, int(os.environ.get("NEWS_FEED_ITEM_LIMIT", "80")))
 
 # seen.json 滾動上限
 SEEN_MAX = 2000
@@ -90,13 +175,19 @@ SEEN_MAX = 2000
 FEEDS = [
     {"name": "中央社", "feed": "社會", "url": "https://feeds.feedburner.com/rsscna/social"},
     {"name": "中央社", "feed": "地方", "url": "https://feeds.feedburner.com/rsscna/local"},
+    {"name": "中央社", "feed": "生活", "url": "https://feeds.feedburner.com/rsscna/lifehealth"},
     {"name": "自由時報", "feed": "社會", "url": "https://news.ltn.com.tw/rss/society.xml"},
+    {"name": "自由時報", "feed": "地方", "url": "https://news.ltn.com.tw/rss/local.xml"},
     {"name": "ETtoday", "feed": "社會", "url": "https://feeds.feedburner.com/ettoday/society"},
     {"name": "公視", "feed": "新聞", "url": "https://news.pts.org.tw/xml/newsfeed.xml", "format": "atom"},
+    # 下列兩站提供可直接驗證的公開 RSS；只取近期有限筆，避免全站 feed 放大 LLM 成本。
+    {"name": "Newtalk新聞", "feed": "即時", "url": "https://newtalk.tw/rss/all", "max_items": 60},
+    {"name": "記者新聞網", "feed": "社會", "url": "https://newsdaily.tw/rss/society.xml", "max_items": 60},
     # UDN 從海外 IP 實測回「合法 RSS 外殼但 item 全空」（疑地區過濾）；
     # 爬蟲機在台灣網路，掛著觀察——若仍為空殼，空 items 會被標題過濾自然略過，無害
-    {"name": "聯合報", "feed": "社會", "url": "https://udn.com/news/rssfeed/6639"},  # 2026-07-26 修正：UDN 換了網址結構，舊網址吐空殼假資料（非地區封鎖）
-    {"name": "TVBS", "feed": "社會", "url": "https://news.tvbs.com.tw/local", "format": "tvbs_html"},  # 2026-07-26 新增：無公開RSS，直接爬即時清單區塊
+    # UDN 目前一次會回約 700 筆；必須加硬上限並先過 24 小時新鮮度閘門。
+    {"name": "聯合報", "feed": "社會", "url": "https://udn.com/news/rssfeed/6639", "max_items": 60},
+    {"name": "TVBS", "feed": "社會", "url": "https://news.tvbs.com.tw/local", "format": "tvbs_html", "max_items": 60},
 ]
 
 # ---------------------------------------------------------------------------
@@ -114,6 +205,14 @@ EXCLUDE_WORDS = [
     "彈劾", "質詢", "民調", "罷免",
     # 追悼紀念
     "追思", "紀念", "告別式", "公祭",
+]
+
+# 酒駕本身可能是剛發生的道路風險，但「罰鍰／轉介戒酒」是裁罰或後續輔導，
+# 不是需要即時反應的事故。不能把「酒駕」整個排掉，否則會漏掉正在發生的
+# 碰撞或危險駕駛；只在酒駕命中時用這組更精準的事後處置詞攔下。
+TRAFFIC_AFTERCARE_TERMS = [
+    "罰款", "罰鍰", "轉介", "戒酒", "欠費", "欠款", "繳納",
+    "行政執行", "執行分署", "裁罰", "罰單",
 ]
 
 # 納入詞：依 App 分類（火災/交通/天災/公共安全/民生）分組，
@@ -303,18 +402,59 @@ def stable_id(item):
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
 
-def parse_pubdate(s):
-    """RFC 822（RSS）或 ISO8601（Atom）→ ISO8601（台北時區）；解析失敗就用現在時間"""
+def parse_pubdate_datetime(s):
+    """RFC 822（RSS）或 ISO8601（Atom）→ 台北時區 datetime；解析失敗回 None。"""
     try:
         dt = email.utils.parsedate_to_datetime(s)
     except Exception:
         try:
             dt = datetime.fromisoformat((s or "").replace("Z", "+00:00"))
         except Exception:
-            return datetime.now(TZ_TAIPEI).isoformat()
+            return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=TZ_TAIPEI)
-    return dt.astimezone(TZ_TAIPEI).isoformat()
+    return dt.astimezone(TZ_TAIPEI)
+
+
+def parse_pubdate(s):
+    """新聞時間統一成台北時區 ISO8601；無法解析時保守使用抓取當下。"""
+    dt = parse_pubdate_datetime(s) or datetime.now(TZ_TAIPEI)
+    return dt.isoformat()
+
+
+def prepare_feed_items(items, max_items=DEFAULT_FEED_ITEM_LIMIT, now=None):
+    """
+    在分類前先做新鮮度與數量閘門。
+
+    回傳 (可處理項目, 指標)。無法解析時間的項目仍保留，但受 max_items 限制；
+    明確超過 24 小時或比現在超前 2 小時以上的資料直接丟棄，避免舊聞/壞時間觸發提醒。
+    """
+    now = now or datetime.now(TZ_TAIPEI)
+    cutoff = now - timedelta(hours=NEWS_MAX_AGE_HOURS)
+    future_limit = now + timedelta(hours=2)
+    eligible = []
+    stale_dropped = 0
+    future_dropped = 0
+
+    for item in items:
+        published = parse_pubdate_datetime(item.get("pubDate"))
+        if published is not None and published < cutoff:
+            stale_dropped += 1
+            continue
+        if published is not None and published > future_limit:
+            future_dropped += 1
+            continue
+        eligible.append(item)
+
+    limit = max(1, int(max_items))
+    capped_dropped = max(0, len(eligible) - limit)
+    return eligible[:limit], {
+        "rawItems": len(items),
+        "eligibleItems": min(len(eligible), limit),
+        "staleDropped": stale_dropped,
+        "futureDropped": future_dropped,
+        "cappedDropped": capped_dropped,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +518,10 @@ def rules_classify(title, description):
                     stripped = stripped.replace(g, "")
                 if word not in stripped:
                     continue
+            if category == "交通" and word == "酒駕" and any(
+                term in title for term in TRAFFIC_AFTERCARE_TERMS
+            ):
+                return False, None, "酒駕事後處置"
             return True, category, word
 
     return False, None, None
@@ -396,80 +540,476 @@ LLM_PROMPT_TEMPLATE = """你是災害事故新聞分類器。判斷下面這則�
 {{"is_incident": true或false, "county": "縣市全名（如 台中市）或null", "district": "鄉鎮市區或null", "place": "地點簡述或null", "category": "火災|交通|天災|公共安全|民生 其中之一", "confidence": 0到1的數字, "summary": "10至12個中文字的事件重點（只寫地點＋發生什麼事，如「板橋警匪追逐警破窗逮人」；不要標點、驚嘆號與媒體渲染詞；一律使用台灣繁體中文，禁止任何簡體字）", "detail": "30到60字的事件詳細說明，用中性平實的語氣重新整理（地點＋發生什麼＋目前現況或影響），不要媒體渲染詞、不要驚嘆號、不要記者名或報社名；一律使用台灣繁體中文，禁止任何簡體字", "severity": "high或medium或low 其中之一（high＝立即致命或需疏散，如大火困人、氣爆、槍擊或天災正在發生；medium＝局部危險需注意；low＝輕微、已受控或影響很小）", "is_ongoing": true或false（事件是否仍在發生或剛發生、需要人即時反應；已撲滅／已獲救／已落幕／純事後回顧或司法後續都為 false）}}"""
 
 
-def call_proxy_llm(prompt):
-    """
-    呼叫 ProxyCLI 取得純文字回應：優先 gRPC SDK（443/TLS），沒有 SDK 才走 REST。
-    任何錯誤都丟例外，由呼叫端 fallback 到規則結果（不 crash、不 silent fail）。
-    """
-    if _sdk_ai is not None:
-        return _sdk_ai(
-            prompt,
-            provider="claude",
-            model="claude-haiku-4-5",
-            project=AI_PROXY_PROJECT,
-            group="news-crawler",  # ProxyCLI 必填欄位，儀表板依此分項統計用量
-        )
+class PaidGeminiUnavailable(RuntimeError):
+    """付費路徑未啟用、無金鑰、達上限或呼叫失敗；訊息絕不包含金鑰。"""
+
+
+class FreeGeminiUnavailable(RuntimeError):
+    """免費路徑未啟用、無金鑰、達呼叫上限或呼叫失敗；訊息絕不包含金鑰。"""
+
+
+def build_llm_prompt(title, description):
+    """限制送進任何 LLM 的文字量，讓 token 成本與最壞情況都具有上界。"""
+    return LLM_PROMPT_TEMPLATE.format(
+        title=(title or "")[:LLM_MAX_TITLE_CHARS],
+        description=(description or "")[:LLM_MAX_DESCRIPTION_CHARS],
+    )
+
+
+def paid_month_key(now=None):
+    now = now or datetime.now(TZ_TAIPEI)
+    return now.strftime("%Y-%m")
+
+
+def free_day_key(now=None):
+    now = now or datetime.now(TZ_TAIPEI)
+    return now.strftime("%Y-%m-%d")
+
+
+def load_free_keys():
+    """只從獨立 600 權限檔讀免費 Gemini key，絕不混入付費 key 檔。"""
+    if not os.path.isfile(FREE_GEMINI_KEYS_PATH):
+        return []
+    try:
+        mode = os.stat(FREE_GEMINI_KEYS_PATH).st_mode & 0o777
+        if mode & 0o077:
+            raise FreeGeminiUnavailable("免費 Gemini 金鑰檔權限必須是 600")
+        with open(FREE_GEMINI_KEYS_PATH, encoding="utf-8") as file:
+            keys = [line.strip() for line in file if line.strip()]
+    except OSError as error:
+        raise FreeGeminiUnavailable("無法讀取免費 Gemini 金鑰檔") from error
+    valid = [key for key in keys if key.startswith("AQ.")]
+    if len(valid) != len(keys):
+        raise FreeGeminiUnavailable("免費 Gemini 金鑰檔含有非 AQ 格式資料")
+    return valid
+
+
+def _read_free_usage_unlocked():
+    if not os.path.isfile(FREE_GEMINI_USAGE_PATH):
+        return {"days": {}}
+    try:
+        with open(FREE_GEMINI_USAGE_PATH, encoding="utf-8") as file:
+            value = json.load(file)
+        return value if isinstance(value, dict) and isinstance(value.get("days"), dict) else {"days": {}}
+    except (OSError, ValueError):
+        # 只要本機計數器失效就停用免費層，避免失控重試或誤以為仍有額度。
+        raise FreeGeminiUnavailable("免費 Gemini 用量帳本無法讀取")
+
+
+def _write_free_usage_unlocked(usage):
+    directory = os.path.dirname(os.path.abspath(FREE_GEMINI_USAGE_PATH))
+    os.makedirs(directory, exist_ok=True)
+    temp_path = FREE_GEMINI_USAGE_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        json.dump(usage, file, ensure_ascii=False, indent=2)
+        file.flush()
+        os.fsync(file.fileno())
+    os.chmod(temp_path, 0o600)
+    os.replace(temp_path, FREE_GEMINI_USAGE_PATH)
+
+
+def with_free_usage_lock(callback):
+    lock_path = FREE_GEMINI_USAGE_PATH.rsplit(".", 1)[0] + ".lock"
+    directory = os.path.dirname(os.path.abspath(lock_path))
+    os.makedirs(directory, exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as lock_file:
+        os.chmod(lock_path, 0o600)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        return callback()
+
+
+def free_request_reservation(key_count):
+    """呼叫前先記一筆免費額度，程序中斷也不會靠重跑穿透每日上限。"""
+    day = free_day_key()
+
+    def reserve():
+        usage = _read_free_usage_unlocked()
+        row = usage["days"].setdefault(day, {"calls": 0, "reservedFailures": 0})
+        calls = int(row.get("calls") or 0)
+        if calls >= FREE_GEMINI_DAILY_CALL_LIMIT:
+            raise FreeGeminiUnavailable("免費 Gemini 已達本機每日呼叫上限")
+        row["calls"] = calls + 1
+        row["reservedFailures"] = int(row.get("reservedFailures") or 0) + 1
+        _write_free_usage_unlocked(usage)
+        return day, calls % key_count
+
+    return with_free_usage_lock(reserve)
+
+
+def reconcile_free_usage(day):
+    def reconcile():
+        usage = _read_free_usage_unlocked()
+        row = usage["days"].setdefault(day, {"calls": 0, "reservedFailures": 0})
+        row["reservedFailures"] = max(0, int(row.get("reservedFailures") or 0) - 1)
+        _write_free_usage_unlocked(usage)
+
+    with_free_usage_lock(reconcile)
+
+
+def free_gemini_status():
+    status = {
+        "enabled": FREE_GEMINI_ENABLED,
+        "model": FREE_GEMINI_MODEL,
+        "dailyCallLimit": FREE_GEMINI_DAILY_CALL_LIMIT,
+        "callsToday": 0,
+    }
+    try:
+        usage = _read_free_usage_unlocked()
+        row = usage["days"].get(free_day_key(), {})
+        status["callsToday"] = int(row.get("calls") or 0)
+    except FreeGeminiUnavailable:
+        status["ledgerError"] = True
+    return status
+
+
+def call_free_gemini(prompt):
+    """只使用獨立免費池，額度或網路失敗時交給下一層 fallback，絕不改用付費 key。"""
+    if not FREE_GEMINI_ENABLED:
+        raise FreeGeminiUnavailable("免費 Gemini 未啟用")
+    if FREE_GEMINI_DAILY_CALL_LIMIT <= 0:
+        raise FreeGeminiUnavailable("免費 Gemini 每日呼叫上限為 0")
+    keys = load_free_keys()
+    if not keys:
+        raise FreeGeminiUnavailable("沒有可用的免費 Gemini 金鑰")
+
+    day, key_index = free_request_reservation(len(keys))
     body = json.dumps({
-        "prompt": prompt,
-        "provider": "claude",
-        "model": "claude-haiku-4-5",
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": FREE_GEMINI_MAX_OUTPUT_TOKENS,
+            "responseMimeType": "application/json",
+            "thinkingConfig": {
+                "thinkingBudget": FREE_GEMINI_THINKING_BUDGET,
+            },
+        },
     }).encode("utf-8")
-    req = urllib.request.Request(
-        AI_PROXY_URL,
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        + urllib.parse.quote(FREE_GEMINI_MODEL, safe="-._")
+        + ":generateContent"
+    )
+    request = urllib.request.Request(
+        endpoint,
         data=body,
         headers={
-            "Authorization": "Bearer " + AI_PROXY_TOKEN,
+            "x-goog-api-key": keys[key_index],
             "Content-Type": "application/json",
             "User-Agent": USER_AGENT,
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as resp:
-        raw = resp.read().decode("utf-8", errors="replace")
-
-    # 回應可能是 JSON 包裝（content/response/text…其中一個 key），也可能直接是文字
     try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            for key in ("content", "response", "message", "text", "result", "answer", "output"):
-                val = parsed.get(key)
-                if isinstance(val, str) and val.strip():
-                    return val
-            # dict 但找不到已知 key → 原樣回傳字串讓上層試著抽 JSON
+        with urllib.request.urlopen(request, timeout=LLM_TIMEOUT) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except Exception as error:
+        # 失敗請求保留額度，避免 quota/網路錯誤造成無限重試。
+        raise FreeGeminiUnavailable("免費 Gemini 呼叫失敗") from error
+
+    try:
+        text = result["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise FreeGeminiUnavailable("免費 Gemini 回應缺少文字") from error
+    reconcile_free_usage(day)
+    return text
+
+
+def load_paid_keys():
+    """只從獨立 600 權限檔讀 Gemini 金鑰；不接受環境變數內混放的 key pool。"""
+    if not os.path.isfile(PAID_GEMINI_KEYS_PATH):
+        return []
+    try:
+        mode = os.stat(PAID_GEMINI_KEYS_PATH).st_mode & 0o777
+        if mode & 0o077:
+            raise PaidGeminiUnavailable("付費 Gemini 金鑰檔權限必須是 600")
+        with open(PAID_GEMINI_KEYS_PATH, encoding="utf-8") as file:
+            keys = [line.strip() for line in file if line.strip()]
+    except OSError as error:
+        raise PaidGeminiUnavailable("無法讀取付費 Gemini 金鑰檔") from error
+    valid = [key for key in keys if key.startswith("AQ.")]
+    if len(valid) != len(keys):
+        raise PaidGeminiUnavailable("付費 Gemini 金鑰檔含有非 AQ 格式資料")
+    return valid
+
+
+def _read_usage_unlocked():
+    if not os.path.isfile(PAID_GEMINI_USAGE_PATH):
+        return {"months": {}}
+    try:
+        with open(PAID_GEMINI_USAGE_PATH, encoding="utf-8") as file:
+            value = json.load(file)
+        return value if isinstance(value, dict) and isinstance(value.get("months"), dict) else {"months": {}}
+    except (OSError, ValueError):
+        # 計費帳本壞掉時必須 fail closed；視為已達上限，而不是歸零繼續花錢。
+        raise PaidGeminiUnavailable("付費 Gemini 用量帳本無法讀取")
+
+
+def _write_usage_unlocked(usage):
+    directory = os.path.dirname(os.path.abspath(PAID_GEMINI_USAGE_PATH))
+    os.makedirs(directory, exist_ok=True)
+    temp_path = PAID_GEMINI_USAGE_PATH + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        json.dump(usage, file, ensure_ascii=False, indent=2)
+        file.flush()
+        os.fsync(file.fileno())
+    os.chmod(temp_path, 0o600)
+    os.replace(temp_path, PAID_GEMINI_USAGE_PATH)
+
+
+def with_paid_usage_lock(callback):
+    lock_path = PAID_GEMINI_USAGE_PATH.rsplit(".", 1)[0] + ".lock"
+    directory = os.path.dirname(os.path.abspath(lock_path))
+    os.makedirs(directory, exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as lock_file:
+        os.chmod(lock_path, 0o600)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        return callback()
+
+
+def paid_request_reservation(prompt, key_count):
+    """
+    呼叫前先以「UTF-8 byte 數視為 input token 上界＋最大 output token」預扣。
+    因此即使程序在回應後 crash，也只會把額度算多、不會漏算並穿透月費上限。
+    """
+    estimated_input_tokens = max(1, len(prompt.encode("utf-8")))
+    reserved_cost = (
+        estimated_input_tokens * PAID_GEMINI_INPUT_USD_PER_M
+        + PAID_GEMINI_MAX_OUTPUT_TOKENS * PAID_GEMINI_OUTPUT_USD_PER_M
+    ) / 1_000_000
+    month = paid_month_key()
+
+    def reserve():
+        usage = _read_usage_unlocked()
+        row = usage["months"].setdefault(month, {
+            "estimatedCostUSD": 0.0,
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "calls": 0,
+            "reservedFailures": 0,
+        })
+        current = float(row.get("estimatedCostUSD") or 0)
+        if current + reserved_cost > PAID_GEMINI_MONTHLY_LIMIT_USD:
+            raise PaidGeminiUnavailable("付費 Gemini 已達本機月費硬上限")
+        call_index = int(row.get("calls") or 0)
+        row["estimatedCostUSD"] = round(current + reserved_cost, 8)
+        row["calls"] = call_index + 1
+        row["reservedFailures"] = int(row.get("reservedFailures") or 0) + 1
+        _write_usage_unlocked(usage)
+        return month, call_index % key_count, reserved_cost
+
+    return with_paid_usage_lock(reserve)
+
+
+def reconcile_paid_usage(month, reserved_cost, input_tokens, output_tokens):
+    actual_cost = (
+        input_tokens * PAID_GEMINI_INPUT_USD_PER_M
+        + output_tokens * PAID_GEMINI_OUTPUT_USD_PER_M
+    ) / 1_000_000
+
+    def reconcile():
+        usage = _read_usage_unlocked()
+        row = usage["months"].setdefault(month, {})
+        current = float(row.get("estimatedCostUSD") or 0)
+        row["estimatedCostUSD"] = round(max(0.0, current - reserved_cost + actual_cost), 8)
+        row["inputTokens"] = int(row.get("inputTokens") or 0) + input_tokens
+        row["outputTokens"] = int(row.get("outputTokens") or 0) + output_tokens
+        row["reservedFailures"] = max(0, int(row.get("reservedFailures") or 0) - 1)
+        _write_usage_unlocked(usage)
+
+    with_paid_usage_lock(reconcile)
+
+
+def paid_gemini_status():
+    status = {
+        "enabled": PAID_GEMINI_ENABLED,
+        "model": PAID_GEMINI_MODEL,
+        "monthlyLimitUSD": PAID_GEMINI_MONTHLY_LIMIT_USD,
+        "estimatedCostUSD": 0.0,
+        "calls": 0,
+    }
+    try:
+        usage = _read_usage_unlocked()
+        row = usage["months"].get(paid_month_key(), {})
+        status["estimatedCostUSD"] = float(row.get("estimatedCostUSD") or 0)
+        status["calls"] = int(row.get("calls") or 0)
+    except PaidGeminiUnavailable:
+        status["ledgerError"] = True
+    return status
+
+
+def call_paid_gemini(prompt):
+    """使用獨立付費池呼叫 Gemini native API；永遠在現有 ProxyCLI 失敗後才會走到這裡。"""
+    if not PAID_GEMINI_ENABLED:
+        raise PaidGeminiUnavailable("付費 Gemini 未啟用")
+    if PAID_GEMINI_MONTHLY_LIMIT_USD <= 0:
+        raise PaidGeminiUnavailable("付費 Gemini 月費上限為 0")
+    keys = load_paid_keys()
+    if not keys:
+        raise PaidGeminiUnavailable("沒有可用的付費 Gemini 金鑰")
+
+    month, key_index, reserved_cost = paid_request_reservation(prompt, len(keys))
+    body = json.dumps({
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": PAID_GEMINI_MAX_OUTPUT_TOKENS,
+            "responseMimeType": "application/json",
+        },
+    }).encode("utf-8")
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        + urllib.parse.quote(PAID_GEMINI_MODEL, safe="-._")
+        + ":generateContent"
+    )
+    request = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "x-goog-api-key": keys[key_index],
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=LLM_TIMEOUT) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except Exception as error:
+        # 失敗請求保留預扣額度，寧可少用也不讓錯誤重試穿透花費上限。
+        raise PaidGeminiUnavailable("付費 Gemini 呼叫失敗") from error
+
+    try:
+        text = result["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise PaidGeminiUnavailable("付費 Gemini 回應缺少文字") from error
+    metadata = result.get("usageMetadata") or {}
+    input_tokens = int(metadata.get("promptTokenCount") or 0)
+    output_tokens = int(metadata.get("candidatesTokenCount") or 0)
+    reconcile_paid_usage(month, reserved_cost, input_tokens, output_tokens)
+    return text
+
+
+def call_proxy_llm(prompt):
+    """
+    依 OpenAI → Gemini → Claude 優先序呼叫 ProxyCLI，取得純文字回應。
+    每個 provider 失敗才試下一個；三者皆不可用才交給獨立 Gemini 池／規則分類。
+    優先 gRPC SDK（443/TLS），沒有 SDK 才走 REST；不把 provider error 細節寫進 log。
+    """
+    attempted = []
+    for provider, model in PROXY_LLM_ROUTE:
+        if not model:
+            continue
+        attempted.append(provider)
+        try:
+            if _sdk_ai is not None:
+                return _sdk_ai(
+                    prompt,
+                    provider=provider,
+                    model=model,
+                    project=AI_PROXY_PROJECT,
+                    group="news-crawler",  # ProxyCLI 儀表板依此分項統計用量
+                    timeout=PROXY_LLM_TIMEOUT,
+                )
+
+            body = json.dumps({
+                "prompt": prompt,
+                "provider": provider,
+                "model": model,
+                "project": AI_PROXY_PROJECT,
+                "group": "news-crawler",
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                AI_PROXY_URL,
+                data=body,
+                headers={
+                    "Authorization": "Bearer " + AI_PROXY_TOKEN,
+                    "Content-Type": "application/json",
+                    "User-Agent": USER_AGENT,
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=PROXY_LLM_TIMEOUT) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+
+            # 回應可能是 JSON 包裝（content/response/text…其中一個 key），也可能直接是文字
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    for key in ("content", "response", "message", "text", "result", "answer", "output"):
+                        val = parsed.get(key)
+                        if isinstance(val, str) and val.strip():
+                            return val
+                    return raw  # dict 但找不到已知 key → 上層試著抽 JSON
+                if isinstance(parsed, str):
+                    return parsed
+            except (ValueError, TypeError):
+                pass
             return raw
-        if isinstance(parsed, str):
-            return parsed
-    except (ValueError, TypeError):
-        pass
-    return raw
+        except Exception:
+            continue
+    raise RuntimeError("ProxyCLI 分類路徑皆不可用：{}".format(",".join(attempted) or "未設定模型"))
 
 
-def llm_classify(title, description):
+def llm_classify(title, description, skip_proxy=False):
     """
     對規則通過的單則新聞問 LLM。
-    回傳解析成功且 confidence >= 門檻的 dict；否則回 None（上層退回規則結果）。
+    回傳 (result, retry_later, disable_for_run, transport_provider)：
+    - result：解析成功且 confidence >= 門檻的 dict，否則 None
+    - retry_later：本次是網路/額度等暫時性失敗，不應寫入 seen
+    - disable_for_run：本輪後續不要再呼叫 LLM，避免每則各卡一次逾時
+    - transport_provider：這次實際成功回應的 LLM 路徑；即使內容低信心也回傳，
+      讓同一輪後續新聞能略過已失敗的 ProxyCLI。
     """
-    prompt = LLM_PROMPT_TEMPLATE.format(title=title, description=description)
-    try:
-        answer = call_proxy_llm(prompt)
-    except Exception as e:
-        log("LLM 呼叫失敗（退回規則結果）：{}".format(e))
-        return None
+    prompt = build_llm_prompt(title, description)
+    provider = None
+    if skip_proxy:
+        try:
+            answer = call_free_gemini(prompt)
+            provider = "gemini-free"
+        except FreeGeminiUnavailable as free_error:
+            try:
+                answer = call_paid_gemini(prompt)
+                provider = "gemini-paid"
+                log("免費 LLM 路徑暫時失敗，本則改用受月費上限保護的 Gemini 付費池")
+            except PaidGeminiUnavailable as paid_error:
+                log("LLM 呼叫失敗（本輪停用並保留待重試）：免費池：{}；付費池：{}".format(
+                    free_error, paid_error
+                ))
+                return None, True, True, None
+    else:
+        try:
+            answer = call_proxy_llm(prompt)
+            provider = "proxy"
+        except Exception as proxy_error:
+            try:
+                answer = call_free_gemini(prompt)
+                provider = "gemini-free"
+                log("ProxyCLI 暫時失敗，本則改用獨立免費 Gemini 池；本輪後續直接使用免費池")
+            except FreeGeminiUnavailable as free_error:
+                try:
+                    answer = call_paid_gemini(prompt)
+                    provider = "gemini-paid"
+                    log("免費 LLM 路徑暫時失敗，本則改用受月費上限保護的 Gemini 付費池")
+                except PaidGeminiUnavailable as paid_error:
+                    log("LLM 呼叫失敗（本輪停用並保留待重試）：ProxyCLI：{}；免費池：{}；付費池：{}".format(
+                        proxy_error, free_error, paid_error
+                    ))
+                    return None, True, True, None
 
     # 從回應中抽第一段 {...}（LLM 偶爾會多話）
     m = re.search(r"\{.*\}", answer, re.DOTALL)
     if not m:
         log("LLM 回應無 JSON（退回規則結果）：{}".format(answer[:120]))
-        return None
+        return None, False, False, provider
     try:
         result = json.loads(m.group(0))
     except ValueError:
         log("LLM JSON 解析失敗（退回規則結果）：{}".format(m.group(0)[:120]))
-        return None
+        return None, False, False, provider
 
     if not isinstance(result, dict) or "is_incident" not in result:
         log("LLM 回應缺少 is_incident（退回規則結果）")
-        return None
+        return None, False, False, provider
 
     try:
         confidence = float(result.get("confidence") or 0)
@@ -477,7 +1017,7 @@ def llm_classify(title, description):
         confidence = 0.0
     if confidence < LLM_MIN_CONFIDENCE:
         log("LLM confidence {} < {}（退回規則結果）".format(confidence, LLM_MIN_CONFIDENCE))
-        return None
+        return None, False, False, provider
 
     result["confidence"] = confidence
     # county 若非 null 也順手正規化（LLM 可能回「台中」而非「台中市」）
@@ -491,7 +1031,7 @@ def llm_classify(title, description):
         result["county"] = None
     valid_categories = {c for c, _ in INCLUDE_CATEGORIES}
     if result.get("category") not in valid_categories:
-        return None  # 分類不在白名單 → 不可信，退回規則
+        return None, False, False, provider  # 分類不在白名單 → 不可信，退回規則
     # summary 消毒：必須是非空字串才收，最多 12 字，並強制簡轉繁
     summary = result.get("summary")
     if isinstance(summary, str) and summary.strip():
@@ -514,7 +1054,8 @@ def llm_classify(title, description):
     result["severity"] = sev if sev in ("high", "medium", "low") else "low"
     ongoing = result.get("is_ongoing")
     result["is_ongoing"] = ongoing is True or (isinstance(ongoing, str) and ongoing.strip().lower() == "true")
-    return result
+    result["_llm_provider"] = provider
+    return result, False, False, provider
 
 
 # ---------------------------------------------------------------------------
@@ -542,11 +1083,11 @@ def find_duplicate(event, accepted):
 
 
 def merge_duplicate(existing, new_event):
-    """合併重複事件：corroboration +1、來源名串接（看得出多來源）、補缺欄位"""
-    existing["corroboration"] += 1
+    """合併重複事件：僅真正新增媒體來源才提高 corroboration。"""
     names = [n.strip() for n in existing["sourceName"].split("、")]
     if new_event["sourceName"] not in names:
         existing["sourceName"] = existing["sourceName"] + "、" + new_event["sourceName"]
+        existing["corroboration"] += 1
     # 既有欄位缺值時，用新來源的值補上（縣市/地點/摘要/詳述越齊越好）
     for key in ("county", "district", "place", "summary", "detail"):
         if not existing.get(key) and new_event.get(key):
@@ -626,10 +1167,16 @@ def main(feeds=None, out_dir=None):
     latest_path = os.path.join(out_dir, "latest.json")
     seen_path = os.path.join(out_dir, "seen.json")
 
-    use_llm = bool(AI_PROXY_TOKEN)
-    log("啟動：LLM 分類 {}（AI_PROXY_TOKEN {}）".format(
+    use_llm = bool(AI_PROXY_TOKEN) or (
+        FREE_GEMINI_ENABLED and FREE_GEMINI_DAILY_CALL_LIMIT > 0
+    ) or (
+        PAID_GEMINI_ENABLED and PAID_GEMINI_MONTHLY_LIMIT_USD > 0
+    )
+    log("啟動：LLM 分類 {}（ProxyCLI {}／免費 Gemini {}／付費 Gemini {}）".format(
         "開啟" if use_llm else "關閉，走純規則路徑",
-        "已設定" if use_llm else "未設定"))
+        "已設定" if AI_PROXY_TOKEN else "未設定",
+        "啟用" if FREE_GEMINI_ENABLED and FREE_GEMINI_DAILY_CALL_LIMIT > 0 else "關閉",
+        "啟用" if PAID_GEMINI_ENABLED and PAID_GEMINI_MONTHLY_LIMIT_USD > 0 else "關閉"))
 
     seen_ids = load_seen(seen_path)
     seen_set = set(seen_ids)
@@ -637,9 +1184,23 @@ def main(feeds=None, out_dir=None):
     sources_report = []
     events = []
     total_fetched = 0
+    total_eligible = 0
     skipped_seen = 0
     dropped_by_rules = 0
     dropped_by_llm = 0
+    llm_calls = 0
+    llm_retry_pending = 0
+    llm_circuit_open = False
+    prefer_free_gemini = False
+    stale_dropped = 0
+    future_dropped = 0
+    capped_dropped = 0
+
+    def mark_seen(item_id):
+        if item_id in seen_set:
+            return
+        seen_set.add(item_id)
+        seen_ids.append(item_id)
 
     for feed in feeds:
         # 單一 feed 失敗：記 log、標 ok=false，繼續跑其他 feed
@@ -647,11 +1208,15 @@ def main(feeds=None, out_dir=None):
             data = fetch_url(feed["url"])
             fmt = feed.get("format")
             if fmt == "atom":
-                items = parse_atom(data)
+                raw_items = parse_atom(data)
             elif fmt == "tvbs_html":
-                items = parse_tvbs_local(data.decode("utf-8", errors="replace"))
+                raw_items = parse_tvbs_local(data.decode("utf-8", errors="replace"))
             else:
-                items = parse_rss(data)
+                raw_items = parse_rss(data)
+            items, preparation = prepare_feed_items(
+                raw_items,
+                max_items=feed.get("max_items", DEFAULT_FEED_ITEM_LIMIT),
+            )
         except Exception as e:
             log("feed 抓取/解析失敗（跳過此 feed）：{} {} — {}".format(
                 feed["name"], feed["feed"], e))
@@ -663,19 +1228,21 @@ def main(feeds=None, out_dir=None):
 
         sources_report.append({
             "name": feed["name"], "feed": feed["feed"], "url": feed["url"],
-            "ok": True, "items": len(items),
+            "ok": True, "items": len(items), **preparation,
         })
-        total_fetched += len(items)
-        log("feed OK：{} {} — {} 則".format(feed["name"], feed["feed"], len(items)))
+        total_fetched += preparation["rawItems"]
+        total_eligible += len(items)
+        stale_dropped += preparation["staleDropped"]
+        future_dropped += preparation["futureDropped"]
+        capped_dropped += preparation["cappedDropped"]
+        log("feed OK：{} {} — 原始 {}／近期可處理 {} 則".format(
+            feed["name"], feed["feed"], preparation["rawItems"], len(items)))
 
         for item in items:
             item_id = stable_id(item)
             if item_id in seen_set:
                 skipped_seen += 1
                 continue
-            # 無論後續是否採用，都記為已處理（重跑不重複產出、也不重複問 LLM）
-            seen_set.add(item_id)
-            seen_ids.append(item_id)
 
             title, description = item["title"], item["description"]
 
@@ -683,6 +1250,7 @@ def main(feeds=None, out_dir=None):
             is_incident, category, hit_word = rules_classify(title, description)
             if not is_incident:
                 dropped_by_rules += 1
+                mark_seen(item_id)
                 continue
 
             # 規則路徑的縣市：中央社電頭優先，其次掃標題
@@ -708,12 +1276,23 @@ def main(feeds=None, out_dir=None):
                 "is_ongoing": False,        # 是否仍在發生需即時反應；規則路徑保守給 False
             }
 
-            # 第二段：LLM（有 token 才跑；失敗/低信心 → 保留規則結果）
-            if use_llm:
-                llm = llm_classify(title, description)
+            # 第二段：LLM。暫時性失敗或達單輪預算時，先輸出保守規則結果但不寫 seen，
+            # 下輪繼續補地點、嚴重度與進行中狀態；避免額度恢復後仍永遠失去這則事件。
+            retry_later = False
+            if use_llm and not llm_circuit_open and llm_calls < LLM_MAX_CALLS_PER_RUN:
+                llm_calls += 1
+                llm, retry_later, disable_for_run, transport_provider = llm_classify(
+                    title, description, skip_proxy=prefer_free_gemini
+                )
+                if transport_provider == "gemini-free":
+                    # ProxyCLI 已知在本輪失敗；不必讓每一則新聞再等一次它的 timeout。
+                    prefer_free_gemini = True
+                if disable_for_run:
+                    llm_circuit_open = True
                 if llm is not None:
                     if not llm.get("is_incident"):
                         dropped_by_llm += 1
+                        mark_seen(item_id)
                         continue
                     event.update({
                         "county": llm.get("county") or county,
@@ -723,10 +1302,20 @@ def main(feeds=None, out_dir=None):
                         "confidence": llm["confidence"],
                         "summary": llm.get("summary"),
                         "detail": llm.get("detail"),
-                        "extraction": "llm",
+                        "extraction": {
+                            "gemini-free": "llm-gemini-free",
+                            "gemini-paid": "llm-gemini-paid",
+                        }.get(llm.get("_llm_provider"), "llm"),
                         "severity": llm.get("severity", "low"),
                         "is_ongoing": bool(llm.get("is_ongoing")),
                     })
+            elif use_llm:
+                retry_later = True
+
+            if retry_later:
+                llm_retry_pending += 1
+            else:
+                mark_seen(item_id)
 
             # 跨來源去重：同一事件合併、corroboration +1
             dup = find_duplicate(event, events)
@@ -742,18 +1331,33 @@ def main(feeds=None, out_dir=None):
         "fetchedAt": datetime.now(TZ_TAIPEI).isoformat(),
         "sources": sources_report,
         "totalFetched": total_fetched,
+        "totalEligible": total_eligible,
         "skippedSeen": skipped_seen,
         "incidentCount": len(events),
         "droppedByRules": dropped_by_rules,
         "droppedByLLM": dropped_by_llm,
+        "pipelineHealth": {
+            "staleDropped": stale_dropped,
+            "futureDropped": future_dropped,
+            "cappedDropped": capped_dropped,
+            "llmEnabled": use_llm,
+            "llmCalls": llm_calls,
+            "llmMaxCallsPerRun": LLM_MAX_CALLS_PER_RUN,
+            "llmCircuitOpen": llm_circuit_open,
+            "pendingLLMRetry": llm_retry_pending,
+            "freeGemini": free_gemini_status(),
+            "paidGemini": paid_gemini_status(),
+        },
         "events": events,
     }
     with open(latest_path, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     save_seen(seen_path, seen_ids)
 
-    log("完成：抓 {} 則（略過已見 {}）→ 事故 {} 則｜規則排除 {}｜LLM 排除 {}".format(
-        total_fetched, skipped_seen, len(events), dropped_by_rules, dropped_by_llm))
+    log("完成：原始 {}／近期 {} 則（略過已見 {}）→ 事故 {} 則｜規則排除 {}｜"
+        "LLM 排除 {}｜待重試 {}".format(
+            total_fetched, total_eligible, skipped_seen, len(events), dropped_by_rules,
+            dropped_by_llm, llm_retry_pending))
     log("輸出：{}".format(latest_path))
 
     push_to_oracle(output, out_dir)

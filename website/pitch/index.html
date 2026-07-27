@@ -306,7 +306,7 @@
           </div>
           <div class="live-rules">
             <article class="live-rule"><span>01 / CONSENT</span><b>只能替自己開啟</b><p>每台手機只能控制自己的即時圈，家庭成員無法替別人啟用。</p></article>
-            <article class="live-rule"><span>02 / PRIVATE</span><b>只走家庭 iCloud</b><p>最新位置透過 CKShare 分享，不進入 HavenCircle 事件或推播中繼站。</p></article>
+            <article class="live-rule"><span>02 / PRIVATE</span><b>只走家庭圈</b><p>最新位置分享給你的家庭圈成員，不進入 HavenCircle 事件或推播中繼站。</p></article>
             <article class="live-rule"><span>03 / LATEST ONLY</span><b>不建立移動軌跡</b><p>只保留最新一筆位置與更新時間，不保存到訪或路徑歷史。</p></article>
             <article class="live-rule"><span>04 / STALE</span><b>15 分鐘即過期</b><p>未更新會標示「位置已過期」並排除警報判斷，不冒充現在位置。</p></article>
           </div>
@@ -444,8 +444,8 @@
           </div>
           <div class="arch-side">
             <div class="side-card">
-              <b>最新位置：CloudKit CKShare</b><span class="badge">單機實機已驗證</span><br />
-              已完成品質閘門、序列化寫入與 CloudKit 讀回；陳舊或低精度位置會被擋下。跨帳號雙機加入、停止與過期仍在驗證中。
+              <b>最新位置：Firebase Firestore</b><span class="badge">單機實機已驗證</span><br />
+              已完成品質閘門、序列化寫入與雲端讀回；陳舊或低精度位置會被擋下。跨帳號雙機加入、停止與過期仍在驗證中。
             </div>
             <div class="side-card pending">
               <b>主動推播：APNs</b><span class="badge">事件偵測與發送鏈路已實作・實機閉環驗證中</span><br />
@@ -499,7 +499,7 @@
           <span class="button disabled">Demo 影片（連結準備中）</span>
         </div>
         <p class="team-note">
-          <b>技術棧</b>：SwiftUI · SwiftData（本地優先）· CloudKit CKShare · MapKit · APNs ·
+          <b>技術棧</b>：SwiftUI · SwiftData（本地優先）· Firebase（Auth／Firestore／FCM）· MapKit · APNs ·
           自建 Python 爬蟲（Mac Mini）· Oracle Cloud 中繼 API · Nginx。<br />
           資料來源：NCDR 民生示警公開資訊、內政部消防署避難收容處所、衛福部急救責任醫院名單、政府開放資料平台。
         </p>

@@ -195,6 +195,25 @@ enum AppTextSize: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 設定頁列表用的完整標籤；不可只靠「大／特大」這種單字，輔助功能朗讀時會失去語意。
+    var label: String {
+        switch self {
+        case .system: return "跟隨系統"
+        case .large: return "較大"
+        case .extraLarge: return "特大"
+        case .huge: return "最大"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .system: return "使用 iPhone 系統的文字大小設定"
+        case .large: return "適合想稍微放大介面的人"
+        case .extraLarge: return "適合需要更高可讀性的人"
+        case .huge: return "最大且保留可捲動版面"
+        }
+    }
+
     /// 要覆寫的 Dynamic Type 級距；跟隨系統時回 nil（呼叫端看到 nil 就不加 modifier，原樣交還系統）
     var overrideSize: DynamicTypeSize? {
         switch self {

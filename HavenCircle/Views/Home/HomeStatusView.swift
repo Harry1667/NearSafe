@@ -155,10 +155,8 @@ struct HomeStatusView: View {
             .sheet(item: $newPlaceForCircle) { member in
                 CircleEditorView(member: member)
             }
-            .sheet(isPresented: $showPaywall) {
+            .fullScreenCover(isPresented: $showPaywall) {
                 PaywallView()
-                    // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
-                    .presentationSizing(.form)
             }
         }
     }
@@ -420,7 +418,7 @@ struct HomeStatusView: View {
     /// 最多 5 筆——第一屏不塞全國事件，細節仍可從「查看全部」下鑽到提醒中心。
     private var eventFeed: [LocalSafetyEvent] {
         events
-            .filter { !$0.isArchived && !EventVisibility.isSuppressed($0) }
+            .filter { $0.isActiveForAwareness && !$0.isArchived && !EventVisibility.isSuppressed($0) }
             .filter { nearestCircleDistance($0, members) <= NearbyScope.maxMeters }
             .sorted { lhs, rhs in
                 if lhs.isEnded != rhs.isEnded { return !lhs.isEnded } // 進行中排前面
@@ -430,8 +428,19 @@ struct HomeStatusView: View {
             .map { $0 }
     }
 
+    /// 首頁只呈現與生活圈接近的少量事件，但不能讓「已替你過濾」看起來像「沒有資料」。
+    /// 這兩個數字把背景看守工作變得可見，點進去再由提醒中心的全台動態完整閱讀。
+    private var activeVisibleEvents: [LocalSafetyEvent] {
+        events.filter { $0.isActiveForAwareness && !$0.isArchived && !EventVisibility.isSuppressed($0) }
+    }
+
+    private var nearbyActiveEventCount: Int {
+        activeVisibleEvents.filter { nearestCircleDistance($0, members) <= NearbyScope.maxMeters }.count
+    }
+
     private var eventFeedSection: some View {
         VStack(alignment: .leading, spacing: HCSpacing.x3) {
+            monitoringSummaryRow
             if eventFeed.isEmpty {
                 quietFeedRow
                 nearestShelterRow
@@ -463,6 +472,37 @@ struct HomeStatusView: View {
         // 加一點點陰影讓它像「浮」在頁面上而非「貼」在頁面上，跟其他卡片一樣用 HCRadius.card 圓角，
         // 視覺重量往 statusHero 那邊拉近一些——不動留白量本身，只是加一點呼吸感。
         .shadow(color: .black.opacity(0.06), radius: 10, y: 3)
+    }
+
+    private var monitoringSummaryRow: some View {
+        Button {
+            router.openHome(.events)
+        } label: {
+            HStack(spacing: HCSpacing.x3) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(HCColor.brand)
+                    .frame(width: HCSpacing.x6 + HCSpacing.x2, height: HCSpacing.x6 + HCSpacing.x2)
+                    .background(HCColor.brand.opacity(0.10), in: RoundedRectangle(cornerRadius: HCRadius.badge, style: .continuous))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: HCSpacing.x1) {
+                    Text("背景看守中")
+                        .font(.subheadline.weight(.semibold))
+                    Text("附近 \(nearbyActiveEventCount) 件 · 全台 \(activeVisibleEvents.count) 件進行中")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("背景看守中，附近 \(nearbyActiveEventCount) 件，全台 \(activeVisibleEvents.count) 件進行中。點兩下查看提醒中心")
     }
 
     /// D4 重問通道：情境式權限卡（A4）被按過「先不用」之後，通知就永遠沒有回頭路——

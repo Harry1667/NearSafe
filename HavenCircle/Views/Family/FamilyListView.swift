@@ -180,10 +180,8 @@ struct FamilyListView: View {
                 addingPlace = false
             }
         }
-        .sheet(isPresented: $showPaywall) {
+        .fullScreenCover(isPresented: $showPaywall) {
             PaywallView()
-                // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
-                .presentationSizing(.form)
         }
         .sheet(item: $newMemberForCircle) { member in
             CircleEditorView(member: member)

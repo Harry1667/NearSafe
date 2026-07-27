@@ -13,6 +13,10 @@ enum RegionTopic {
     /// 全台廣播主題（地震／海嘯／颱風等全區有感事件）。所有裝置都應訂閱。
     static let all = "hc_all"
 
+    /// 環境監測的無聲喚醒主題。測站超標時先喚醒 App，再由裝置端以生活圈篩選，
+    /// 不把使用者的行政區或位置回傳給警報中繼站。
+    static let environment = "hc_environment"
+
     /// 由「縣市＋區」算出主題名，例如 forRegion(county: "台中市", town: "中區")。
     static func forRegion(county: String, town: String) -> String {
         let canonical = normalize(county) + normalize(town)

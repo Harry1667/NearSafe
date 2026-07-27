@@ -90,11 +90,17 @@ if ($dataset === 'ncdr' || $dataset === 'cwa') {
     }
 }
 
-// 新 NCDR 示警一落地就立刻觸發 APNs 檢查（背景、不阻塞回應），
+// 即時來源一落地就立刻觸發無聲喚醒檢查（背景、不阻塞回應），
 // 讓推播不必等 cron 每分鐘輪詢——把警報偵測延遲砍到接近爬蟲間隔。
-// exec 若被停用會靜默失敗，仍有 crontab 的定時 cron_check 兜底，不影響正確性。
-if ($dataset === 'ncdr') {
-    @exec('php ' . escapeshellarg(__DIR__ . '/../../apns/cron_check.php') . ' > /dev/null 2>&1 &');
+// crime 是週／月統計參考圖層，不屬於即時警報，故不觸發。
+// 部分主機會在 PHP disable_functions 停用 exec（直接呼叫會變 Fatal Error），
+// 這時由 crontab 的每分鐘 cron_check 兜底，不影響正確性。
+if (in_array($dataset, ['ncdr', 'cwa', 'nfa', 'taichung_fire', 'aqi'], true)) {
+    if (function_exists('exec')) {
+        @exec('php ' . escapeshellarg(__DIR__ . '/../../apns/cron_check.php') . ' > /dev/null 2>&1 &');
+    } else {
+        error_log('HavenCircle ingest: exec unavailable; scheduled cron_check will handle this update');
+    }
 }
 
 echo json_encode([

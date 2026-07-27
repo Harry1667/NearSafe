@@ -29,7 +29,8 @@ struct AirQualityEventProvider: EventProvider {
                 sourceURL: "https://airtw.moenv.gov.tw/",
                 isOfficial: true, // 環境部官方監測資料
                 occurredAt: .now,
-                ttlSeconds: 3 * 3_600 // 每小時更新；連續超標會持續刷新同一筆
+                ttlSeconds: 3 * 3_600, // 每小時更新；連續超標會持續刷新同一筆
+                stableDeduplicationKey: "aqi-\(station.id)"
             )
         }
     }

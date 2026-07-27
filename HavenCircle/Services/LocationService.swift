@@ -40,6 +40,9 @@ final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate
 
     /// 地圖藍點用：只負責要權限，位置由 MapKit 的 UserAnnotation 自行取得
     func requestPermissionIfNeeded() {
+        #if DEBUG
+        guard !Self.skipLocationPromptForScreenshots else { return }
+        #endif
         if authorization == .notDetermined {
             manager.requestWhenInUseAuthorization()
         }
@@ -48,8 +51,21 @@ final class LocationService: NSObject, @preconcurrency CLLocationManagerDelegate
     /// 跟隨圈用：要求「永遠允許」（顯著位置變更要在背景喚醒 App 必須是 Always）。
     /// 從未問過會先出 when-in-use 對話框，之後系統會再問升級；已是 when-in-use 則直接問升級
     func requestAlwaysPermission() {
+        #if DEBUG
+        guard !Self.skipLocationPromptForScreenshots else { return }
+        #endif
         manager.requestAlwaysAuthorization()
     }
+
+    #if DEBUG
+    /// --skip-location-prompt：自動化截圖用。系統定位權限對話框無法用 simctl 自動點掉
+    /// （`simctl privacy grant` 對這個對話框不生效，AppleScript/cliclick 這台機器上又拿不到
+    /// 輔助使用權限），一擋住畫面整組截圖流程就卡死。加這個旗標讓 App 乾脆不發出權限請求，
+    /// 對話框永遠不會跳出來；地圖藍點／即時圈這類需要真實定位的功能在這個模式下自然不可用，
+    /// 純粹是截圖模式的取捨，不影響一般使用者（Release 版整段編不進去）。
+    private static let skipLocationPromptForScreenshots =
+        ProcessInfo.processInfo.arguments.contains("--skip-location-prompt")
+    #endif
 
     /// 依「是否存在跟隨圈」開關顯著位置變更監聽。
     /// 呼叫時機：App 啟動（含背景被喚醒）、跟隨圈建立或刪除後。

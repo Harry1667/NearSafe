@@ -18,9 +18,10 @@ struct SafetyOverview {
 
     var isAllClear: Bool { attentionCount == 0 }
 
-    /// 活動事件的統一定義（未結束、未封存、未被抑制）——兩頁都從這裡取，不各自過濾
+    /// 活動事件的統一定義（仍在發生、未封存、未被抑制）——兩頁都從這裡取，不各自過濾。
+    /// 顯示壽命尚未到期的事後新聞不可以把首頁從「平安」誤變成有事件。
     static func activeEvents(_ events: [LocalSafetyEvent]) -> [LocalSafetyEvent] {
-        events.filter { !$0.isEnded && !$0.isArchived && !EventVisibility.isSuppressed($0) }
+        events.filter { $0.isActiveForAwareness && !$0.isArchived && !EventVisibility.isSuppressed($0) }
     }
 
     static func compute(

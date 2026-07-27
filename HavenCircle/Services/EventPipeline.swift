@@ -25,6 +25,9 @@ struct RawEventReport {
     /// 需要跨時間維持同一事件的來源可提供穩定鍵（例如 AQI 測站）。
     /// 一般事故留 nil，改用「類型＋位置＋6 小時時間窗」去重。
     var stableDeduplicationKey: String? = nil
+    /// 來源是否明確表示仍在發生或剛發生、需要即時反應。
+    /// 官方即時來源預設為 true；媒體新聞會帶入爬蟲判定，不能只因 TTL 未到就冒充進行中。
+    var isOngoing: Bool = true
 }
 
 protocol EventProvider {
@@ -99,6 +102,9 @@ enum EventPipeline {
 
     private static func ingestPointEvents(context: ModelContext, members: [LocalFamilyMember]) async {
         var reports: [RawEventReport] = []
+        // 只有新聞端點成功解碼時才會有值（空陣列也代表成功）。若網路或端點失敗，
+        // 絕不能把本機所有新聞誤當成已下線而清掉。
+        var currentNewsEventKeys: Set<String>?
         for provider in providers {
             // 遠端開關：媒體報導層可從 config/app.json 整層關閉
             // （新聞源出問題時免送審止血；官方 NCDR 源不設開關，那是產品底線）
@@ -106,11 +112,24 @@ enum EventPipeline {
                 continue
             }
             do {
-                reports += try await provider.fetchReports()
+                let providerReports = try await provider.fetchReports()
+                if provider is NewsEventProvider {
+                    currentNewsEventKeys = Set(providerReports.compactMap { report in
+                        report.stableDeduplicationKey.map { "evt-\($0)" }
+                    })
+                }
+                reports += providerReports
             } catch {
                 // 來源健康度：擷取失敗要留下紀錄，不能整條管線靜默失敗
                 AppLog.pipeline.error("來源擷取失敗（\(provider.sourceName)）：\(error.localizedDescription)")
             }
+        }
+
+        // 線上來源主動下架（例如修正後的酒駕裁罰／戒酒輔導舊聞）時，舊版只會
+        // 等 TTL 到期，期間仍被誤標「進行中」。成功取得完整新聞清單後立即把不在
+        // 清單裡的本機新聞降成非即時資訊；不刪歷史，且端點失敗時不動資料。
+        if let currentNewsEventKeys {
+            markMissingNewsAsNonLive(context: context, currentKeys: currentNewsEventKeys)
         }
 
         let grouped = Dictionary(grouping: reports, by: signature(of:))
@@ -130,10 +149,13 @@ enum EventPipeline {
                     group.map(\.ttlSeconds).max() ?? 86_400
                 )
                 existing.isArchived = false
+                existing.isOngoing = group.contains(where: \.isOngoing)
                 // 來源端的標題與地點可能改善（例：媒體事件改用 LLM 短摘要重推），同步最新版
                 if let primary = group.first(where: \.isOfficial) ?? group.first {
                     existing.title = primary.title
                     existing.approximateLocation = primary.approximateLocation
+                    existing.sourceName = primary.sourceName
+                    existing.sourceURL = primary.sourceURL
                     // 詳細描述可能是後來才由 LLM 補上；有新的就更新，沒有就保留舊值
                     if let detail = primary.detail, !detail.isEmpty { existing.detail = detail }
                 }
@@ -162,11 +184,32 @@ enum EventPipeline {
                     severity: trust == TrustStatus.confirming ? "持續確認中" : "需要注意",
                     deduplicationGroup: sig,
                     expiresAt: .now.addingTimeInterval(group.map(\.ttlSeconds).max() ?? 86_400),
-                    detail: (group.first(where: { $0.detail?.isEmpty == false }) ?? primary).detail
+                    detail: (group.first(where: { $0.detail?.isEmpty == false }) ?? primary).detail,
+                    isOngoing: group.contains(where: \.isOngoing)
                 )
                 context.insert(event)
                 await NotificationScheduler.notifyIfNeeded(for: event, members: members)
             }
+        }
+    }
+
+    private static func markMissingNewsAsNonLive(
+        context: ModelContext,
+        currentKeys: Set<String>
+    ) {
+        let events = (try? context.fetch(FetchDescriptor<LocalSafetyEvent>())) ?? []
+        let removed = events.filter {
+            $0.eventKey.hasPrefix("evt-news-")
+                && !$0.isEnded
+                && $0.isOngoing
+                && !currentKeys.contains($0.eventKey)
+        }
+        for event in removed {
+            event.isOngoing = false
+            event.updatedAt = .now
+        }
+        if !removed.isEmpty {
+            AppLog.pipeline.info("🧹 新聞來源已下架 \(removed.count) 筆，本機改列非即時資訊")
         }
     }
 
@@ -274,8 +317,7 @@ enum EventPipeline {
         let events = (try? context.fetch(FetchDescriptor<LocalSafetyEvent>())) ?? []
         let sevenDaysAgo = Date.now.addingTimeInterval(-7 * 86_400)
         for event in events {
-            // 過期的進行中事件自動解除。不再補發「已解除」推播——使用者不需要這類通知
-            // （減少通知噪音）；演練模式的解除通知走 DrillView.endDrill 另一條路徑，不受影響。
+            // 過期的進行中事件自動解除。不再補發「已解除」推播——使用者不需要這類通知（減少通知噪音）。
             if !event.isResolved && event.isExpired {
                 event.resolve()
             }

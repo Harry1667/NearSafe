@@ -1,5 +1,14 @@
 # App Store Connect「App 隱私權」問卷答案對照表
 
+> ⚠️⚠️⚠️ **本檔已廢棄，不要照填！** 2026-07-18 寫這份時，家庭同步還是 CloudKit（私有容器，
+> 開發者拿不到資料，所以下面建議「精簡申報」）。2026-07 已全面遷移到 Firebase Firestore，
+> 位置／姓名／Email／使用者 ID 現在都會進到開發者可讀的伺服器，申報範圍完全不同了。
+>
+> **請改用 `docs/appstore/ASC隱私問卷答案.md`（2026-07-24，與現行 `PrivacyInfo.xcprivacy` 一致）。**
+> 本檔只留著當「CloudKit 時代決策紀錄」的歷史對照，不要拿來填 App Store Connect 的問卷。
+>
+> ————— 以下為原始內容（過時，僅供歷史參考）—————
+
 > 位置：App Store Connect → 你的 App → App 隱私權（App Privacy）→ 開始回答
 > 依據：2026-07-18 的程式碼實況（含新上線的匿名統計 analytics/events.php）。
 > 送審前請本人過目一次；若之後加了新資料收集（例如崩潰回報 SDK），要回來同步改。

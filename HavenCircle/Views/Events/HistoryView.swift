@@ -90,10 +90,8 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("區域回顧")
-        .sheet(isPresented: $showPaywall) {
+        .fullScreenCover(isPresented: $showPaywall) {
             PaywallView()
-                // iPad 會忽略隱含尺寸而放大成整頁 sheet，這裡收斂成 form 尺寸
-                .presentationSizing(.form)
         }
     }
 

@@ -111,4 +111,23 @@ platform :ios do
 
     UI.success("已上傳 TestFlight（建置號 #{build_number}）。到 App Store Connect → TestFlight 查處理進度，處理完會出現在 TestFlight App 可安裝。")
   end
+
+  desc "只上傳文字素材（名稱/副標題/描述/關鍵字/URL/審查備註），不動截圖、不動 build、不送審"
+  lane :metadata do
+    api_key = asc_api_key
+
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: "com.gomiigo.HavenCircleApp",
+      skip_screenshots: true,       # 使用者已在網頁手動上傳，這裡絕對不能碰，避免覆蓋掉
+      skip_binary_upload: true,     # 這裡不打包、不傳新 build
+      skip_app_version_update: false,
+      force: true,                  # 非互動環境，跳過本機瀏覽器 HTML 預覽確認
+      submit_for_review: false,     # 明確不送審，送審按鈕留給使用者自己按
+      automatic_release: false,
+      precheck_include_in_app_purchases: false # IAP 商品可能還沒建好，跳過相關檢查避免誤報失敗
+    )
+
+    UI.success("文字素材已上傳（名稱／副標題／描述／關鍵字／URL／版權／審查備註）。截圖與送審不受影響，請自己到 ASC 檢查後再送審。")
+  end
 end

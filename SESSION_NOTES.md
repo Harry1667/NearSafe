@@ -1,5 +1,39 @@
 # SESSION_NOTES
 
+## 2026-07-27〜28（付費牆整頁化＋上架素材生產線＋ASC 送審實戰陪跑；TF build 07271029）
+
+> 完整技術細節見新 skill：`harry-havencircle-appstore-metadata`（年齡分級/fastlane metadata API/內容版權）、
+> `harry-havencircle-screenshot-pipeline`（Beacon 風格行銷截圖生產線）；`harry-havencircle-oracle` 補了網站部署段落。
+
+### ✅ 完成
+- **付費牆重新設計＋整頁化**（多輪迭代）：從半頁 sheet 改成 `.fullScreenCover`（4 個入口＋DEBUG 截圖入口全改），Beacon 風格視覺（漸層 hero 卡、2×2 圖示解鎖網格、主推大卡＋精簡雙卡）、修掉商品讀取失敗時拼出「／年」破碎文字的 bug。
+- **地圖連續點兩個事件的 bug**：`SafetyMapView.swift` 的 marker 點擊直接覆寫 `selected` 是 SwiftUI `.sheet(item:)` 經典坑，仿現有 `selectedCluster→selected` 的 nil-then-delay pattern 修掉。
+- **StoreKit 本機測試**：試過用 `SKTestSession` 在 App 內強制吃本機 `.storekit`（想解決「沒用 Xcode Run 啟動就讀不到本機測試價格」），**結果閃退，已完整回退**——SKTestSession 仍然依賴 Xcode 啟動時的橋接環境，此路不通。改用更安全的作法：DEBUG 版只要商品讀取真的失敗就自動退回靜態展示價格（不管什麼原因），Release 版完全不受影響。
+- **App Store 上架申報清理**：定位權限說明文字（還寫著舊 iCloud 說法）、程式碼裡殘留的 CKShare 過時註解、官網（index.html + pitch/index.html）所有 CloudKit/CKShare 字樣，全部改成 Firebase 現況；AppIcon 補了 dark/tinted 兩個變體（用 sips 從主圖產生，暫時堪用版）。
+- **移除「演練」功能**：使用者確認後拿掉 `EventListView` 的「演練」按鈕與整個 `DrillView.swift`（這是正式產品功能不是測試殘留，但使用者決定不要了）。
+- **TestFlight 上傳**：`fastlane beta` 成功，build `07271029`。
+- **App Store 行銷截圖生產線**（iPhone 1320×2868 + iPad 2064×2752，各 5 張，Beacon 風格）：HTML/CSS 樣板（暗色底＋金色發光外框＋Noto Serif TC 900 粗體標題，跟官網同字體）用 **headless Chrome 直接 render**（gstack browse daemon 卡死時的備援路徑，見新 skill）。截圖內容一度卡在「地圖鏡頭定位跑到歐洲/舊金山」「系統定位權限彈窗擋死自動化流程且 `simctl privacy grant` 對這個彈窗完全不生效」，最後解法：① 加 DEBUG-only `--skip-location-prompt` 旗標＋讓 `UserAnnotation()` 在該旗標下不畫（MapKit 的這個元件會繞過 App 自己的權限請求直接跟系統要權限）；② 卡住的彈窗是模擬器層級的佇列問題，完整 `simctl shutdown`+重開機才清得掉，光 uninstall/reinstall 沒用。
+- **示範事件內容真實化**：使用者要求把行銷截圖裡的示範事件從「【測試】聯結車撞機車」換成真實發生過的「中山站持刀攻擊」事件（2025-12-19 張文台北車站/中山站隨機攻擊案，4死11傷）。**倫理裁決**：不用真實死傷數字與加害者姓名，改用類似 Beacon 自家截圖的模糊化寫法（地點＋事件類型＋官方已確認＋避難建議）。技術上用「暫時改 `SixDisasterScenario.swift`（含 sourceName 欄位，不只 title）→截圖→`git checkout` 完整還原」的模式，兩次都有確認 diff 乾淨。
+- **官網部署**：SSH 到 Oracle（`ubuntu@137.131.7.230`），確認網站根目錄是 `www:www` 擁有、`ubuntu` 有 `NOPASSWD: ALL` sudo，走「sudo 備份→scp 到 /tmp→sudo mv 進正式目錄→sudo chown www:www」流程，部署後 curl 驗證正式網址內容。
+- **App Store Connect metadata 直接用 API 寫入**：發現使用者手上的 App Store Connect API 金鑰（本來只給 fastlane beta 用）其實可以拿來寫 metadata，不只上傳 build。新增 `fastlane` 的 `metadata` lane（`upload_to_app_store` + `skip_screenshots: true` + `skip_binary_upload: true` + `submit_for_review: false`），把名稱/副標題/描述/關鍵字/URL/版權/審查備註一次寫進 ASC，precheck 9 項全過。**唯一失敗項**：審查備註（App Review Notes）上傳報錯 `Error fetching app store review detail - No data`，懷疑要先填聯絡人姓名/電話/信箱，使用者還沒提供，待補。
+- **年齡分級問卷陪跑**（Apple 新版 7 步驟精靈，非舊版單頁勾選表）：因為 App 的新聞爬蟲會抓到真實社會案件（含上面的中山事件），「驚悚/恐怖題材」「現實暴力」「槍支或其他武器」不能選「無」，改選「偶爾」；「使用者生成內容」「社群媒體」「傳訊和聊天」選「否」；「醫療或保健」整段不適用選「無/否」。**踩過一個坑**：一度建議「對未滿13歲的使用者停用社群媒體」在被強制要求回答時選「是」，結果系統判定「你說有停用=你有社群媒體」，跟「社群媒體=否」互相矛盾跳出紅色驗證錯誤——已更正為統一選「否」（因為根本沒有社群媒體功能，不是「停用」的問題）。最終計算結果 13+（含中山事件的暴力/恐怖內容因子後的合理結果，不是 4+）。
+- **App 內購買項目確認**：`plus.lifetime` 已建好，Product ID 跟 `EntitlementStore.swift` 完全一致，家人共享已開啟；「無法提交以供審查」是正常現象（IAP 要跟 App 版本一起送，不能單獨送），不是設定錯誤。
+
+### 🔄 未完成 / 待決
+- **審查備註**：ASC 上傳失敗那項，等使用者提供聯絡姓名/電話/信箱，或使用者自己去網頁貼（內容在 `fastlane/metadata/review_information/notes.txt`）。
+- **年齡分級第4、6步**：使用者自己填過去沒截圖給我看，最終13+結果合理但沒有逐步覆核，有需要可回頭補看。
+- **另外兩個 IAP**（monthly/yearly）：不確定是否已建，需使用者確認。
+- **隱私問卷、真機回歸測試（`docs/appstore/真機回歸檢查表.md` 23條，#19 production 推播最重要）**：使用者說要去填/去測，未回報完成。
+- **iPad 截圖是否已上傳 ASC**：使用者只截圖確認過 iPhone 那組，iPad 分頁待確認。
+- **內容版權問卷（App是否包含第三方內容）**：討論到新聞爬蟲有 verbatim 標題退回路徑的風險，尚未決定要不要動 `NewsEventProvider.swift` 拿掉退回顯示原始標題的邏輯（使用者還沒回覆要不要改）。
+
+### ⚠️ 環境備忘（新增）
+- **`xcrun simctl privacy grant location*` 對 `requestWhenInUseAuthorization`/`requestAlwaysAuthorization` 觸發的系統彈窗完全不生效**，這個彈窗一旦卡住，只有整台模擬器 `shutdown`→重開機能清掉，`uninstall`/`reinstall` 沒用。
+- **MapKit 的 `UserAnnotation()` 會繞過 App 自己的 `CLLocationManager` 請求邏輯**，只要畫在 `Map{}` 裡就會自動跟系統要權限，App 層的旗標/guard 攔不住，只能讓它在截圖模式下乾脆不畫。
+- **gstack `browse` daemon 在這台機器上會卡死**（`browse status`/`goto` 掛住不回應），備援方案：直接呼叫 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --disable-gpu --no-sandbox --window-size=W,H --screenshot=out.png --virtual-time-budget=4000 file://...html`，一次性行程、不需要常駐 daemon，穩定很多。
+- **App Store Connect 的 API 金鑰（fastlane 用的那把）不只能上傳 build，也能寫 metadata**：`upload_to_app_store` 搭配 `skip_screenshots`/`skip_binary_upload`/`submit_for_review: false` 可以安全地只更新文字欄位，不會動到使用者手動傳的截圖或誤觸送審。
+- **Apple 年齡分級問卷已經是新版 7 步驟精靈**，不是舊版單頁勾選表；`~/.claude/skills` 舊文件裡「問卷全部『無』→4+」的假設已過時，要照 App 實際內容逐題答，不能套公式。
+
 ## 2026-07-24（上架準備＋付費牆＋走查修復大批；TF 最終 build 07241320）
 
 > 完整 durable 設計裁決見 memory：`havencircle-ux-conventions`（術語/一地點一圈/我平安不變式/膠囊誠實態）、`havencircle-appstore-submission`、`havencircle-crawler-pipeline`、`havencircle-monetization-verdict`。

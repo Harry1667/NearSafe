@@ -18,15 +18,25 @@ enum FCMTopicSync {
     /// 依目前所有生活圈同步訂閱。只有集合有變動時才呼叫 FCM，避免無謂請求。
     @MainActor
     static func sync(circles: [LocalLifeCircle]) {
-        var desired: Set<String> = [RegionTopic.all] // 全台有感事件（地震/海嘯/颱風）人人都訂
-        for circle in circles {
-            let center = CLLocationCoordinate2D(latitude: circle.latitude, longitude: circle.longitude)
-            guard CLLocationCoordinate2DIsValid(center),
-                  !(center.latitude == 0 && center.longitude == 0) else { continue }
-            let radius = Double(max(circle.radiusMeters, 100))
-            // 圈半徑碰到的每一區都訂（含邊界鄰區，解漏接）
-            for d in DistrictBoundaries.shared.districtsTouching(center: center, radiusMeters: radius) {
-                desired.insert(RegionTopic.forRegion(county: d.county, town: d.town))
+        let defaults = UserDefaults.standard
+        let alertsEnabled = defaults.object(forKey: SettingsKeys.alertsEnabled) as? Bool ?? true
+        let alertsPaused = defaults.bool(forKey: SettingsKeys.alertsPaused)
+        var desired: Set<String> = []
+
+        // 停用／暫停時連無聲喚醒主題也退訂，避免不必要的背景網路活動。
+        // App 仍會在下次前景啟動自行拉取公開事件，只是不建立通知。
+        if alertsEnabled && !alertsPaused {
+            desired.insert(RegionTopic.all) // 全台有感事件（地震/海嘯/颱風）人人都訂
+            desired.insert(RegionTopic.environment) // AQI 等環境監測超標：只作無聲喚醒，位置在裝置端篩選
+            for circle in circles where circle.isActiveForAlerts {
+                let center = CLLocationCoordinate2D(latitude: circle.latitude, longitude: circle.longitude)
+                guard CLLocationCoordinate2DIsValid(center),
+                      !(center.latitude == 0 && center.longitude == 0) else { continue }
+                let radius = Double(max(circle.radiusMeters, 100))
+                // 圈半徑碰到的每一區都訂（含邊界鄰區，解漏接）
+                for d in DistrictBoundaries.shared.districtsTouching(center: center, radiusMeters: radius) {
+                    desired.insert(RegionTopic.forRegion(county: d.county, town: d.town))
+                }
             }
         }
 

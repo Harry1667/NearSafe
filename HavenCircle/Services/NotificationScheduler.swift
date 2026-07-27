@@ -111,6 +111,9 @@ enum NotificationScheduler {
             try await UNUserNotificationCenter.current()
                 .add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             AppLog.notifications.info("✅ 已推播：\(title)")
+            // 匿名漏斗：只累計「iOS 已接受排程」，不帶事件標題、位置、生活圈或裝置識別。
+            // FCM 主題送達與使用者實際看到通知是兩件事，這一點能把兩段明確分開觀察。
+            Analytics.track("notification_scheduled")
         } catch {
             AppLog.notifications.error("通知排程失敗（\(id)）：\(error.localizedDescription)")
         }
@@ -163,6 +166,7 @@ enum NotificationScheduler {
             AppLog.notifications.info("不推播（\(event.eventKey)）：\(decision.reason)")
             return decision
         }
+        Analytics.track("alert_circle_matched")
         let prefix = event.isDrill ? "【演練】" : ""
         // 通知漏斗：危險級才掛互動按鈕與時效性通知；主角是誰決定掛哪組按鈕
         let isDanger = RemoteConfig.isDangerKind(event.eventType)
@@ -209,8 +213,9 @@ enum NotificationScheduler {
 
     static let digestID = "daily-digest"
 
-    /// 重排每日摘要通知。摘要內容是「排程當下」計算的快照——
-    /// 原型限制：App 沒有背景更新，每次回到前景時重算一次讓內容盡量新鮮。
+    /// 重排下一次每日摘要。摘要內容是「排程當下」計算的快照，不能用重複排程把
+    /// 今天的內容原封不動帶到明天；每次資料管線刷新時改排下一個實際日期，確保
+    /// App 有機會更新時不會繼續播報過期摘要。
     static func refreshDailyDigest(summary: String) async {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [digestID])
@@ -221,17 +226,29 @@ enum NotificationScheduler {
         guard digestEnabled, alertsEnabled else { return }
         guard await authorizationStatus() == .authorized else { return }
 
-        var components = DateComponents()
-        components.hour = defaults.object(forKey: SettingsKeys.digestHour) as? Int ?? 20
+        let calendar = Calendar.current
+        let hour = min(23, max(0, defaults.object(forKey: SettingsKeys.digestHour) as? Int ?? 20))
+        let now = Date.now
+        var components = calendar.dateComponents([.year, .month, .day], from: now)
+        components.hour = hour
         components.minute = 0
+        guard let today = calendar.date(from: components) else { return }
+        let nextDate = today > now
+            ? today
+            : (calendar.date(byAdding: .day, value: 1, to: today) ?? today)
+        let triggerComponents = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: nextDate
+        )
 
         let content = UNMutableNotificationContent()
         content.title = "今日安全摘要"
         content.body = summary
         content.sound = .default
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerComponents, repeats: false)
         do {
             try await center.add(UNNotificationRequest(identifier: digestID, content: content, trigger: trigger))
+            Analytics.track("digest_scheduled")
         } catch {
             AppLog.notifications.error("每日摘要排程失敗：\(error.localizedDescription)")
         }

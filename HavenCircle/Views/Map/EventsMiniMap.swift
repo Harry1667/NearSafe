@@ -11,8 +11,33 @@ struct EventsMiniMap: View {
     /// 點地圖空白處（非標記）時呼叫——外部決定怎麼「放大」（跳分頁）
     var onExpand: () -> Void = {}
 
+    /// 預覽應先回答「事件相對於我的警戒圈在哪裡」，不能因為全台事件而拉成太平洋視角。
+    /// 若尚未設定生活圈，則穩定顯示台灣全覽，避免 MapKit 的自動預設落到任意海外地區。
+    private var focusedPosition: MapCameraPosition {
+        let orderedMembers = members.sorted { lhs, rhs in
+            if lhs.isCurrentUser != rhs.isCurrentUser { return lhs.isCurrentUser }
+            return lhs.name < rhs.name
+        }
+        let circles = orderedMembers.flatMap(\.lifeCircles)
+        let focusCircle = circles.first(where: \.isActiveForAlerts) ?? circles.first
+
+        guard let focusCircle else {
+            return .region(Self.taiwanFallbackRegion)
+        }
+        let radiusDelta = max(Double(focusCircle.radiusMeters) / 111_000 * 3.2, 0.015)
+        return .region(MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: focusCircle.latitude, longitude: focusCircle.longitude),
+            span: MKCoordinateSpan(latitudeDelta: radiusDelta, longitudeDelta: radiusDelta)
+        ))
+    }
+
+    private static let taiwanFallbackRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 23.7, longitude: 120.96),
+        span: MKCoordinateSpan(latitudeDelta: 4.6, longitudeDelta: 4.6)
+    )
+
     var body: some View {
-        Map(initialPosition: .automatic, interactionModes: []) {
+        Map(initialPosition: focusedPosition, interactionModes: []) {
             ForEach(members.flatMap(\.lifeCircles)) { circle in
                 MapCircle(
                     center: .init(latitude: circle.latitude, longitude: circle.longitude),
@@ -42,7 +67,7 @@ struct EventsMiniMap: View {
             }
         }
         .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false))
-        .frame(height: 240)
+        .frame(height: 152)
         .clipShape(RoundedRectangle(cornerRadius: HCRadius.card, style: .continuous))
         // 空白處點擊＝放大；Annotation 內的 Button 優先攔截，不受影響
         .onTapGesture { onExpand() }
@@ -53,6 +78,16 @@ struct EventsMiniMap: View {
                 .background(.regularMaterial, in: Circle())
                 .padding(8)
                 .allowsHitTesting(false) // 純視覺提示，點擊仍由整卡的 onTapGesture 處理
+        }
+        .overlay(alignment: .bottomLeading) {
+            Label("警戒圈相對位置", systemImage: "scope")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .padding(8)
+                .allowsHitTesting(false)
         }
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("點兩下開啟完整安全地圖")
